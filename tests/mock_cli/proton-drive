@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Stand-in for the official `proton-drive` CLI, for tests only.
+
+Mimics the real command names, flags, JSON shapes, exit codes and error texts
+(taken from ProtonDriveApps/sdk cli/src). The "cloud" is a folder: $MOCK_ROOT/my-files.
+"""
+import hashlib
+import json
+import os
+import shutil
+import sys
+import time
+
+ROOT = os.environ.get("MOCK_ROOT", "/tmp/mock-proton")
+os.makedirs(os.path.join(ROOT, "my-files"), exist_ok=True)
+os.makedirs(os.path.join(ROOT, ".trash"), exist_ok=True)
+LOGGED = os.path.join(ROOT, ".logged_in")
+DELAY = float(os.environ.get("MOCK_DELAY", "0"))
+
+
+def fail(msg, code=1):
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def local(path):
+    path = "/" + path.strip("/")
+    if path == "/":
+        return ROOT
+    return os.path.join(ROOT, path.lstrip("/"))
+
+
+def sha1(p):
+    h = hashlib.sha1()
+    with open(p, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
+
+
+def node(p):
+    st = os.stat(p)
+    iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(st.st_mtime))
+    n = {"uid": "uid-" + hashlib.md5(p.encode()).hexdigest()[:10], "name": {"ok": True, "value": os.path.basename(p)},
+         "type": "folder" if os.path.isdir(p) else "file", "isShared": False, "isSharedByUrl": False,
+         "creationTime": iso, "modificationTime": iso, "directRole": "admin", "treeEventScopeId": "x",
+         "keyAuthor": {"ok": True, "value": "me@proton.me"}}
+    if os.path.isfile(p):
+        s = sha1(p)
+        n["mediaType"] = "application/octet-stream"
+        n["activeRevision"] = {"uid": f"rev-{s[:12]}-{st.st_mtime_ns}", "state": "active", "claimedSize": st.st_size,
+                               "claimedModificationTime": iso, "claimedDigests": {"sha1": s, "sha1Verified": True}}
+    return n
+
+
+def opts(argv, names):
+    pos, o, i = [], {}, 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--json", "-j", "--verbose", "-v", "--skip-thumbnails", "-t", "--load-details", "-d"):
+            o[a.lstrip("-")] = True
+        elif a.startswith("--") and a[2:] in names:
+            o[a[2:]] = argv[i + 1]
+            i += 1
+        else:
+            pos.append(a)
+        i += 1
+    return pos, o
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv:
+        fail("interactive shell not supported in mock", 2)
+    group, cmd, rest = argv[0], (argv[1] if len(argv) > 1 else ""), argv[2:]
+    if group == "fs":
+        group = "filesystem"
+    if group == "version":
+        print("Proton Drive CLI cli-drive@0.9.0\nProton Drive SDK 0.14.0\nYou are running the latest version.")
+        return
+    if group == "auth" and cmd == "login":
+        print(json.dumps({"signInUrl": "https://account.proton.me/mock-sign-in"}), flush=True)
+        time.sleep(1.5)
+        open(LOGGED, "w").close()
+        return
+    if group == "auth" and cmd == "logout":
+        if os.path.exists(LOGGED):
+            os.remove(LOGGED)
+        return
+    if not os.path.exists(LOGGED):
+        fail("You need to login first")
+    time.sleep(DELAY)
+    pos, o = opts(rest, {"file-conflict-strategy", "folder-conflict-strategy", "type", "conflict-strategy"})
+
+    if group == "filesystem" and cmd == "list":
+        path = pos[0]
+        if path.strip("/") == "":
+            print(json.dumps([{"path": "/my-files"}, {"path": "/devices"}, {"path": "/shared-with-me"},
+                              {"path": "/trash"}]))
+            return
+        d = local(path)
+        if not os.path.isdir(d):
+            fail(f"Node not found: {os.path.basename(path)}")
+        items = [node(os.path.join(d, n)) for n in sorted(os.listdir(d))]
+        print("[\n" + ",\n".join(json.dumps(i) for i in items) + "\n]")
+        return
+
+    if group == "filesystem" and cmd == "create-folder":
+        parent, name = pos
+        d = local(parent)
+        if not os.path.isdir(d):
+            fail(f"Node not found: {os.path.basename(parent)}")
+        t = os.path.join(d, name)
+        if os.path.exists(t):
+            fail("A file or folder with that name already exists")
+        os.mkdir(t)
+        print(json.dumps(node(t)))
+        return
+
+    if group == "filesystem" and cmd == "upload":
+        *srcs, parent = pos
+        d = local(parent)
+        if not os.path.isdir(d):
+            fail(f"Node not found: {os.path.basename(parent)}")
+        fs = o.get("file-conflict-strategy", "")
+        summary = {"transferredItems": 0, "transferredBytes": 0, "skippedItems": 0, "failedItems": 0, "failures": []}
+
+        def up(src, dst_dir):
+            t = os.path.join(dst_dir, os.path.basename(src))
+            if os.path.isdir(src):
+                os.makedirs(t, exist_ok=True)
+                for n in os.listdir(src):
+                    up(os.path.join(src, n), t)
+                return
+            if os.path.exists(t):
+                if sha1(t) == sha1(src):
+                    return  # identical content is skipped automatically
+                if fs == "skip":
+                    summary["skippedItems"] += 1
+                    return
+                if fs not in ("create-new-revision", "replace", "rename"):
+                    summary["failedItems"] += 1
+                    summary["failures"].append({"name": os.path.basename(src), "error": "Name conflict"})
+                    return
+            if "FAILME" in os.path.basename(src):
+                summary["failedItems"] += 1
+                summary["failures"].append({"name": os.path.basename(src), "error": "Simulated failure"})
+                return
+            shutil.copyfile(src, t)
+            summary["transferredItems"] += 1
+            summary["transferredBytes"] += os.path.getsize(src)
+
+        for s in srcs:
+            up(s, d)
+        print(json.dumps(summary))
+        if summary["failedItems"]:
+            fail(f"{summary['failedItems']} item(s) failed to upload")
+        return
+
+    if group == "filesystem" and cmd == "download":
+        *srcs, dest = pos
+        os.makedirs(dest, exist_ok=True)
+        fs = o.get("file-conflict-strategy", "")
+        summary = {"transferredItems": 0, "transferredBytes": 0, "skippedItems": 0, "failedItems": 0, "failures": []}
+
+        def down(src, dst_dir):
+            t = os.path.join(dst_dir, os.path.basename(src))
+            if os.path.isdir(src):
+                os.makedirs(t, exist_ok=True)
+                for n in os.listdir(src):
+                    down(os.path.join(src, n), t)
+                return
+            if os.path.exists(t):
+                if fs == "skip":
+                    return
+                if fs == "remove":
+                    os.unlink(t)
+                else:
+                    summary["failedItems"] += 1
+                    summary["failures"].append({"name": os.path.basename(src), "error": "Name conflict"})
+                    return
+            shutil.copyfile(src, t)
+            summary["transferredItems"] += 1
+            summary["transferredBytes"] += os.path.getsize(src)
+
+        for s in srcs:
+            p = local(s)
+            if not os.path.exists(p):
+                fail(f"Node not found: {os.path.basename(s)}")
+            down(p, dest)
+        print(json.dumps(summary))
+        return
+
+    if group == "filesystem" and cmd == "trash":
+        out = []
+        for p in pos:
+            lp = local(p)
+            if not os.path.exists(lp):
+                fail(f"Node not found: {os.path.basename(p)}")
+            shutil.move(lp, os.path.join(ROOT, ".trash", f"{time.time_ns()}-{os.path.basename(lp)}"))
+            out.append({"uid": "x", "ok": True})
+        print(json.dumps(out))
+        return
+
+    # ---------- photos: $MOCK_ROOT/photostore/<uid>/<name>, meta.json, albums.json ----------
+    store = os.path.join(ROOT, "photostore")
+    os.makedirs(store, exist_ok=True)
+    meta_p, albums_p = os.path.join(ROOT, "photometa.json"), os.path.join(ROOT, "albums.json")
+    meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
+    albums = json.load(open(albums_p)) if os.path.exists(albums_p) else {}
+
+    def pfile(uid):
+        d = os.path.join(store, uid)
+        return os.path.join(d, os.listdir(d)[0])
+
+    def pnode(uid):
+        n = node(pfile(uid))
+        n["uid"], n["type"] = uid, "photo"
+        n["mediaType"] = "video/mp4" if pfile(uid).endswith(".mp4") else "image/jpeg"
+        n["photo"] = {"captureTime": meta[uid]["captured"], "mainPhotoNodeUid": None}
+        return n
+
+    if group == "photo" and cmd == "timeline":
+        uids = sorted(meta, key=lambda u: meta[u]["captured"], reverse=True)
+        print(json.dumps([pnode(u) for u in uids]))
+        return
+    if group == "album" and cmd == "list":
+        print(json.dumps([{"uid": a, "name": {"ok": True, "value": v["name"]}, "type": "album",
+                           "creationTime": "2026-01-01T00:00:00.000Z", "album": {"photoCount": len(v["photos"])}}
+                          for a, v in albums.items()]))
+        return
+    if group == "album" and cmd == "photos":
+        a = pos[0].split("/")[-1]
+        if a not in albums:
+            fail(f"Album not found: {a}")
+        print(json.dumps([pnode(u) for u in albums[a]["photos"] if u in meta]))
+        return
+    if group == "photo" and cmd == "download":
+        o2 = o
+        *srcs, dest = pos
+        os.makedirs(dest, exist_ok=True)
+        summary = {"transferredItems": 0, "transferredBytes": 0, "skippedItems": 0, "failedItems": 0, "failures": []}
+        for s in srcs:
+            uid = s.split("/")[-1]
+            if uid not in meta:
+                fail(f"Photo not found: {uid}")
+            src = pfile(uid)
+            name = os.path.basename(src)
+            t = os.path.join(dest, name)
+            if os.path.exists(t):
+                st = o2.get("conflict-strategy")
+                if st == "skip":
+                    continue
+                if st == "rename":
+                    stem, ext = os.path.splitext(name)
+                    i = 1
+                    while os.path.exists(t):
+                        t = os.path.join(dest, f"{stem} ({i}){ext}")
+                        i += 1
+                elif st == "remove":
+                    os.unlink(t)
+            shutil.copyfile(src, t)
+            summary["transferredItems"] += 1
+        print(json.dumps(summary))
+        return
+    if group == "photo" and cmd == "upload":
+        o2 = o
+        summary = {"transferredItems": 0, "transferredBytes": 0, "skippedItems": 0, "failedItems": 0, "failures": []}
+        files = []
+        for s in pos:
+            if os.path.isdir(s):
+                for dp, _, fns in os.walk(s):
+                    files += [os.path.join(dp, f) for f in fns]
+            else:
+                files.append(s)
+        for f in files:
+            dup = [u for u in meta if os.path.basename(pfile(u)) == os.path.basename(f) and sha1(pfile(u)) == sha1(f)]
+            if dup:
+                if o2.get("conflict-strategy") == "skip":
+                    continue
+            uid = hashlib.md5((f + str(time.time_ns())).encode()).hexdigest()[:22] + "~" + "a" * 22
+            os.makedirs(os.path.join(store, uid))
+            shutil.copyfile(f, os.path.join(store, uid, os.path.basename(f)))
+            meta[uid] = {"captured": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(os.path.getmtime(f)))}
+            summary["transferredItems"] += 1
+        json.dump(meta, open(meta_p, "w"))
+        print(json.dumps(summary))
+        return
+
+    fail(f"Command not found: {group} {cmd}")
+
+
+main()
