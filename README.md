@@ -117,6 +117,6 @@ packaging/build-deb.sh              # build dist/kluis_<version>_all.deb
 `tests/mock_cli/proton-drive` imitates the real CLI's commands, JSON output and error texts
 (taken from `ProtonDriveApps/sdk/cli`). It is used for tests only.
 
-Releases: push a tag like `v0.3.1` and GitHub Actions runs the tests, builds the `.deb` and publishes the release.
+Releases: bump `VERSION` in `kluis/__init__.py` and push to `main`. GitHub Actions runs the tests, builds the `.deb` and publishes release `vX.Y.Z` (once per version).
 
 License: GPL-3.0.

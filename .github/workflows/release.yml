@@ -1,8 +1,9 @@
 name: Release
-# Push a tag like v0.3.0 -> tests run, the .deb is built and attached to a GitHub release.
+# Bump VERSION in kluis/__init__.py and push to main -> tests run, the .deb is built,
+# and a release vX.Y.Z is published with it (once per version).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,10 +22,14 @@ jobs:
           python3 tests/test_photos.py
       - name: Build .deb
         run: packaging/build-deb.sh
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish release (only if this version is new)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.deb \
-            --title "Kluis ${GITHUB_REF_NAME#v}" --notes-file packaging/release-notes.md
+          V="v$(python3 -c 'import kluis; print(kluis.VERSION)')"
+          if gh release view "$V" >/dev/null 2>&1; then
+            echo "Release $V already exists; nothing to publish."
+          else
+            gh release create "$V" dist/*.deb --target "$GITHUB_SHA" \
+              --title "Kluis ${V#v}" --notes-file packaging/release-notes.md
+          fi
