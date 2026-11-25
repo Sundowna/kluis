@@ -13,9 +13,13 @@ Not affiliated with Proton AG.
 
 ## Install (about 1 minute)
 
+**Easiest:** download `kluis_<version>_all.deb` from the
+[latest release](https://github.com/Sundowna/kluis/releases/latest) and double-click it.
+
+**From source:**
+
 ```bash
-cd kluis
-./install.sh
+git clone https://github.com/Sundowna/kluis && cd kluis && ./install.sh
 ```
 
 Then open **Kluis** from the Mint menu. The first run walks you through three steps:
@@ -107,9 +111,12 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 python3 tests/test_engine.py        # 33 folder-sync scenarios
 python3 tests/test_photos.py        # 12 Proton Photos scenarios
 KLUIS_DEBUG=1 python3 -m kluis      # run from the source folder with debug logs
+packaging/build-deb.sh              # build dist/kluis_<version>_all.deb
 ```
 
 `tests/mock_cli/proton-drive` imitates the real CLI's commands, JSON output and error texts
 (taken from `ProtonDriveApps/sdk/cli`). It is used for tests only.
+
+Releases: push a tag like `v0.3.1` and GitHub Actions runs the tests, builds the `.deb` and publishes the release.
 
 License: GPL-3.0.
