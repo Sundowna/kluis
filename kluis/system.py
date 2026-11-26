@@ -21,7 +21,8 @@ def path_key(path: str) -> str:
     """A form of a local path for comparing: real path, the system's separator, and on Windows
     case-insensitive (C:\\Users\\Walter\\Docs and c:/users/walter/docs are the same folder)."""
     p = os.path.realpath(path)
-    return os.path.normcase(p) if IS_WINDOWS else p
+    # MSYS2's Python writes "/" where Windows writes "\\": compare in one spelling
+    return os.path.normcase(p).replace("/", "\\") if IS_WINDOWS else p
 
 
 def is_inside(child: str, parent: str) -> bool:
@@ -29,7 +30,8 @@ def is_inside(child: str, parent: str) -> bool:
     c, p = path_key(child), path_key(parent)
     if c == p:
         return True
-    return c.startswith(p.rstrip(os.sep) + os.sep)
+    sep = "\\" if IS_WINDOWS else "/"
+    return c.startswith(p.rstrip(sep) + sep)
 
 
 def is_strictly_inside(child: str, parent: str) -> bool:

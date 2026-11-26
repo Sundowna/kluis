@@ -73,14 +73,21 @@ def start(src: str, dest: str, journal=None) -> dict:
 
 
 def _fsync_tree(path: str):
+    # Windows flushes a file only through a handle that may write; a handle left open would also stop the
+    # folder's rename below, so each one is closed whatever happens
+    flags = os.O_RDWR | getattr(os, "O_BINARY", 0) if os.name == "nt" else os.O_RDONLY
     for dp, _dns, fns in os.walk(path):
         for fn in fns:
             try:
-                fd = os.open(os.path.join(dp, fn), os.O_RDONLY)
+                fd = os.open(os.path.join(dp, fn), flags)
+            except OSError:
+                continue
+            try:
                 os.fsync(fd)
-                os.close(fd)
             except OSError:
                 pass
+            finally:
+                os.close(fd)
 
 
 def _same_device(a: str, b: str) -> bool:
