@@ -859,8 +859,10 @@ class KluisApp(Gtk.Application):
         run_bg(self.cli.version, got, lambda e: got("?"))
 
     def search(self, q):
-        """Names Kluis already knows: synced folders (from the sync state) and folders opened in Browse (D17)."""
+        """Names Kluis already knows: synced folders (from the sync state), the folder open in Browse and all
+        its subfolders (read while counting Files/Size; D17, Walter 2026-11-26)."""
         hits = []
+        seen = set()
         for f in self.settings.folders:
             for rel in self.manager.store.load(f.id):
                 if q in rel.rsplit("/", 1)[-1].lower():
@@ -872,6 +874,17 @@ class KluisApp(Gtk.Application):
             for n in b.nodes:
                 if q in n.name.lower():
                     hits.append((f"{b.path}/{n.name}", n.name))
+            seen.update(h[0] for h in hits)
+            here = b.path.rstrip("/") + "/"
+            for root, found in list(b.stats.names.items()):
+                if not (root + "/").startswith(here):
+                    continue
+                for path, name in found:
+                    if q in name.lower() and path not in seen:
+                        seen.add(path)
+                        hits.append((path, name))
+                        if len(hits) > 200:
+                            return hits
         return hits
 
     def _write_autostart(self):

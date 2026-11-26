@@ -12,6 +12,10 @@
 - Each account keeps **its own folders, photo settings and sync history**. Only the active account syncs, and two accounts can't sync the same folder.
 - **Browse: Computers is easy to find.** *My files*, *Computers* and *Shared with me* are now buttons with icons at the top of Browse. Computers lists each computer Proton's desktop app syncs (for example a Windows PC); click one to see its folders. If *My files* is empty but a computer has folders, Browse says so.
 - The ↻ Reload button in Browse now looks like a button.
+- **Search finds files in subfolders** of the folder open in Browse, not only in that folder.
+- **More room on Browse and Photos:** the status panel at the bottom becomes one line there, with everything side by side; its chevron opens the full card.
+- The buttons at the top stay in place when you collapse or expand Quick settings.
+- If Kluis is closed or force-quit during a download, the download stops too.
 
 ### Notes
 - Nothing changes for one account: your folders and history stay where they were.

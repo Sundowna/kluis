@@ -101,6 +101,8 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
 - **Quick settings** column and **Settings:** your Proton Drive folder (move it safely), start at login,
   start hidden, check interval, theme, notifications, home location, Kluis update notices (never installs
   by itself), CLI updates, sign out, and "Copy diagnostics" (no email, tokens or private paths).
+- **Search** (`Ctrl+F`) finds names in your synced folders and in the folder open in Browse, including all its
+  subfolders. The CLI has no server-side search, so Kluis searches what it has read.
 - Shortcuts: `Ctrl+1…6` tabs, `Ctrl+F` search, `Ctrl+R` sync, `Ctrl+N` add folder, `Ctrl+,` settings, `Ctrl+Q` quit.
 
 ## How it works

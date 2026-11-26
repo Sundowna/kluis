@@ -1461,6 +1461,41 @@ def f22(d, env, app):
     """F-012…F-014 (FEATURES.md): section buttons; My files empty but a computer syncs folders → Browse says so."""
     yield main_ready(app)
     b = app.window.browser
+    # F-016: the status panel is one line on Browse and Photos, the full card elsewhere; nothing is left out
+    sp = app.window.status_panel
+    d.press("<Primary>1")
+    yield 0.6
+    full_h = sp.get_allocated_height()
+    d.expect(not sp.compact and not sp.toggle.get_visible(), "F-016 Home: full status card, no chevron")
+    d.press("<Primary>3")
+    yield 0.8
+
+    def row_y(w):
+        return w.translate_coordinates(app.window, 0, 0)[1] + w.get_allocated_height() // 2
+
+    cells = [sp.head, sp.cells["enc"][2], sp.cells["prog"][2], sp.cells["today"][2], sp.graph, sp.rates]
+    d.expect(sp.compact and sp.get_allocated_height() < full_h * 0.6,
+             f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
+    d.expect(all(w.get_mapped() for w in cells), "F-016 status, Encryption, Last run, Total today, graph, rates all shown")
+    ys = [row_y(w) for w in cells]
+    d.expect(max(ys) - min(ys) <= 12, f"F-016 side by side on one line ({ys})")
+    d.shot("compact status line")
+    d.click(sp.toggle)
+    yield 0.6
+    d.expect(not sp.compact and sp.get_allocated_height() >= full_h - 2, "F-016 the chevron opens the full card")
+    d.press("<Primary>1")
+    yield 0.4
+    d.press("<Primary>3")
+    yield 0.4
+    d.expect(not sp.compact, "F-016 Browse keeps the full card you chose")
+    d.click(sp.toggle)
+    yield 0.4
+    d.press("<Primary>4")
+    yield 0.8
+    d.expect(sp.compact and sp.toggle.get_visible(), "F-016 Photos: one line too")
+    d.press("<Primary>3")
+    yield 0.4
+
     d.press("<Primary>3")
     yield until(lambda: d.has_text("Folders synced from your computers are under Computers: WalterXPS"), 20,
                 "F-012 empty My files points to Computers")
@@ -1479,6 +1514,18 @@ def f22(d, env, app):
                 "F-013 double-click opens the computer's synced folders")
     d.expect(not any(c.startswith("filesystem download") for c in harness.calls(env.tmp)[calls_before:]),
              "F-013 opening a computer never downloads it")
+    # F-017: search finds names in subfolders of the folder open in Browse
+    win = app.window
+    win.search.set_text("plan")
+    yield until(lambda: d.find("plan.txt", root=win.search_list) is not None, 30,
+                "F-017 search finds plan.txt in the Documents subfolder")
+    d.shot("search in subfolders")
+    d.click("plan.txt", root=win.search_list)
+    yield until(lambda: b.path == "/devices/WalterXPS/Documents" and browse_names(app) == ["plan.txt"], 20,
+                "F-017 a hit opens the folder it is in")
+    win.search.set_text("")
+    b.go("/devices/WalterXPS")
+    yield until(lambda: browse_names(app) == ["Desktop", "Documents"], 20, "back in WalterXPS")
     d.shot("WalterXPS folders")
     d.click("Section: My files")
     yield until(lambda: b.path == "/my-files" and d.has_text("My files is empty"), 20, "F-014 back via the section row")

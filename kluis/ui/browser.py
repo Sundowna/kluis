@@ -43,6 +43,8 @@ class FolderStats:
         self.cli = cli
         self.on_ready = on_ready
         self.cache: dict[str, tuple[int, int]] = {}
+        # every name found while counting, for search in subfolders: folder -> [(remote path, name)]
+        self.names: dict[str, list[tuple[str, str]]] = {}
         self._q: collections.deque[str] = collections.deque()
         self._busy = False
         self._lock = threading.Lock()
@@ -64,6 +66,15 @@ class FolderStats:
         for k in list(self.cache):
             if k == path or k.startswith(path + "/") or path.startswith(k + "/"):
                 self.cache.pop(k, None)
+                self.names.pop(k, None)
+
+    def clear(self):
+        self.cache.clear()
+        self.names.clear()
+
+    @property
+    def busy(self) -> bool:
+        return self._busy or bool(self._q)
 
     def _work(self):
         while True:
@@ -73,16 +84,18 @@ class FolderStats:
                     return
                 path = self._q.popleft()
             try:
-                files, size, stack = 0, 0, [path]
+                files, size, stack, found = 0, 0, [path], []
                 while stack:
                     p = stack.pop()
                     for n in self.cli.list(p):
+                        found.append((rjoin(p, n.name), n.name))
                         if n.is_folder:
                             stack.append(rjoin(p, n.name))
                         elif n.type == "file":
                             files += 1
                             size += n.size or 0
                 self.cache[path] = (files, size)
+                self.names[path] = found
                 GLib.idle_add(lambda p=path: (self.on_ready(p), False)[1])
             except CliError:
                 continue
@@ -334,6 +347,7 @@ class BrowserPage(Gtk.Box):
     def _stats_ready(self, path):
         if os.path.dirname(path.rstrip("/")) == self.path.rstrip("/"):
             self._fill(keep_sel=True)
+        self.app.window.refresh_search()          # a search may now find more in subfolders
 
     # ---------- selection ----------
     def _toggled(self, _r, tpath):

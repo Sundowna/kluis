@@ -32,9 +32,11 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-012 When *My files* is empty but Proton's desktop app syncs folders from a computer, Browse says "Folders synced from your computers are under Computers: …" with *Open Computers* — `tests/gui/flows.py: F22`
 - F-014 Browse shows its sections as buttons with icons (*My files*, *Computers*, *Shared with me*), the current one highlighted; *↻ Reload* has a normal button border — `tests/gui/flows.py: F22`
 - F-013 Computers (`/devices`) list each computer as a folder; opening one shows the folders it syncs — `tests/gui/flows.py: F22`, `tests/test_units.py: Proton accounts`
+- F-017 Search (Ctrl+F) also finds names in all subfolders of the folder open in Browse (read in the background; "Still reading the subfolders…" until done); a hit opens the folder it is in — `tests/gui/flows.py: F22`
 
 ## Window
 
+- F-016 On Browse and Photos the bottom status panel is one line (status, Encryption, Last run, Total today, a slim graph and ↓/↑ side by side); its chevron opens the full card, which that tab then keeps — `tests/gui/flows.py: F22`
 - F-015 Collapsing or expanding Quick settings doesn't move *Sync now*, *Pause* or the account button — `tests/gui/flows.py: F13`
 
 ## Removed

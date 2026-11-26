@@ -80,6 +80,7 @@
 .kluis .k-avatar-big .k-avatar-text { font-size: 22px; }
 .kluis button.k-account-btn { padding: 2px 8px 2px 2px; }
 .kluis button.k-account-row { padding: 6px; }
+.kluis .k-panel.k-panel-compact { padding: 6px 12px 6px 16px; }
 .kluis .k-section-head { font-size: 12px; font-weight: 700; color: @k_muted; }
 .kluis menu, .kluis .k-menu { padding: 6px; }
 .kluis modelbutton { min-height: 32px; padding: 0 10px; border-radius: 6px; }

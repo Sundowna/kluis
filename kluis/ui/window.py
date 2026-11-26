@@ -204,6 +204,10 @@ class MainWindow(Gtk.ApplicationWindow):
             self.timeline.pack_start(hbox(dot, v, spacing=10), False, False, 0)
         self.timeline.show_all()
 
+    def refresh_search(self):
+        if self.search_pop.get_visible() and len(self.search.get_text().strip()) >= 2:
+            self._search_changed(self.search)
+
     def _search_changed(self, entry):
         q = entry.get_text().strip().lower()
         clear(self.search_list)
@@ -217,6 +221,10 @@ class MainWindow(Gtk.ApplicationWindow):
         for remote, name in hits:
             self.search_list.pack_start(button(name, lambda r=remote: self._open_hit(r), "k-flat",
                                                tooltip=remote), False, False, 0)
+        b = self.browser
+        if b.loaded_once and b.stats.busy:
+            self.search_list.pack_start(label(_("Still reading the subfolders of “{f}”…").format(
+                f=b.crumb_text().split(" › ")[-1]), "k-muted", "k-s12"), False, False, 0)
         self.search_list.show_all()
         self.search_pop.popup()
 
@@ -370,7 +378,7 @@ class MainWindow(Gtk.ApplicationWindow):
         b = self.browser
         b.path = "/my-files"
         b.nodes = []
-        b.stats.cache.clear()
+        b.stats.clear()
         b.loaded_once = False
         self.shared.loaded = False
         self.shared.items = []
@@ -392,6 +400,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.app.save_soon()
         if key == "activity":
             self.app.manager.mark_read()
+        self.status_panel.set_tab(key)
         page = self.stack.get_visible_child()
         if hasattr(page, "on_shown"):
             page.on_shown()
