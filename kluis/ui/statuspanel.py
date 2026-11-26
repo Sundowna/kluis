@@ -170,7 +170,13 @@ class StatusPanel(Gtk.Box):
         self.right.set_spacing(8 if on else 4)
         self.right.set_orientation(H if on else V)
         self.right.reorder_child(self.graph, 0 if on else 1)
-        self.graph.set_size_request(-1, 24 if on else 72)
+        # one line: the slim graph keeps a fixed width and the free room goes to the text, centred in the line
+        self.graph.set_size_request(140 if on else -1, 24 if on else 72)
+        self.graph.set_hexpand(not on)
+        self.child_set_property(self.left, "expand", on)
+        self.child_set_property(self.right, "expand", not on)
+        self.grid.set_halign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
+        self.grid.set_hexpand(on)
         self.graph.set_valign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
         self.toggle_img.set_from_icon_name("kluis-chevron-up-symbolic" if on else "kluis-chevron-down-symbolic",
                                            Gtk.IconSize.BUTTON)

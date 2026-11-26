@@ -1485,6 +1485,10 @@ def f22(d, env, app):
     d.expect(all(w.get_mapped() for w in cells), "F-016 status, Encryption, Last run, Total today, graph, rates all shown")
     ys = [row_y(w) for w in cells]
     d.expect(max(ys) - min(ys) <= 4, f"F-016 side by side, vertically centred on one line ({ys})")
+    if env.size[0] >= 1440:
+        cut = [w.get_text() for w in [sp.head] + [c for k in ("enc", "prog", "today") for c in sp.cells[k][1:3]]
+               if w.get_layout().is_ellipsized()]
+        d.expect(not cut, f"F-016 with room to spare nothing is shortened with … ({cut})")
     d.shot("compact status line")
     d.click(sp.toggle)
     yield 0.6

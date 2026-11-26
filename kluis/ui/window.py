@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import unquote, urlparse
 
-from gi.repository import Atk, Gdk, Gio, GLib, Gtk
+from gi.repository import Atk, Gdk, Gio, GLib, Gtk, Pango
 
 from ..i18n import _
 from .accounts import AccountButton
@@ -288,8 +288,9 @@ class MainWindow(Gtk.ApplicationWindow):
         col.set_size_request(100, -1)
         col.set_hexpand(False)
         allb = Gtk.MenuButton()
-        allb.add(vbox(label("⚙", "k-h2", xalign=0.5), label(_("All settings…"), "k-s12", xalign=0.5, wrap=True,
-                                                             max_chars=12), spacing=0))
+        all_lbl = label(_("All settings…"), "k-s12", xalign=0.5, wrap=True, max_chars=12)
+        all_lbl.set_line_wrap_mode(Pango.WrapMode.WORD)
+        allb.add(vbox(label("⚙", "k-h2", xalign=0.5), all_lbl, spacing=0))
         a11y(allb, _("All settings…"))
         self.all_menu = popover_menu(allb, [
             (_("+ Add folder"), self.app.add_folder_dialog, False, "Ctrl+N"),
@@ -315,7 +316,10 @@ class MainWindow(Gtk.ApplicationWindow):
             st = label("", "k-qs-state", xalign=0.5)
             st.set_line_wrap(True)
             st.set_max_width_chars(12)
-            b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=12), st, spacing=2))
+            name = label(title, xalign=0.5, wrap=True, max_chars=12)
+            name.set_line_wrap_mode(Pango.WrapMode.WORD)    # "Notifications", never "Notificatio-ns"
+            st.set_line_wrap_mode(Pango.WrapMode.WORD)
+            b.add(vbox(name, st, spacing=2))
             b.connect("clicked", lambda _b, k=key: self.app.quick_toggle(k))
             styled(b, "k-qs-toggle")
             a11y(b, title)
