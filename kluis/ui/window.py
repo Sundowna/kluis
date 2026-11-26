@@ -145,7 +145,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def _sidebar(self):
         side = vbox(spacing=4)
         styled(side, "k-panel", "k-side")
-        side.set_size_request(280, -1)
+        side.set_size_request(250, -1)          # with Quick settings, every tab fits 960 px (half of 1920)
         head = Gtk.Box(spacing=10, margin_bottom=10)
         head.pack_start(logo_image(24), False, False, 0)
         head.pack_start(label("Kluis", "k-h2"), True, True, 0)

@@ -92,6 +92,7 @@
 .kluis button.k-link label { color: @k_accent; }
 .kluis button.k-danger label, .kluis button.destructive-action label { color: @k_error; }
 .kluis button.destructive-action { background-color: alpha(@k_error, 0.14); border-color: @k_error; }
+.kluis .k-panel.k-qs { padding: 12px 10px; }
 .kluis .k-qs-toggle { min-height: 56px; padding: 6px 4px; }
 .kluis .k-qs-toggle label { font-size: 12px; }
 .kluis .k-qs-head { min-height: 36px; padding: 0 8px; }
