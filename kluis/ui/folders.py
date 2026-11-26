@@ -81,7 +81,7 @@ class FolderCard(Gtk.Box):
         a11y(self.size, _("Size of {n}").format(n=folder.name))
         top.pack_start(self.name, False, False, 0)
         top.pack_start(self.size, False, False, 0)
-        more = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("view-more-symbolic", Gtk.IconSize.BUTTON),
+        more = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("kluis-more-symbolic", Gtk.IconSize.BUTTON),
                               tooltip_text=_("More"))
         styled(more, "k-flat")
         a11y(more, _("More for {n}").format(n=folder.name))

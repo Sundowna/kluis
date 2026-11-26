@@ -105,3 +105,26 @@ dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k
 .kluis list row:hover { background-color: alpha(@k_surface, 0.7); }
 .kluis list row:selected { background-color: @k_accent_soft; }
 .kluis scrolledwindow, .kluis viewport { background-color: transparent; }
+
+/* Switches, check boxes and radio buttons: Kluis's own look in every state, whatever the desktop theme
+   draws (Mint-Y adds ✓/× images and its own colours). */
+.kluis switch, .kluis switch:hover, .kluis switch:backdrop, .kluis switch:disabled {
+    background-image: none; background-color: @k_line; border: 1px solid @k_line; box-shadow: none;
+    border-radius: 13px; min-width: 44px; min-height: 24px; color: transparent; font-size: 0; }
+.kluis switch:checked, .kluis switch:checked:hover, .kluis switch:checked:backdrop {
+    background-image: none; background-color: @k_accent; border-color: @k_accent; }
+.kluis switch:disabled { opacity: 0.45; }
+.kluis switch slider, .kluis switch:hover slider, .kluis switch:backdrop slider, .kluis switch:checked slider {
+    background-image: none; background-color: #ffffff; border: none; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    min-width: 20px; min-height: 20px; margin: 2px; border-radius: 10px; }
+.kluis switch image { color: transparent; -gtk-icon-source: none; opacity: 0; }
+.kluis check, .kluis radio, .kluis check:hover, .kluis radio:hover, .kluis check:backdrop, .kluis radio:backdrop {
+    background-image: none; background-color: @k_surface; border: 1px solid @k_muted; box-shadow: none;
+    min-width: 16px; min-height: 16px; -gtk-icon-source: none; color: @k_on_accent; }
+.kluis check { border-radius: 4px; }
+.kluis radio { border-radius: 9px; }
+.kluis check:checked, .kluis radio:checked, .kluis check:checked:hover, .kluis radio:checked:hover {
+    background-color: @k_accent; border-color: @k_accent; }
+.kluis check:checked { -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); }
+.kluis radio:checked { -gtk-icon-source: -gtk-icontheme("media-record-symbolic"); }
+.kluis checkbutton label, .kluis radiobutton label { color: @k_text; }

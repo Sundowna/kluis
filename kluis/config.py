@@ -99,6 +99,7 @@ class Settings:
     autostart: bool = True
     notifications: str = "problems"    # all | problems | off
     theme: str = "system"              # system | light | dark
+    accent: str = "green"              # green | purple
     skip_thumbnails: bool = False
     paused: bool = False
     onboarded: bool = False
@@ -202,8 +203,10 @@ def migrate(raw: dict) -> dict:
     raw["interval_minutes"] = min(INTERVALS, key=lambda x: (abs(x - iv), x))
     if raw.get("theme") not in ("system", "light", "dark"):
         raw["theme"] = "system"
+    if raw.get("accent") not in ("green", "purple"):
+        raw["accent"] = "green"
     for f in raw.get("folders", []) or []:
-        if isinstance(f, dict) and f.get("mode") not in MODES:
+        if isinstance(f, dict) and "mode" in f and f["mode"] not in MODES:
             f["mode"] = "backup"          # unknown mode: the one that never deletes or changes local files
     raw["config_version"] = CONFIG_VERSION
     return raw

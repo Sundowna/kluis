@@ -438,6 +438,8 @@ class SettingsDialog:
                               lambda v: app.set_setting("interval_minutes", int(v)), _("Check Proton Drive"))
         self.theme = combo([("system", _("System")), ("light", _("Light")), ("dark", _("Dark"))], s.theme,
                            lambda v: app.set_setting("theme", v), _("Theme"))
+        self.accent = combo([("green", _("Green")), ("purple", _("Purple"))], s.accent,
+                            lambda v: app.set_setting("accent", v), _("Accent colour"))
         self.notify = combo([("all", _("All")), ("problems", _("Problems only")), ("off", _("Off"))], s.notifications,
                             lambda v: app.set_setting("notifications", v), _("Notifications"))
         self.beta = switch(s.beta, lambda v: app.set_setting("beta", v), _("Beta access"))
@@ -449,6 +451,7 @@ class SettingsDialog:
             (_("Start hidden"), _("Only the panel icon shows at login."), self.hidden),
             (_("Check Proton Drive"), _("Local changes are watched instantly."), self.interval),
             (_("Theme"), None, self.theme),
+            (_("Accent colour"), _("Purple matches other Proton apps."), self.accent),
             (_("Notifications"), None, self.notify),
         ]
         if len(complete_languages()) > 1:

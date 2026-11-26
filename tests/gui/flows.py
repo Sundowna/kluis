@@ -583,11 +583,11 @@ def f9(d, env, app):
     g = p.gallery
     yield until(lambda: g.month_count() == 24, 20, "24 months")
     d.expect(not p.down.is_open and not p.up.is_open, "both cards collapsed")
-    d.expect(p.down.chev.get_icon_name()[0] == "pan-down-symbolic", "chevron down when closed")
+    d.expect(p.down.chev.get_icon_name()[0] == "kluis-chevron-down-symbolic", "chevron down when closed")
     d.shot("photos tab")
     p.down.toggle()
     yield 0.4
-    d.expect(p.down.is_open and p.down.chev.get_icon_name()[0] == "pan-up-symbolic", "header click opens, chevron up")
+    d.expect(p.down.is_open and p.down.chev.get_icon_name()[0] == "kluis-chevron-up-symbolic", "header click opens, chevron up")
     d.expect(d.find("Folder layout") is not None and d.find("Also save albums as folders"), "path row, layout, albums")
     d.shot("download open")
     p.down.switch.set_active(True)
@@ -788,6 +788,8 @@ def f12(d, env, app):
             d.get("Check Proton Drive", root=dlg).set_active_id("30")
             d.get("Theme", root=dlg).set_active_id("light")
             d.get("Notifications", root=dlg).set_active_id("problems")
+            d.get("Accent colour", root=dlg).set_active_id("purple")
+            results["purple"] = app.theme.color("accent") == tuple(int("6d4aff"[i:i + 2], 16) / 255 for i in (0, 2, 4))
             results["applied"] = app.theme.dark is False
             d.shot("settings")
             d.click("Copy diagnostics", root=dlg)
@@ -803,6 +805,7 @@ def f12(d, env, app):
     d.expect("err" not in results, results.get("err", ""))
     d.expect(results["first"] == "Your Proton Drive folder" and results["ok"], "first section + Change…")
     d.expect(results["applied"], "theme applies instantly")
+    d.expect(results.get("purple"), "purple accent applies instantly")
     yield until(lambda: app.window.toast_text == "Copied", 10, "Copied toast")
     clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text() or ""
     d.expect("Kluis " in clip and "me@proton.me" not in clip and "token" not in clip.lower(),
@@ -810,7 +813,7 @@ def f12(d, env, app):
     import kluis.config as kc
     s2 = kc.Settings.load()
     d.expect(s2.autostart and s2.start_minimized and s2.interval_minutes == 30 and s2.theme == "light"
-             and s2.notifications == "problems", "every control persists")
+             and s2.notifications == "problems" and s2.accent == "purple", "every control persists")
     d.expect(os.path.exists(os.path.join(os.environ["XDG_CONFIG_HOME"], "autostart", "kluis.desktop")),
              "autostart .desktop written")
     d.shot("light theme applied")
@@ -879,6 +882,8 @@ def f13(d, env, app):
     d.click(app.window.qs_btn)
     yield 0.5
     d.expect(not col.get_visible() and app.window.qs_header_btn.get_visible(), "column gone; button in header")
+    icons = app.window.qs_header_btn.get_child().get_children()
+    d.expect(icons and all(i.get_visible() for i in icons), "the header button shows its sliders icon and chevron")
     d.expect(app.window.stack.get_allocated_width() > w_before, "main area widens")
     d.shot("collapsed")
     import kluis.config as kc

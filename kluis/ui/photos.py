@@ -42,7 +42,7 @@ class CollapsibleCard(Gtk.Box):
         inner.pack_start(label(title, "k-h3"), False, False, 0)
         self.status = label("", "k-muted", "k-s13", ellipsize="end")
         inner.pack_start(self.status, True, True, 0)
-        self.chev = Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON)
+        self.chev = Gtk.Image.new_from_icon_name("kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON)
         inner.pack_end(self.chev, False, False, 0)
         self.toggle_area.add(inner)
         self.toggle_area.connect("button-release-event", lambda *_: (self.toggle(), True)[1])
@@ -78,7 +78,7 @@ class CollapsibleCard(Gtk.Box):
     def toggle(self, open_=None):
         o = (not self.is_open) if open_ is None else open_
         self.rev.set_reveal_child(o)
-        self.chev.set_from_icon_name("pan-up-symbolic" if o else "pan-down-symbolic", Gtk.IconSize.BUTTON)
+        self.chev.set_from_icon_name("kluis-chevron-up-symbolic" if o else "kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON)
         a11y(self.toggle_area, (_("Collapse {t}") if o else _("Expand {t}")).format(t=self.title))
         if self.on_toggle:
             self.on_toggle(o)
@@ -504,6 +504,8 @@ class PhotosPage(Gtk.Box):
         self.up.body.pack_start(label(_("Photos you downloaded above are never uploaded again."), "k-muted",
                                       "k-s12", wrap=True, max_chars=20), False, False, 0)
         cards = Gtk.Box(spacing=12, homogeneous=True)
+        for c in (self.down, self.up):
+            c.set_valign(Gtk.Align.START)          # an open card doesn't stretch the closed one
         cards.pack_start(self.down, True, True, 0)
         cards.pack_start(self.up, True, True, 0)
         self.pack_start(cards, False, False, 0)
@@ -548,7 +550,7 @@ class PhotosPage(Gtk.Box):
         """A link-style button whose own label ellipsizes long paths (it never widens the window)."""
         from gi.repository import Pango
         b = Gtk.Button()
-        lb = Gtk.Label(ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=22, xalign=0)
+        lb = Gtk.Label(ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=48, xalign=0)
         b.add(lb)
         b.kluis_label = lb
         styled(b, "k-link")

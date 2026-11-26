@@ -90,6 +90,9 @@ check(s.notifications == "problems" and s.interval_minutes == 15 and s.theme == 
 check(len(s.folders) == 2 and s.folders[0].id == "abc" and s.folders[1].mode == "backup",
       "folders kept; unknown mode falls back to the safest (backup)")
 check(s.vpn_view and s.root_dir.endswith("Proton Drive") and s.config_version == 2, "new keys get defaults")
+check(Settings.from_dict({"folders": [{"local": "/x", "remote": "/my-files/x"}]}).folders[0].mode == "two-way",
+      "a folder saved without a mode gets the default (two-way)")
+check(Settings.from_dict({"accent": "pink"}).accent == "green", "unknown accent falls back to green")
 check(s.photos.download and s.photos.download_dir == "/p", "photo settings kept")
 
 print("add-folder validation (§3.3)")
@@ -132,7 +135,7 @@ check("walter@proton.me" not in txt and "abc123" not in txt and "A" * 40 not in 
 check("<path>" in txt and "/home/x/Docs/b.txt" in txt.replace("~", "/home/x"), "paths outside synced folders hidden")
 
 print("contrast (§5): text ≥ 4.5:1, UI parts ≥ 3:1, both themes")
-from kluis.ui.theme import TOKENS  # noqa: E402
+from kluis.ui.theme import ACCENTS, TOKENS  # noqa: E402
 
 
 def lum(h):
@@ -146,7 +149,11 @@ def ratio(a, b):
     return (la + 0.05) / (lb + 0.05)
 
 
-for theme, t in TOKENS.items():
+variants = dict(TOKENS)
+for acc, modes in ACCENTS.items():
+    for mode, over in modes.items():
+        variants[f"{mode}+{acc}"] = {**TOKENS[mode], **over}
+for theme, t in variants.items():
     for fg in ("text", "muted"):
         for bg in ("bg", "panel", "surface"):
             r = ratio(t[fg], t[bg])

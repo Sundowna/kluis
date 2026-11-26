@@ -65,6 +65,14 @@ for m in sorted(mods):
     except Exception as e:  # noqa: BLE001
         problems.append(f"import {m}: {type(e).__name__}: {e}")
 
+# every Kluis icon the UI names ships with Kluis (desktop themes like Mint-Y lack many symbolic icons)
+import re  # noqa: E402
+icon_dir = os.path.join(REPO, "kluis", "data", "icons")
+for path in glob.glob(os.path.join(REPO, "kluis", "ui", "*.py")):
+    for name in set(re.findall(r'"(kluis-[a-z-]+-symbolic)"', open(path).read())):
+        if not os.path.exists(os.path.join(icon_dir, name + ".svg")):
+            problems.append(f"{os.path.relpath(path, REPO)} uses icon {name}, but {name}.svg is not in kluis/data/icons")
+
 # Cairo drawing (map, gallery, graph) needs the gi ↔ pycairo bridge: python-cairo / python3-gi-cairo
 try:
     import gi

@@ -73,7 +73,7 @@ class KluisApp(Gtk.Application):
         from .ui.theme import Theme
         self.theme = Theme()
         self.theme.listeners.append(lambda _d: self.window and self.window.queue_draw())
-        self.theme.apply(self.settings.theme)
+        self.theme.apply(self.settings.theme, self.settings.accent)
         self._write_autostart()
 
         for name, cb, accel in (("sync", lambda *_: self.manager.request(), "<Ctrl>r"),
@@ -404,6 +404,8 @@ class KluisApp(Gtk.Application):
         s.save()
         if key == "theme":
             self.theme.apply(value)
+        elif key == "accent":
+            self.theme.apply(s.theme, value)
         elif key == "autostart":
             self._write_autostart()
         elif key == "skip_thumbnails":

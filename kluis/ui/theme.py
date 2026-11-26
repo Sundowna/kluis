@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
-from gi.repository import Gdk, Gio, GLib, Gtk
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 log = logging.getLogger("kluis.theme")
@@ -20,6 +25,7 @@ class Theme:
         Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), self.provider,
                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.choice = "system"
+        self.accent = "green"
         self.dark = True
         self.listeners = []
         self._portal_dark = None
@@ -54,11 +60,16 @@ class Theme:
         name = (Gtk.Settings.get_default().get_property("gtk-theme-name") or "").lower()
         return "dark" in name
 
-    def apply(self, choice: str):
+    def apply(self, choice: str, accent: str | None = None):
         self.choice = choice
+        if accent:
+            self.accent = accent
         dark = self.system_dark() if choice == "system" else choice == "dark"
         self.dark = dark
-        css = open(os.path.join(DATA, f"kluis-{'dark' if dark else 'light'}.css"), encoding="utf-8").read()
+        mode = "dark" if dark else "light"
+        css = open(os.path.join(DATA, f"kluis-{mode}.css"), encoding="utf-8").read()
+        for name, value in ACCENTS.get(self.accent, {}).get(mode, {}).items():
+            css = re.sub(rf"@define-color k_{name} #[0-9a-fA-F]{{6}};", f"@define-color k_{name} {value};", css)
         css += "\n" + open(os.path.join(DATA, "app.css"), encoding="utf-8").read()
         self.provider.load_from_data(css.encode())
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", dark)
@@ -67,7 +78,8 @@ class Theme:
 
     def color(self, name: str) -> tuple[float, float, float]:
         """Token colour as RGB floats for Cairo drawing (§5 table)."""
-        hexv = TOKENS["dark" if self.dark else "light"][name]
+        mode = "dark" if self.dark else "light"
+        hexv = ACCENTS.get(self.accent, {}).get(mode, {}).get(name) or TOKENS[mode][name]
         return tuple(int(hexv[i:i + 2], 16) / 255 for i in (1, 3, 5))
 
 
@@ -78,6 +90,16 @@ TOKENS = {
     "light": {"bg": "#f0eff7", "panel": "#faf9fe", "surface": "#ebeaf3", "line": "#d4d3de", "text": "#24222d",
               "muted": "#555460", "mapdot": "#bdbcca", "accent": "#00704e", "accent_soft": "#c3ecd9",
               "on_accent": "#fcfcfc", "upload": "#af3b43", "warn": "#a16100", "error": "#b63132"},
+}
+
+
+# Accent colours other than the kit's green. Purple: Proton's own #6d4aff (light) and a lighter shade
+# that stays readable on the dark background. Contrast is unit-tested like the green.
+ACCENTS = {
+    "purple": {
+        "dark": {"accent": "#9b7dff", "accent_soft": "#3a2d70", "on_accent": "#160b38"},
+        "light": {"accent": "#6d4aff", "accent_soft": "#e2dcff", "on_accent": "#ffffff"},
+    },
 }
 
 

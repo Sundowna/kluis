@@ -233,7 +233,7 @@ class BrowserPage(Gtk.Box):
             b = button(ROOT_NAMES.get(target, p), lambda t=target: self.go(t), "k-flat",
                        "k-bold" if i == len(parts) - 1 else "")
             self.crumbs.pack_start(b, False, False, 0)
-        roots = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON))
+        roots = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON))
         styled(roots, "k-flat")
         a11y(roots, _("Sections"))
         from .common import popover_menu

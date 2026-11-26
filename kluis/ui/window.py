@@ -140,7 +140,7 @@ class MainWindow(Gtk.ApplicationWindow):
         head = Gtk.Box(spacing=10, margin_bottom=10)
         head.pack_start(logo_image(24), False, False, 0)
         head.pack_start(label("Kluis", "k-h2"), True, True, 0)
-        gear = Gtk.Button.new_from_icon_name("emblem-system-symbolic", Gtk.IconSize.BUTTON)
+        gear = Gtk.Button.new_from_icon_name("kluis-gear-symbolic", Gtk.IconSize.BUTTON)
         styled(gear, "k-flat")
         gear.set_tooltip_text(_("Settings (Ctrl+,)"))
         gear.connect("clicked", lambda *_: self.app.open_settings())
@@ -238,6 +238,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.pause_btn = button(_("⏸ Pause"), lambda: self.app.set_paused(not self.app.settings.paused),
                                 name=_("Pause"))
         self.qs_header_btn = self._qs_button()
+        self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
         self.qs_header_btn.set_no_show_all(True)
         row.pack_end(self.qs_header_btn, False, False, 0)
         row.pack_end(self.pause_btn, False, False, 0)
@@ -246,8 +247,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _qs_button(self):
         b = Gtk.Button()
-        box = hbox(Gtk.Image.new_from_icon_name("preferences-system-symbolic", Gtk.IconSize.BUTTON),
-                   Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON), spacing=2)
+        box = hbox(Gtk.Image.new_from_icon_name("kluis-sliders-symbolic", Gtk.IconSize.BUTTON),
+                   Gtk.Image.new_from_icon_name("kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON), spacing=2)
         b.add(box)
         styled(b, "k-qs-head")
         b.connect("clicked", lambda *_: self.set_qs_collapsed(not self.app.settings.qs_collapsed))

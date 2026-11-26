@@ -112,3 +112,12 @@ pull in `python-cairo`, and without it every Cairo drawing (Home map, photo gall
 The pacman package now depends on `python-cairo` and the `.deb` on `python3-gi-cairo`. Kluis checks for the bridge at
 start (`gi.require_foreign("cairo")`), `tests/test_lint.py` checks it, and every GUI flow now fails on any uncaught
 exception in a GTK callback (before, those were only printed).
+
+**D27 · Purple accent (Walter's request, 2026-11-26).** Settings → General → Accent colour: Green (the kit) or
+Purple, for people used to Proton's apps. Light uses Proton's own #6d4aff, dark a lighter #9b7dff so text and
+controls keep ≥ 4.5:1 / ≥ 3:1 contrast (unit-tested for every theme × accent). The logo stays green.
+
+**D28 · Controls look the same on every desktop theme.** Found on the installed app: Mint-Y draws its own ✓/×
+images and colours on switches, and lacks some symbolic icons (the Quick settings button was blank). Switches,
+check boxes and radio buttons are now fully styled by Kluis in every state, and the UI's icons (sliders, gear,
+chevrons, ⋯) ship with Kluis. A lint test fails if a named Kluis icon is missing.
