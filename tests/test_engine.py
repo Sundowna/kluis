@@ -93,13 +93,16 @@ check(eng.sync(f).message == "Up to date", "stable after conflict")
 os.remove(f"{L}/sub/b.md")
 os.remove(f"{CLOUD}/Notes/r.md")
 r = eng.sync(f)
+check(r.status == "guard" and r.pending_trash == 2 and os.path.exists(f"{CLOUD}/Notes/sub/b.md"),
+      "mass-deletion guard asks first (2 of 6 files > 10 %) and changes nothing")
+r = eng.sync(f, allow_trash=r.pending_trash)   # the user clicked "Move them to the trash"
 check(not os.path.exists(f"{CLOUD}/Notes/sub/b.md"), "local delete -> Proton Drive trash")
 check(any("b.md" in n for n in os.listdir(os.path.join(TMP, "cloud", ".trash"))), "remote copy is in the trash")
 check(not os.path.exists(f"{L}/r.md"), "remote delete -> local Trash")
 check(eng.sync(f).message == "Up to date", "stable after deletes")
 
 shutil.rmtree(f"{L}/sub")
-eng.sync(f)
+eng.sync(f, allow_trash=10)
 check(not os.path.exists(f"{CLOUD}/Notes/sub"), "deleted folder trashed remotely")
 
 write(f"{L}/new/deep/x.md", "x")
@@ -146,7 +149,7 @@ check(eng.sync(fm).message == "Up to date", "mirror stable")
 print("cancel / logged out")
 cli.logout()
 r = eng.sync(f)
-check(r.status == "error" and "login" in r.message.lower(), "logged-out state surfaces clearly")
+check(r.status == "hold" and r.hold_kind == "signed-out", "logged-out state pauses syncing clearly (§7.10)")
 
 print(f"\n{passed} checks passed")
 shutil.rmtree(TMP, ignore_errors=True)

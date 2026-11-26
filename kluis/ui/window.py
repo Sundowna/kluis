@@ -1,500 +1,463 @@
-"""Main window: status hero, synced-folder cards, Drive browser, activity."""
+"""Main window (HANDOVER §1 layout): sidebar · main (header, page, status panel) · Quick settings column."""
 from __future__ import annotations
 
 import os
 import time
 from urllib.parse import unquote, urlparse
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Atk, Gdk, Gio, GLib, Gtk
 
-from ..config import MODES
+from ..i18n import _
+from .activity import ActivityPage
 from .browser import BrowserPage
-from .common import (WEB_URL, ago, icon_button, label, mode_glyph, open_path, open_uri, popover_menu,
-                     short_path, styled, text_button)
+from .common import (WEB_URL, a11y, button, clear, hbox, label, open_uri, popover_menu, set_button_text, set_class,
+                     styled, vbox)
+from .folders import FoldersPage
+from .home import HomePage
 from .onboarding import Onboarding
 from .photos import PhotosPage
+from .shared import SharedPage
+from .statuspanel import StatusPanel
 
-STATE_DOT = {"ok": "ok", "syncing": "sync", "queued": "sync", "conflict": "warn", "error": "err"}
-
-
-class FolderRow(Gtk.ListBoxRow):
-    def __init__(self, app, folder):
-        super().__init__(activatable=False, selectable=False)
-        self.app = app
-        self.fid = folder.id
-        card = Gtk.Box(spacing=14)
-        styled(card, "k-card")
-        self.badge = label("", "k-badge", xalign=0.5)
-        self.badge.set_valign(Gtk.Align.CENTER)
-        card.pack_start(self.badge, False, False, 0)
-
-        mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, valign=Gtk.Align.CENTER)
-        self.title = label("", "k-card-title", ellipsize=True)
-        self.route = label("", "k-dim", "k-small", ellipsize=True)
-        st = Gtk.Box(spacing=7)
-        self.dot = Gtk.Box(valign=Gtk.Align.CENTER)
-        styled(self.dot, "k-dot")
-        self.status = label("", "k-small", ellipsize=True)
-        st.pack_start(self.dot, False, False, 0)
-        st.pack_start(self.status, True, True, 0)
-        self.bar = Gtk.ProgressBar(no_show_all=True, margin_top=4)
-        mid.pack_start(self.title, False, False, 0)
-        mid.pack_start(self.route, False, False, 0)
-        mid.pack_start(st, False, False, 2)
-        mid.pack_start(self.bar, False, False, 0)
-        card.pack_start(mid, True, True, 0)
-
-        self.switch = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Sync this folder")
-        self.switch.connect("notify::active", self._toggled)
-        card.pack_start(self.switch, False, False, 0)
-        self.sync_btn = icon_button("view-refresh-symbolic", "Sync now", lambda: app.manager.request(self.fid))
-        card.pack_start(self.sync_btn, False, False, 0)
-        card.pack_start(icon_button("folder-open-symbolic", "Open folder",
-                                    lambda: open_path(app.settings.folder(self.fid).local)), False, False, 0)
-        more = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("view-more-symbolic", Gtk.IconSize.BUTTON),
-                              valign=Gtk.Align.CENTER, tooltip_text="More")
-        styled(more, "flat")
-        more.set_popover(popover_menu(more, [
-            ("Edit…", lambda: app.edit_folder(self.fid)),
-            ("Show in Kluis browser", lambda: app.window.show_remote(app.settings.folder(self.fid).remote)),
-            ("Open Proton Drive on the web", lambda: open_uri(WEB_URL)),
-            ("Check every file again", lambda: app.manager.folder_changed(app.settings.folder(self.fid), True)),
-            None,
-            ("Stop syncing this folder…", lambda: app.remove_folder(self.fid), True),
-        ]))
-        card.pack_start(more, False, False, 0)
-        self.add(card)
-        self.refresh()
-
-    def _toggled(self, sw, _p):
-        f = self.app.settings.folder(self.fid)
-        if f and f.enabled != sw.get_active():
-            f.enabled = sw.get_active()
-            self.app.settings.save()
-            self.app.manager.folder_changed(f)
-
-    def refresh(self):
-        f = self.app.settings.folder(self.fid)
-        if not f:
-            return
-        st = self.app.manager.status.get(self.fid)
-        ctx = self.badge.get_style_context()
-        for m in list(MODES) + ["off"]:
-            ctx.remove_class(m)
-        ctx.add_class(f.mode if f.enabled else "off")
-        self.badge.set_text(mode_glyph(f.mode))
-        self.badge.set_tooltip_text(MODES[f.mode][1])
-        self.title.set_text(f.name)
-        arrow = {"two-way": "⇄", "backup": "→", "mirror": "←"}[f.mode]
-        self.route.set_text(f"{short_path(f.local)}   {arrow}   {f.remote}")
-        if self.switch.get_active() != f.enabled:
-            self.switch.set_active(f.enabled)
-        state = st.state if st else "idle"
-        dctx = self.dot.get_style_context()
-        for c in ("ok", "sync", "warn", "err"):
-            dctx.remove_class(c)
-        if state in STATE_DOT:
-            dctx.add_class(STATE_DOT[state])
-        sctx = self.status.get_style_context()
-        sctx.remove_class("k-status-err")
-        sctx.remove_class("k-status-warn")
-        if state == "error":
-            sctx.add_class("k-status-err")
-        elif state == "conflict":
-            sctx.add_class("k-status-warn")
-        if not f.enabled:
-            text = "Sync is off for this folder"
-        elif state == "syncing":
-            text = st.text or "Syncing…"
-        elif state == "queued":
-            text = "Waiting for its turn…"
-        elif state in ("ok", "conflict", "error"):
-            text = f"{st.text} · {ago(f.last_sync)}" if f.last_sync else st.text
-        else:
-            text = st.text if st else ""
-        self.status.set_text(text)
-        self.status.set_tooltip_text(text)
-        if state == "syncing" and st.total:
-            self.bar.set_fraction(st.done / max(st.total, 1))
-            self.bar.show()
-        elif state == "syncing":
-            self.bar.pulse()
-            self.bar.show()
-        else:
-            self.bar.hide()
-        self.sync_btn.set_sensitive(f.enabled and state not in ("syncing", "queued"))
+TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")), ("photos", _("Photos")),
+        ("shared", _("Shared with me")), ("activity", _("Activity"))]
+TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
 
 
-class FoldersPage(Gtk.ScrolledWindow):
-    def __init__(self, app):
-        super().__init__(hscrollbar_policy=Gtk.PolicyType.NEVER)
-        self.app = app
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        styled(body, "k-page")
-        self.add(body)
-
-        # hero
-        self.hero = Gtk.Box(spacing=16)
-        styled(self.hero, "k-hero")
-        self.hero_icon = label("✓", "k-hero-icon", xalign=0.5)
-        self.hero_icon.set_valign(Gtk.Align.CENTER)
-        self.hero_spin = Gtk.Spinner(width_request=36, height_request=36, no_show_all=True)
-        icon_stack = Gtk.Box()
-        icon_stack.pack_start(self.hero_icon, False, False, 0)
-        icon_stack.pack_start(self.hero_spin, False, False, 8)
-        self.hero.pack_start(icon_stack, False, False, 0)
-        hv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER)
-        self.hero_title = label("", "k-hero-title", ellipsize=True)
-        self.hero_sub = label("", "k-hero-sub", ellipsize=True)
-        self.hero_bar = Gtk.ProgressBar(no_show_all=True, margin_top=6)
-        hv.pack_start(self.hero_title, False, False, 0)
-        hv.pack_start(self.hero_sub, False, False, 0)
-        hv.pack_start(self.hero_bar, False, False, 0)
-        self.hero.pack_start(hv, True, True, 0)
-        self.chip = label("● Signed in", "k-chip-light")
-        self.chip.set_valign(Gtk.Align.START)
-        self.hero.pack_start(self.chip, False, False, 0)
-        body.pack_start(self.hero, False, False, 0)
-
-        head = Gtk.Box(spacing=8, margin_top=6)
-        head.pack_start(label("Synced folders", "k-section"), False, False, 0)
-        self.count = label("", "k-dim")
-        head.pack_start(self.count, False, False, 0)
-        head.pack_end(text_button("Add folder", app.add_folder_dialog, "k-accent", "k-pill",
-                                  icon="list-add-symbolic"), False, False, 0)
-        body.pack_start(head, False, False, 0)
-
-        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        styled(self.list, "k-cards")
-        body.pack_start(self.list, False, False, 0)
-
-        # empty state / drop zone
-        self.drop = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        styled(self.drop, "k-drop")
-        self.drop.pack_start(label("📁", "k-big-icon", xalign=0.5), False, False, 0)
-        self.drop.pack_start(label("Drop a folder here to start syncing", "k-empty-title", xalign=0.5),
-                             False, False, 0)
-        self.drop.pack_start(label("Or use “Add folder”. You can sync as many folders as you like, each "
-                                   "two-way, as a backup, or as a mirror.", "k-dim", xalign=0.5, wrap=True),
-                             False, False, 0)
-        body.pack_start(self.drop, False, False, 0)
-        self.tip = label("Tip: drop any folder from the file manager onto this window to add it.",
-                         "k-dim", "k-small", xalign=0.5)
-        body.pack_start(self.tip, False, False, 0)
-        self.rows: dict[str, FolderRow] = {}
-
-    def rebuild(self):
-        for r in self.list.get_children():
-            r.destroy()
-        self.rows.clear()
-        for f in self.app.settings.folders:
-            row = FolderRow(self.app, f)
-            self.rows[f.id] = row
-            self.list.add(row)
-        self.list.show_all()
-        for r in self.rows.values():
-            r.refresh()
-        n = len(self.rows)
-        self.drop.set_visible(n == 0)
-        self.tip.set_visible(n > 0)
-        self.count.set_text(f"· {n}" if n else "")
-        self.refresh_hero()
-
-    def refresh_folder(self, fid):
-        r = self.rows.get(fid)
-        if r:
-            r.refresh()
-
-    def refresh_hero(self):
-        m, s = self.app.manager, self.app.settings
-        ctx = self.hero.get_style_context()
-        ctx.remove_class("k-error")
-        ctx.remove_class("k-paused")
-        enabled = [f for f in s.folders if f.enabled]
-        errors = [f for f in enabled if m.status.get(f.id) and m.status[f.id].state == "error"]
-        conflicts = [f for f in enabled if m.status.get(f.id) and m.status[f.id].state == "conflict"]
-        syncing = m.current and m.name_of(m.current)
-        self.hero_bar.hide()
-        self.hero_spin.hide()
-        self.hero_icon.show()
-        self.chip.set_text("● Signed in" if m.logged_in else "○ Signed out")
-        if m.logged_in is False:
-            ctx.add_class("k-error")
-            self.hero_icon.set_text("🔑")
-            self.hero_title.set_text("Sign in to keep syncing")
-            self.hero_sub.set_text("Your Proton Drive session ended. Use the menu → Sign in.")
-        elif s.paused:
-            ctx.add_class("k-paused")
-            self.hero_icon.set_text("⏸")
-            self.hero_title.set_text("Syncing is paused")
-            self.hero_sub.set_text("Press ▶ in the toolbar or the panel icon to resume.")
-        elif syncing:
-            st = m.status.get(m.current)
-            self.hero_icon.hide()
-            self.hero_spin.show()
-            self.hero_spin.start()
-            self.hero_title.set_text(f"Syncing {syncing}…")
-            queued = len([f for f in enabled if m.status.get(f.id) and m.status[f.id].state == "queued"])
-            self.hero_sub.set_text((st.text if st else "") + (f"  ·  {queued} more waiting" if queued else ""))
-            if st and st.total:
-                self.hero_bar.set_fraction(st.done / max(st.total, 1))
-                self.hero_bar.show()
-        elif errors:
-            ctx.add_class("k-error")
-            self.hero_icon.set_text("!")
-            self.hero_title.set_text(f"{len(errors)} folder(s) need attention")
-            self.hero_sub.set_text(m.status[errors[0].id].text)
-        elif not s.folders:
-            self.hero_icon.set_text("☁")
-            self.hero_title.set_text("Ready when you are")
-            self.hero_sub.set_text("Add a folder below to start syncing with Proton Drive.")
-        else:
-            self.hero_icon.set_text("✓")
-            self.hero_title.set_text("Everything is up to date" if not conflicts
-                                     else f"Up to date · {len(conflicts)} with conflict copies")
-            last = max((f.last_sync for f in enabled), default=0)
-            nxt = int(m.next_run_in() // 60)
-            self.hero_sub.set_text(f"Last sync {ago(last)}  ·  next check in {nxt or '<1'} min  ·  "
-                                   f"{len(enabled)} of {len(s.folders)} folders on")
-
-
-class ActivityPage(Gtk.Box):
-    ICONS = {"ok": "emblem-ok-symbolic", "info": "dialog-information-symbolic",
-             "warning": "dialog-warning-symbolic", "error": "dialog-error-symbolic"}
-
-    def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        styled(self, "k-page")
-        self.app = app
-        bar = Gtk.Box(spacing=8)
-        bar.pack_start(label("Recent activity", "k-section"), False, False, 0)
-        self.filter = Gtk.ComboBoxText()
-        for k, t in (("all", "Everything"), ("problems", "Problems only")):
-            self.filter.append(k, t)
-        self.filter.set_active_id("all")
-        self.filter.connect("changed", lambda *_: self.rebuild())
-        bar.pack_end(text_button("Clear", app.manager.clear_activity, "flat"), False, False, 0)
-        bar.pack_end(text_button("Open log folder", lambda: open_path(os.path.dirname(
-            str(__import__("kluis.paths", fromlist=["LOG_FILE"]).LOG_FILE))), "flat"), False, False, 0)
-        bar.pack_end(self.filter, False, False, 0)
-        self.pack_start(bar, False, False, 0)
-        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        styled(self.list, "k-activity")
-        ph = label("Nothing yet. Sync activity shows up here.", "k-dim", xalign=0.5)
-        ph.set_margin_top(30)
-        ph.show()
-        self.list.set_placeholder(ph)
-        sw = Gtk.ScrolledWindow(vexpand=True)
-        styled(sw, "frame")
-        sw.add(self.list)
-        self.pack_start(sw, True, True, 0)
-
-    def _row(self, a):
-        row = Gtk.ListBoxRow()
-        box = Gtk.Box(spacing=10)
-        box.pack_start(Gtk.Image.new_from_icon_name(self.ICONS.get(a.level, "dialog-information-symbolic"),
-                                                    Gtk.IconSize.BUTTON), False, False, 0)
-        t = time.localtime(a.ts)
-        box.pack_start(label(time.strftime("%Y-%m-%d %H:%M", t), "k-time"), False, False, 0)
-        if a.folder:
-            box.pack_start(label(a.folder, "k-card-title"), False, False, 0)
-        msg = label(a.text, wrap=True, selectable=True)
-        box.pack_start(msg, True, True, 0)
-        row.add(box)
-        return row
-
-    def rebuild(self):
-        for r in self.list.get_children():
-            r.destroy()
-        only = self.filter.get_active_id() == "problems"
-        for a in list(self.app.manager.activity)[:300]:
-            if only and a.level not in ("error", "warning"):
-                continue
-            self.list.add(self._row(a))
-        self.list.show_all()
-
-    def prepend(self, a):
-        if self.filter.get_active_id() == "problems" and a.level not in ("error", "warning"):
-            return
-        row = self._row(a)
-        row.show_all()
-        self.list.prepend(row)
+def logo_image(size):
+    """The safe logo from Kluis's own data (not a possibly older system icon)."""
+    from gi.repository import GdkPixbuf
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icons", "dev.kluis.Kluis.svg")
+    try:
+        return Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(path, size, size))
+    except Exception:  # noqa: BLE001
+        return Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.LARGE_TOOLBAR)
 
 
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Kluis")
         self.app = app
-        self.set_default_size(920, 660)
+        s = app.settings
+        styled(self, "kluis")
         self.set_icon_name("dev.kluis.Kluis")
-
-        hb = Gtk.HeaderBar(show_close_button=True)
-        self.set_titlebar(hb)
-        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
-        self.switcher = Gtk.StackSwitcher(stack=self.stack)
-        hb.set_custom_title(self.switcher)
-        logo = Gtk.Box(spacing=8)
-        logo.pack_start(Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
-        logo.pack_start(label("<b>Kluis</b>", markup=True), False, False, 0)
-        hb.pack_start(logo)
-
-        menu = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("open-menu-symbolic", Gtk.IconSize.BUTTON),
-                              tooltip_text="Menu")
-        self.menu_btn = menu
-        hb.pack_end(menu)
-        self.pause_btn = Gtk.ToggleButton(tooltip_text="Pause syncing")
-        self.pause_btn.connect("toggled", self._pause_toggled)
-        hb.pack_end(self.pause_btn)
-        self.sync_btn = icon_button("view-refresh-symbolic", "Sync everything now", self._sync_or_stop, flat=False)
-        hb.pack_end(self.sync_btn)
+        self.set_size_request(1024, 640)
+        win = s.window or {}
+        self.set_default_size(max(1024, int(win.get("w", 1440))), max(640, int(win.get("h", 900))))
+        if win.get("x", -1) >= 0 and win.get("y", -1) >= 0:
+            self.move(int(win["x"]), int(win["y"]))
+        if win.get("max"):
+            self.maximize()
+        self.connect("configure-event", self._configured)
+        self.connect("window-state-event", self._state_ev)
 
         self.overlay = Gtk.Overlay()
         self.add(self.overlay)
-        self.root = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
-        self.overlay.add(self.root)
+        self.root = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=200)
+        bg = Gtk.Box()
+        styled(bg, "k-bg", "k-glow")
+        bg.pack_start(self.root, True, True, 0)
+        self.bgbox = bg
+        self.overlay.add(bg)
 
         self.onboarding = Onboarding(app, self._onboarding_done)
+        ob = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        ob.add(self.onboarding)
+        self.root.add_named(ob, "welcome")
+
+        main = Gtk.Box(spacing=16, margin=16)
+        self.root.add_named(main, "main")
+        main.pack_start(self._sidebar(), False, False, 0)
+        center = vbox(spacing=14)
+        main.pack_start(center, True, True, 0)
+        center.pack_start(self._header(), False, False, 0)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, vexpand=True, hhomogeneous=False,
+                               vhomogeneous=False)          # each tab sizes itself (fits 1024×640)
+        self.home = HomePage(app)
         self.folders = FoldersPage(app)
         self.browser = BrowserPage(app)
         self.photos = PhotosPage(app)
+        self.shared = SharedPage(app)
         self.activity = ActivityPage(app)
-        self.root.add_named(self.onboarding, "welcome")
-        self.root.add_named(self.stack, "main")
-        self.stack.add_titled(self.folders, "folders", "Folders")
-        self.stack.add_titled(self.browser, "browse", "Browse")
-        self.stack.add_titled(self.photos, "photos", "Photos")
-        self.stack.add_titled(self.activity, "activity", "Activity")
-        self.stack.connect("notify::visible-child-name", self._page_changed)
+        for (key, _t), page in zip(TABS, (self.home, self.folders, self.browser, self.photos, self.shared,
+                                          self.activity)):
+            self.stack.add_named(page, key)
+        center.pack_start(self.stack, True, True, 0)
+        self.status_panel = StatusPanel(app)
+        sp = Gtk.Box()
+        styled(sp, "k-panel")
+        sp.pack_start(self.status_panel, True, True, 0)
+        center.pack_start(sp, False, False, 0)
+        self.qs_col = self._quick_settings()
+        main.pack_start(self.qs_col, False, False, 0)
 
-        # toast
-        self.toast_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
-                                      valign=Gtk.Align.END, halign=Gtk.Align.CENTER, margin_bottom=18)
-        tb = Gtk.Box(spacing=12)
-        styled(tb, "app-notification")
+        # toast (bottom centre, one at a time, announced to screen readers)
+        self.toast_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_UP, valign=Gtk.Align.END,
+                                      halign=Gtk.Align.CENTER, margin_bottom=24, transition_duration=200)
+        tb = Gtk.Box(spacing=14)
+        styled(tb, "k-toast")
         self.toast_lbl = label("")
-        self.toast_action = Gtk.Button(no_show_all=True)
-        styled(self.toast_action, "flat")
+        acc = self.toast_lbl.get_accessible()
+        if acc:
+            acc.set_role(Atk.Role.NOTIFICATION)
+        self.toast_action = button(_("Undo"), None)
+        self.toast_action.set_no_show_all(True)
         tb.pack_start(self.toast_lbl, False, False, 0)
         tb.pack_start(self.toast_action, False, False, 0)
-        tb.pack_start(icon_button("window-close-symbolic", "Close", lambda: self.toast_rev.set_reveal_child(False)),
-                      False, False, 0)
         self.toast_rev.add(tb)
         self.overlay.add_overlay(self.toast_rev)
+        self.overlay.set_overlay_pass_through(self.toast_rev, True)
         self._toast_src = 0
         self._toast_handler = None
+        self.toast_text = ""
+        self.toast_history: list[str] = []
 
         # drag a folder anywhere on the window to add it
         self.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new("text/uri-list", 0, 0)], Gdk.DragAction.COPY)
         self.connect("drag-data-received", self._on_drop)
         self.connect("drag-motion", lambda *_: self._drag_hl(True))
         self.connect("drag-leave", lambda *_: self._drag_hl(False))
+        self.connect("key-press-event", self._key)
 
-        self._build_menu()
-        self.refresh_toolbar()
+        for i, (key, _t) in enumerate(TABS, 1):
+            a = Gio.SimpleAction.new(f"tab-{i}", None)
+            a.connect("activate", lambda *_a, k=key: self.show_tab(k))
+            self.add_action(a)
+            app.set_accels_for_action(f"win.tab-{i}", [f"<Ctrl>{i}"])
+        a = Gio.SimpleAction.new("search", None)
+        a.connect("activate", lambda *_: self.search.grab_focus())
+        self.add_action(a)
+        app.set_accels_for_action("win.search", ["<Ctrl>f"])
+        self.stack.connect("notify::visible-child-name", self._page_changed)
         self.show_all()
+        self.set_qs_collapsed(s.qs_collapsed, save=False)
+
+    # ---------- sidebar ----------
+    def _sidebar(self):
+        side = vbox(spacing=4)
+        styled(side, "k-panel", "k-side")
+        side.set_size_request(280, -1)
+        head = Gtk.Box(spacing=10, margin_bottom=10)
+        head.pack_start(logo_image(24), False, False, 0)
+        head.pack_start(label("Kluis", "k-h2"), True, True, 0)
+        gear = Gtk.Button.new_from_icon_name("kluis-gear-symbolic", Gtk.IconSize.BUTTON)
+        styled(gear, "k-flat")
+        gear.set_tooltip_text(_("Settings (Ctrl+,)"))
+        gear.connect("clicked", lambda *_: self.app.open_settings())
+        a11y(gear, _("Settings (Ctrl+,)"))
+        head.pack_end(gear, False, False, 0)
+        side.pack_start(head, False, False, 0)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search files…  Ctrl+F"))
+        a11y(self.search, _("Search Proton Drive"))
+        self.search.connect("search-changed", self._search_changed)
+        self.search.connect("activate", self._search_activate)
+        self.search_pop = Gtk.Popover.new(self.search)
+        self.search_pop.set_modal(False)
+        self.search_list = vbox(spacing=2, margin=6)
+        self.search_pop.add(self.search_list)
+        side.pack_start(self.search, False, False, 6)
+        nav = vbox(spacing=2)
+        styled(nav, "k-nav")
+        self.nav = {}
+        for i, (key, title) in enumerate(TABS, 1):
+            b = Gtk.Button()
+            row = Gtk.Box(spacing=8)
+            row.pack_start(label(title), True, True, 0)
+            badge = label("", "k-badge")
+            badge.set_no_show_all(True)
+            row.pack_start(badge, False, False, 0)
+            row.pack_start(label(f"Ctrl+{i}", "k-key"), False, False, 0)
+            b.add(row)
+            b.connect("clicked", lambda _b, k=key: self.show_tab(k))
+            a11y(b, title)
+            b.kluis_badge = badge
+            nav.pack_start(b, False, False, 0)
+            self.nav[key] = b
+        side.pack_start(nav, False, False, 0)
+        side.pack_start(label(_("Today’s timeline"), "k-section-head"), False, False, 14)
+        self.timeline = vbox(spacing=8)
+        a11y(self.timeline, _("Today’s timeline"))
+        tl_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                       propagate_natural_height=True)
+        tl_scroll.set_min_content_height(40)       # never makes the window taller than the screen
+        tl_scroll.add(self.timeline)
+        side.pack_start(tl_scroll, False, False, 0)
+        allact = button(_("All activity"), lambda: self.show_tab("activity"), "k-link")
+        allact.set_halign(Gtk.Align.START)
+        side.pack_start(allact, False, False, 4)
+        return side
+
+    def refresh_timeline(self):
+        clear(self.timeline)
+        today = time.strftime("%Y%m%d")
+        items = [a for a in list(self.app.manager.activity)[:40]
+                 if time.strftime("%Y%m%d", time.localtime(a.ts)) == today][:5]
+        if not items:
+            self.timeline.pack_start(label(_("Nothing yet today"), "k-muted", "k-s12"), False, False, 0)
+        for a in items:
+            dot = Gtk.Box(valign=Gtk.Align.START, margin_top=4)
+            styled(dot, "k-timeline-dot", TL_COLORS.get(a.level, ""))
+            v = vbox(hbox(label(time.strftime("%H:%M", time.localtime(a.ts)), "k-muted", "k-s12", "k-num"),
+                          label(a.folder or "Kluis", "k-s12", "k-bold", ellipsize="end", max_chars=24), spacing=6),
+                     label(a.text, "k-muted", "k-s12", ellipsize="end", max_chars=30), spacing=0)
+            self.timeline.pack_start(hbox(dot, v, spacing=10), False, False, 0)
+        self.timeline.show_all()
+
+    def _search_changed(self, entry):
+        q = entry.get_text().strip().lower()
+        clear(self.search_list)
+        if len(q) < 2:
+            self.search_pop.popdown()
+            return
+        hits = self.app.search(q)[:12]
+        if not hits:
+            self.search_list.pack_start(label(_("No matches in synced folders or folders you opened"), "k-muted",
+                                              "k-s12"), False, False, 0)
+        for remote, name in hits:
+            self.search_list.pack_start(button(name, lambda r=remote: self._open_hit(r), "k-flat",
+                                               tooltip=remote), False, False, 0)
+        self.search_list.show_all()
+        self.search_pop.popup()
+
+    def _search_activate(self, _e):
+        kids = self.search_list.get_children()
+        if kids and isinstance(kids[0], Gtk.Button):
+            kids[0].clicked()
+
+    def _open_hit(self, remote):
+        self.search_pop.popdown()
+        self.show_remote(os.path.dirname(remote))
+
+    # ---------- header ----------
+    def _header(self):
+        row = Gtk.Box(spacing=8)
+        self.tab_title = label("", "k-h1")
+        row.pack_start(self.tab_title, True, True, 0)
+        self.sync_btn = button(_("↻ Sync now"), self._sync_or_stop, tooltip=_("Sync everything now (Ctrl+R)"),
+                               name=_("Sync now"))
+        self.pause_btn = button(_("⏸ Pause"), lambda: self.app.set_paused(not self.app.settings.paused),
+                                name=_("Pause"))
+        self.qs_header_btn = self._qs_button()
+        self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
+        self.qs_header_btn.set_no_show_all(True)
+        row.pack_end(self.qs_header_btn, False, False, 0)
+        row.pack_end(self.pause_btn, False, False, 0)
+        row.pack_end(self.sync_btn, False, False, 0)
+        return row
+
+    def _qs_button(self):
+        b = Gtk.Button()
+        box = hbox(Gtk.Image.new_from_icon_name("kluis-sliders-symbolic", Gtk.IconSize.BUTTON),
+                   Gtk.Image.new_from_icon_name("kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON), spacing=2)
+        b.add(box)
+        styled(b, "k-qs-head")
+        b.connect("clicked", lambda *_: self.set_qs_collapsed(not self.app.settings.qs_collapsed))
+        a11y(b, _("Collapse quick settings"))
+        return b
+
+    def _sync_or_stop(self):
+        if self.app.manager.busy:
+            self.app.stop_sync()
+        else:
+            self.app.manager.request()
+
+    # ---------- Quick settings ----------
+    def _quick_settings(self):
+        col = vbox(spacing=6)
+        styled(col, "k-panel", "k-qs")
+        col.set_size_request(100, -1)
+        col.set_hexpand(False)
+        self.qs_btn = self._qs_button()
+        col.pack_start(self.qs_btn, False, False, 0)
+        allb = Gtk.MenuButton()
+        allb.add(vbox(label("⚙", "k-h2", xalign=0.5), label(_("All settings…"), "k-s12", xalign=0.5, wrap=True,
+                                                             max_chars=12), spacing=0))
+        a11y(allb, _("All settings…"))
+        self.all_menu = popover_menu(allb, [
+            (_("+ Add folder"), self.app.add_folder_dialog, False, "Ctrl+N"),
+            (_("Settings"), self.app.open_settings, False, "Ctrl+,"),
+            (_("Sign in…"), self.app.sign_in_again),
+            (_("Open Proton Drive on the web"), lambda: open_uri(WEB_URL)),
+            (_("Run setup again"), self.app.run_setup_again),
+            None,
+            (_("About Kluis"), self.app.about),
+            (_("Quit"), self.app.quit_app, False, "Ctrl+Q"),
+        ])
+        allb.set_popover(self.all_menu)
+        self.all_btn = allb
+        col.pack_start(allb, False, False, 0)
+        div = Gtk.Box()
+        styled(div, "k-divider")
+        col.pack_start(div, False, False, 6)
+        col.pack_start(label(_("Quick settings"), "k-section-head", xalign=0.5, wrap=True, max_chars=12), False, False, 0)
+        self.qs = {}
+        for key, title in (("pause", _("Pause sync")), ("notify", _("Notifications")), ("dark", _("Dark mode")),
+                           ("login", _("Start at login")), ("vpn", _("VPN view"))):
+            b = Gtk.Button()
+            st = label("", "k-qs-state", xalign=0.5)
+            st.set_line_wrap(True)
+            st.set_max_width_chars(12)
+            b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=12), st, spacing=2))
+            b.connect("clicked", lambda _b, k=key: self.app.quick_toggle(k))
+            styled(b, "k-qs-toggle")
+            a11y(b, title)
+            b.kluis_state = st
+            col.pack_start(b, False, False, 0)
+            self.qs[key] = b
+        return col
+
+    def set_qs_collapsed(self, collapsed, save=True):
+        self.app.settings.qs_collapsed = collapsed
+        self.qs_col.set_visible(not collapsed)
+        self.qs_header_btn.set_visible(collapsed)
+        for b in (self.qs_btn, self.qs_header_btn):
+            a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
+        if save:
+            self.app.settings.save()
+
+    def refresh_quick(self):
+        s = self.app.settings
+        states = {
+            "pause": (s.paused, _("On") if s.paused else _("Off")),
+            "notify": (s.notifications != "off", {"all": _("All"), "problems": _("Problems only"),
+                                                  "off": _("Off")}[s.notifications]),
+            "dark": (self.app.theme.dark, _("On") if self.app.theme.dark else _("Off")),
+            "login": (s.autostart, _("On") if s.autostart else _("Off")),
+            "vpn": (s.vpn_view, _("On") if s.vpn_view else _("Off")),
+        }
+        for k, (on, text) in states.items():
+            b = self.qs[k]
+            set_class(b, "k-pressed", on)
+            b.kluis_state.set_text(text)
+            a11y(b, b.kluis_name.split(":")[0] if ":" in b.kluis_name else b.kluis_name, text)
+            b.kluis_value = text
 
     # ---------- pages ----------
     def show_onboarding(self, state):
         self.onboarding.refresh(state)
-        self.switcher.set_visible(False)
-        self.sync_btn.set_visible(False)
-        self.pause_btn.set_visible(False)
         self.root.set_visible_child_name("welcome")
 
-    def show_main(self, page="folders"):
-        self.switcher.set_visible(True)
-        self.sync_btn.set_visible(True)
-        self.pause_btn.set_visible(True)
+    def show_main(self, page=None):
         self.folders.rebuild()
         self.activity.rebuild()
         self.root.set_visible_child_name("main")
-        self.stack.set_visible_child_name(page)
+        self.show_tab(page or self.app.settings.last_tab or "home")
+        self.app.refresh_all()
+
+    def show_tab(self, key):
+        if self.root.get_visible_child_name() != "main":
+            return
+        if key not in dict(TABS):
+            key = "home"
+        self.stack.set_visible_child_name(key)
 
     def show_remote(self, path):
-        self.browser.path = path
         self.root.set_visible_child_name("main")
         self.stack.set_visible_child_name("browse")
-        self.browser.load()
+        self.browser.go(path)
+
+    def _page_changed(self, *_a):
+        key = self.stack.get_visible_child_name()
+        self.tab_title.set_text(dict(TABS).get(key, ""))
+        for k, b in self.nav.items():
+            set_class(b, "k-current", k == key)
+        self.app.settings.last_tab = key
+        self.app.save_soon()
+        if key == "activity":
+            self.app.manager.mark_read()
+        page = self.stack.get_visible_child()
+        if hasattr(page, "on_shown"):
+            page.on_shown()
 
     def _onboarding_done(self):
-        self.show_main()
+        self.show_main("home")
         self.app.manager.request(reason="start")
 
-    def _page_changed(self, *_):
-        if self.stack.get_visible_child_name() == "browse":
-            self.browser.on_shown()
-
-    # ---------- toolbar ----------
-    def _build_menu(self):
-        self.menu_btn.set_popover(popover_menu(self.menu_btn, [
-            ("Settings", self.app.open_settings),
-            ("Sign in…", self.app.sign_in_again),
-            ("Open Proton Drive on the web", lambda: open_uri(WEB_URL)),
-            None,
-            ("About Kluis", self.app.about),
-            ("Quit", self.app.quit_app),
-        ]))
-
-    def _sync_or_stop(self):
-        if self.app.manager.busy:
-            self.app.manager.cancel()
-        else:
-            self.app.manager.request()
-
-    def _pause_toggled(self, btn):
-        if btn.get_active() != self.app.settings.paused:
-            self.app.manager.set_paused(btn.get_active())
-
-    def refresh_toolbar(self):
-        m = self.app.manager
-        busy = m.busy
-        img = "process-stop-symbolic" if busy else "view-refresh-symbolic"
-        self.sync_btn.set_image(Gtk.Image.new_from_icon_name(img, Gtk.IconSize.BUTTON))
-        self.sync_btn.set_tooltip_text("Stop syncing" if busy else "Sync everything now (Ctrl+R)")
-        paused = self.app.settings.paused
-        self.pause_btn.handler_block_by_func(self._pause_toggled)
-        self.pause_btn.set_active(paused)
-        self.pause_btn.handler_unblock_by_func(self._pause_toggled)
-        self.pause_btn.set_image(Gtk.Image.new_from_icon_name(
-            "media-playback-start-symbolic" if paused else "media-playback-pause-symbolic", Gtk.IconSize.BUTTON))
-        self.pause_btn.set_tooltip_text("Resume syncing" if paused else "Pause syncing")
+    # ---------- header / badges ----------
+    def refresh_header(self):
+        m, s = self.app.manager, self.app.settings
+        set_button_text(self.sync_btn, _("■ Stop") if m.busy else _("↻ Sync now"), _("Stop") if m.busy else _("Sync now"))
+        self.sync_btn.set_tooltip_text(_("Stop syncing") if m.busy else _("Sync everything now (Ctrl+R)"))
+        self.sync_btn.set_sensitive(not s.paused and m.logged_in is not False and bool(s.folders or s.photos.active))
+        set_button_text(self.pause_btn, _("▶ Resume") if s.paused else _("⏸ Pause"),
+                        _("Resume") if s.paused else _("Pause"))
+        set_class(self.pause_btn, "k-pressed", s.paused)
+        n = m.unread
+        badge = self.nav["activity"].kluis_badge
+        badge.set_text(str(n))
+        badge.set_visible(n > 0)
 
     # ---------- toast ----------
     def toast(self, text, action=None):
+        self.toast_text = text
+        self.toast_history.append(text)
         self.toast_lbl.set_text(text)
+        acc = self.toast_lbl.get_accessible()
+        if acc:
+            acc.set_name(text)          # live region: screen readers announce the change
         if self._toast_handler:
             self.toast_action.disconnect(self._toast_handler)
             self._toast_handler = None
         if action:
-            self.toast_action.set_label(action[0])
+            set_button_text(self.toast_action, action[0])
             self._toast_handler = self.toast_action.connect(
-                "clicked", lambda *_: (action[1](), self.toast_rev.set_reveal_child(False)))
+                "clicked", lambda *_: (self._hide_toast(), action[1]()))
             self.toast_action.show()
         else:
             self.toast_action.hide()
         self.toast_rev.set_reveal_child(True)
         if self._toast_src:
             GLib.source_remove(self._toast_src)
-        self._toast_src = GLib.timeout_add_seconds(5, self._hide_toast)
+        self._toast_src = GLib.timeout_add_seconds(8 if action else 5, self._hide_toast)
 
     def _hide_toast(self):
+        if self._toast_src:
+            GLib.source_remove(self._toast_src)
         self._toast_src = 0
         self.toast_rev.set_reveal_child(False)
+        if self._toast_handler:
+            self.toast_action.disconnect(self._toast_handler)
+            self._toast_handler = None
+        self.toast_action.hide()
         return False
 
     # ---------- drag & drop ----------
     def _drag_hl(self, on):
-        ctx = self.folders.drop.get_style_context()
-        (ctx.add_class if on else ctx.remove_class)("k-drag-over")
+        set_class(self.bgbox, "k-drag-over", on)
+        set_class(self.folders.drop, "k-drag-over", on)
         return False
 
     def _on_drop(self, _w, _ctx, _x, _y, data, _info, _time):
         self._drag_hl(False)
-        if self.root.get_visible_child_name() != "main" or self.stack.get_visible_child_name() == "browse":
-            return  # the browser page handles its own drops (upload)
-        for uri in data.get_uris():
-            if uri.startswith("file://"):
-                path = unquote(urlparse(uri).path)
-                if os.path.isdir(path):
-                    self.app.add_folder_dialog(path)
-                    break
+        if self.root.get_visible_child_name() != "main":
+            return
+        paths = [unquote(urlparse(u).path) for u in data.get_uris() if u.startswith("file://")]
+        self.handle_drop(paths)
+
+    def handle_drop(self, paths):
+        folders = [p for p in paths if os.path.isdir(p)]
+        if folders:
+            GLib.idle_add(lambda: (self.app.add_folder_dialog(folders[0]), False)[1])
+        elif paths:
+            self.toast(_("Drop a folder to sync it. To upload files, use Browse."))
+
+    # ---------- keyboard / window state ----------
+    def _key(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape and self.search.has_focus():
+            self.search.set_text("")
+            self.search_pop.popdown()
+            return True
+        return False
+
+    def _configured(self, _w, _ev):
+        if not self.app.settings.window.get("max"):
+            w, h = self.get_size()
+            x, y = self.get_position()
+            self.app.settings.window.update({"w": w, "h": h, "x": x, "y": y})
+            self.app.save_soon()
+        return False
+
+    def _state_ev(self, _w, ev):
+        self.app.settings.window["max"] = bool(ev.new_window_state & Gdk.WindowState.MAXIMIZED)
+        self.app.save_soon()
+        return False

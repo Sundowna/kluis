@@ -1,0 +1,724 @@
+[
+ {
+  "id": "F1",
+  "title": "First run",
+  "where": "Onboarding",
+  "given": "Clean install, no config, no CLI",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Launch Kluis from the app menu",
+    "expected": "Window opens on Welcome · Step 1 of 3; Back disabled; Next disabled"
+   },
+   {
+    "n": 2,
+    "action": "Click “Download from proton.me”",
+    "expected": "Button shows “Downloading…” (fixed width), progress “x of y MB” within 300 ms"
+   },
+   {
+    "n": 3,
+    "action": "Download completes",
+    "expected": "“✓ Downloaded · proton-drive <latest> · SHA-512 checksum matches”; Next enabled"
+   },
+   {
+    "n": 4,
+    "action": "Click Next",
+    "expected": "Step 2 of 3 · “Open Proton sign-in”; KDE note visible only on KDE"
+   },
+   {
+    "n": 5,
+    "action": "Click “Open Proton sign-in”, finish in browser",
+    "expected": "“Waiting for your browser…” → “✓ Signed in as <email>”; Next enabled"
+   },
+   {
+    "n": 6,
+    "action": "Click Next",
+    "expected": "Step 3 of 3 · chips for existing Documents/Pictures/Desktop, Documents + Pictures preselected"
+   },
+   {
+    "n": 7,
+    "action": "Toggle Desktop on, click “+ Other folder…”, pick ~/Music",
+    "expected": "4 chips selected, each pressed style"
+   },
+   {
+    "n": 8,
+    "action": "Click “Start syncing”",
+    "expected": "Home opens; status “Syncing N of M files”; arc animates; timeline gets entries"
+   },
+   {
+    "n": 9,
+    "action": "Wait for completion",
+    "expected": "Status “Everything is up to date”; toast “Everything is up to date ✓”; panel icon idle"
+   }
+  ]
+ },
+ {
+  "id": "F2",
+  "title": "CLI download fails its checksum",
+  "where": "Onboarding",
+  "given": "Mock serves a corrupted binary",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Click “Download from proton.me”",
+    "expected": "Progress shows"
+   },
+   {
+    "n": 2,
+    "action": "Checksum mismatch",
+    "expected": "File deleted; message “The download didn't match Proton's checksum, so it was deleted. Try again.”; Next stays disabled"
+   },
+   {
+    "n": 3,
+    "action": "Click the button again (mock now serves a good file)",
+    "expected": "✓ Downloaded; Next enabled"
+   }
+  ]
+ },
+ {
+  "id": "F3",
+  "title": "Sign-in timeout, Back, resume",
+  "where": "Onboarding",
+  "given": "Step 2, browser never completes",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Click “Open Proton sign-in”, wait 5 min (mock clock)",
+    "expected": "“Sign-in didn't finish. Try again.”; button enabled"
+   },
+   {
+    "n": 2,
+    "action": "Click Back",
+    "expected": "Step 1 with its ✓ state kept"
+   },
+   {
+    "n": 3,
+    "action": "Close the window, relaunch",
+    "expected": "Opens on the same step with the same state"
+   }
+  ]
+ },
+ {
+  "id": "F4",
+  "title": "Add a folder with the dialog",
+  "where": "Folders",
+  "given": "Signed in, 3 folders synced",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+N",
+    "expected": "Add-folder dialog; focus on “Folder on this computer”"
+   },
+   {
+    "n": 2,
+    "action": "Pick an already-synced folder",
+    "expected": "Inline error beside the field: “Already syncing”; Start disabled"
+   },
+   {
+    "n": 3,
+    "action": "Pick ~/ (home)",
+    "expected": "Inline error “Pick a folder inside your home folder, not the whole home folder”"
+   },
+   {
+    "n": 4,
+    "action": "Pick ~/Documents/Startup",
+    "expected": "Proton folder prefilled “<root>/Startup”; Two-way selected"
+   },
+   {
+    "n": 5,
+    "action": "Choose ↑ Back up, click “Start syncing”",
+    "expected": "Dialog closes; Folders tab; new card “Startup · Measuring…”, status “First sync started…”; toast"
+   },
+   {
+    "n": 6,
+    "action": "Wait",
+    "expected": "Size chip shows a real size; status “Backed up HH:MM · N files”"
+   }
+  ]
+ },
+ {
+  "id": "F5",
+  "title": "Add a folder by drag and drop",
+  "where": "Folders",
+  "given": "Any tab open",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Drag a folder from the file manager onto the window",
+    "expected": "Drop highlight on the whole window"
+   },
+   {
+    "n": 2,
+    "action": "Drop",
+    "expected": "Add-folder dialog prefilled with that folder"
+   },
+   {
+    "n": 3,
+    "action": "Drop a file instead of a folder",
+    "expected": "Toast “Drop a folder to sync it. To upload files, use Browse.”"
+   }
+  ]
+ },
+ {
+  "id": "F6",
+  "title": "Folder card actions",
+  "where": "Folders",
+  "given": "Folder “Agriland”, two-way, on",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Toggle its switch off",
+    "expected": "Card dims; status “Off · not syncing”; ↻ Sync disabled; watching count drops"
+   },
+   {
+    "n": 2,
+    "action": "Toggle on",
+    "expected": "Status “Synced just now” after a sync"
+   },
+   {
+    "n": 3,
+    "action": "Change Mode to ↑ Back up",
+    "expected": "Toast “Agriland: ↑ Back up” with Undo"
+   },
+   {
+    "n": 4,
+    "action": "Change Mode back to ⇄ Two-way",
+    "expected": "Confirm: “Two-way sync also sends deletions…” · “Switch to two-way” / “Keep ↑ Back up”"
+   },
+   {
+    "n": 5,
+    "action": "Click “Keep ↑ Back up”",
+    "expected": "Mode stays Back up"
+   },
+   {
+    "n": 6,
+    "action": "Click ↻ Sync",
+    "expected": "Only this folder syncs; status updates; toast"
+   },
+   {
+    "n": 7,
+    "action": "Click Open",
+    "expected": "File manager opens the local folder"
+   },
+   {
+    "n": 8,
+    "action": "Click Remove",
+    "expected": "Card disappears; toast “Stopped syncing Agriland · files kept on both sides” + Undo"
+   },
+   {
+    "n": 9,
+    "action": "Click Undo within 8 s",
+    "expected": "Card returns exactly as before, still syncing"
+   }
+  ]
+ },
+ {
+  "id": "F7",
+  "title": "Sync now, Stop, Pause, Resume (everywhere stays consistent)",
+  "where": "Header · Quick settings · panel icon",
+  "given": "Idle",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+R",
+    "expected": "Header button becomes Stop; status “Syncing…”; transfer graph moves; panel icon syncing"
+   },
+   {
+    "n": 2,
+    "action": "Click Stop",
+    "expected": "Toast “Stopped at N of M · nothing lost”; no .kluis-part files left"
+   },
+   {
+    "n": 3,
+    "action": "Click ⏸ Pause in the header",
+    "expected": "Pressed style; amber “Paused”; Quick settings “Pause sync: On”; panel menu shows “Resume syncing”; graph flat 0"
+   },
+   {
+    "n": 4,
+    "action": "Edit a file in a synced folder",
+    "expected": "Nothing uploads; status still paused"
+   },
+   {
+    "n": 5,
+    "action": "Click “Resume syncing” in the panel menu",
+    "expected": "All three controls show resumed; the edited file uploads within 10 s"
+   }
+  ]
+ },
+ {
+  "id": "F8",
+  "title": "Browse Proton Drive",
+  "where": "Browse",
+  "given": "Root has 4 folders + 2 files",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+3",
+    "expected": "List with Files, Size, Modified columns; skeleton rows if loading > 300 ms"
+   },
+   {
+    "n": 2,
+    "action": "Click folder “Agriland”",
+    "expected": "Breadcrumb “My files › Agriland”; its items listed"
+   },
+   {
+    "n": 3,
+    "action": "Click “↑ Upload…”, pick 2 files",
+    "expected": "Progress, then both rows appear; toast “Uploaded 2 files ✓”"
+   },
+   {
+    "n": 4,
+    "action": "Drag a file onto the list",
+    "expected": "Uploads into the current folder"
+   },
+   {
+    "n": 5,
+    "action": "Click “+ New folder”, type “Archiv 2026”, Enter",
+    "expected": "Row appears; toast"
+   },
+   {
+    "n": 6,
+    "action": "Select one file, click Rename, type new name",
+    "expected": "Row renamed; Rename disabled with 0 or 2+ selected"
+   },
+   {
+    "n": 7,
+    "action": "Select 2 items, click ↓ Download",
+    "expected": "Files land in ~/Downloads; toast with “Show in folder”"
+   },
+   {
+    "n": 8,
+    "action": "Select 2 items, click “Move to trash”",
+    "expected": "Confirm “Move 2 items to the trash? …” · “Move to trash” / “Keep files” (no default)"
+   },
+   {
+    "n": 9,
+    "action": "Confirm",
+    "expected": "Rows gone; toast + Undo (if restore is supported, §6)"
+   },
+   {
+    "n": 10,
+    "action": "Click Undo",
+    "expected": "Rows restored from the Proton trash"
+   },
+   {
+    "n": 11,
+    "action": "Drag the Size column divider 60 px right; press ← twice on the Files divider",
+    "expected": "Columns resize; widths survive a restart"
+   },
+   {
+    "n": 12,
+    "action": "Open an empty folder",
+    "expected": "“This folder is empty. Drag files here to upload them.”"
+   },
+   {
+    "n": 13,
+    "action": "Go offline, open a folder",
+    "expected": "“Couldn't load this folder: offline” + Retry"
+   }
+  ]
+ },
+ {
+  "id": "F9",
+  "title": "Photos end to end",
+  "where": "Photos",
+  "given": "2 years of photos (mock: 24 months, 5–15 per month, some videos)",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+4",
+    "expected": "Download and Upload cards collapsed (status line only, chevrons pointing down); gallery fills the rest; scrubber shows 24 dots + year labels"
+   },
+   {
+    "n": 2,
+    "action": "Click anywhere on the Download header",
+    "expected": "Card opens, chevron up; path row, layout, albums, trash-follow visible"
+   },
+   {
+    "n": 3,
+    "action": "Click the Download switch",
+    "expected": "Toggles without opening/closing the card"
+   },
+   {
+    "n": 4,
+    "action": "Click “Change…”, pick a folder; click the path",
+    "expected": "Path updates; the path opens the file manager"
+   },
+   {
+    "n": 5,
+    "action": "Set layout “Folders by year”",
+    "expected": "Next download uses YYYY/ folders (assert on disk)"
+   },
+   {
+    "n": 6,
+    "action": "Open Upload, click “Change…”, pick ~/Pictures/Camera",
+    "expected": "Status “N new added · M skipped (already in Proton Photos)”"
+   },
+   {
+    "n": 7,
+    "action": "Scroll the gallery with the mouse wheel to the bottom",
+    "expected": "Only the gallery scrolls; the ring moves monotonically, never jumps > 1 dot, ends exactly on the last dot"
+   },
+   {
+    "n": 8,
+    "action": "Click the dot for March 2025",
+    "expected": "Gallery smooth-scrolls; “March 2025” heading at the top; ring on that dot"
+   },
+   {
+    "n": 9,
+    "action": "Click 3 tiles",
+    "expected": "✓ badges; “3 selected”; Open disabled; Download selected enabled"
+   },
+   {
+    "n": 10,
+    "action": "Click “↓ Download selected”",
+    "expected": "Files saved to the download folder; toast; selection cleared"
+   },
+   {
+    "n": 11,
+    "action": "Double-click a video tile",
+    "expected": "Opens in the default video player"
+   },
+   {
+    "n": 12,
+    "action": "Pick Album “Kapstadt”",
+    "expected": "Gallery and scrubber show only that album's months"
+   }
+  ]
+ },
+ {
+  "id": "F10",
+  "title": "Shared with me (only if the CLI supports it)",
+  "where": "Shared with me",
+  "given": "3 shared items: 2 editor, 1 viewer",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+5",
+    "expected": "“0 of 3 items synced”; columns Permissions, Name, Shared by, Local folder, Shared on, Sync"
+   },
+   {
+    "n": 2,
+    "action": "Click “Shared on”",
+    "expected": "Order flips; arrow ▼/▲"
+   },
+   {
+    "n": 3,
+    "action": "Click the folder icon on row 1, pick ~/Documents/Papies",
+    "expected": "Path updates (dimmed until synced)"
+   },
+   {
+    "n": 4,
+    "action": "Switch Sync on for row 1",
+    "expected": "Toast “Syncing … to …”; “1 of 3 items synced”; files appear locally"
+   },
+   {
+    "n": 5,
+    "action": "Switch Sync on for the Viewer item",
+    "expected": "Syncs as mirror-down; tooltip explains why"
+   },
+   {
+    "n": 6,
+    "action": "Switch Sync off",
+    "expected": "Toast “local copy kept”; files stay on disk"
+   }
+  ]
+ },
+ {
+  "id": "F11",
+  "title": "Activity",
+  "where": "Activity",
+  "given": "Log has ok, info, warning, error entries",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+6",
+    "expected": "Rows with coloured icons; sidebar badge clears"
+   },
+   {
+    "n": 2,
+    "action": "Set filter “Problems only”",
+    "expected": "Only warnings + errors"
+   },
+   {
+    "n": 3,
+    "action": "Click “Open log folder”",
+    "expected": "File manager at ~/.local/state/kluis"
+   },
+   {
+    "n": 4,
+    "action": "Click Clear, then Undo",
+    "expected": "Empty state, then the entries return"
+   }
+  ]
+ },
+ {
+  "id": "F12",
+  "title": "Settings",
+  "where": "Settings dialog",
+  "given": "Defaults",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+,",
+    "expected": "Dialog; first section “Your Proton Drive folder” with Location ✓ + Change…"
+   },
+   {
+    "n": 2,
+    "action": "Click Change…, pick /data/Proton",
+    "expected": "Progress “Moving N of M files”; ends ✓; toast + Undo; no file missing at any point (assert)"
+   },
+   {
+    "n": 3,
+    "action": "Toggle Start at login, Start hidden; set interval 30 min, theme Light, notifications Problems only",
+    "expected": "Each applies instantly; all persist after restart; autostart .desktop written/removed"
+   },
+   {
+    "n": 4,
+    "action": "Click “Check now” under Proton Drive CLI",
+    "expected": "“Checking…” → “✓ Up to date” or update flow F15"
+   },
+   {
+    "n": 5,
+    "action": "Click “Copy diagnostics”",
+    "expected": "Toast “Copied”; clipboard has versions + log, no email, no tokens (assert)"
+   },
+   {
+    "n": 6,
+    "action": "Click “Sign out…”",
+    "expected": "Confirm “Sign out” / “Stay signed in”"
+   },
+   {
+    "n": 7,
+    "action": "Confirm",
+    "expected": "Sync stops; onboarding Step 2 opens; files untouched"
+   }
+  ]
+ },
+ {
+  "id": "F13",
+  "title": "Quick settings column",
+  "where": "Quick settings",
+  "given": "Expanded",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Check the order",
+    "expected": "⚙ All settings… → divider → “Quick settings” → Pause, Notifications, Dark mode, Start at login, VPN view"
+   },
+   {
+    "n": 2,
+    "action": "Click ⚙ All settings…",
+    "expected": "Menu drops down: Add folder, Settings, Run setup again, About Kluis, Quit"
+   },
+   {
+    "n": 3,
+    "action": "Click Notifications 3 times",
+    "expected": "All → Problems only → Off → All; Settings shows the same value"
+   },
+   {
+    "n": 4,
+    "action": "Click the sliders ▾ button",
+    "expected": "Column disappears; button moves into the header after Pause; main area widens"
+   },
+   {
+    "n": 5,
+    "action": "Restart",
+    "expected": "Column stays collapsed"
+   }
+  ]
+ },
+ {
+  "id": "F14",
+  "title": "Things going wrong — always recover",
+  "where": "Everywhere",
+  "given": "Syncing",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Cut the network mid-upload",
+    "expected": "Status “Offline — will continue when you're back online”; no retry storm (backoff)"
+   },
+   {
+    "n": 2,
+    "action": "Restore the network",
+    "expected": "Resumes; no duplicate files (assert SHA-1s)"
+   },
+   {
+    "n": 3,
+    "action": "Fill the disk (mock)",
+    "expected": "Folder paused, “Disk full on this computer”; resumes after space is freed"
+   },
+   {
+    "n": 4,
+    "action": "Expire the session (mock)",
+    "expected": "Notification + Home banner “Sign in again” → opens onboarding Step 2"
+   },
+   {
+    "n": 5,
+    "action": "Unplug the drive holding a synced folder",
+    "expected": "Folder paused “Folder not found…”; nothing trashed remotely"
+   },
+   {
+    "n": 6,
+    "action": "Delete 400 files locally in a two-way folder",
+    "expected": "Mass-deletion guard dialog; default keeps everything"
+   },
+   {
+    "n": 7,
+    "action": "Edit the same file locally and remotely",
+    "expected": "Both kept: “name (conflict 2026-11-26 0942 <host>).ext”; activity warning"
+   },
+   {
+    "n": 8,
+    "action": "Kill the app mid-sync, relaunch",
+    "expected": "Resumes; no .kluis-part leftovers; nothing lost"
+   }
+  ]
+ },
+ {
+  "id": "F15",
+  "title": "Proton CLI auto-update (always latest)",
+  "where": "Background",
+  "given": "Newer CLI published",
+  "steps": [
+   {
+    "n": 1,
+    "action": "App start / daily check finds a new version",
+    "expected": "Downloads in the background, SHA-512 verified"
+   },
+   {
+    "n": 2,
+    "action": "Capability self-test passes",
+    "expected": "Switches atomically; Settings shows the new version; activity entry; no prompt"
+   },
+   {
+    "n": 3,
+    "action": "Capability self-test fails (mock incompatible CLI)",
+    "expected": "Keeps the previous binary; one notification “Proton changed its Drive tool. Kluis needs an update for it.”; retries daily"
+   }
+  ]
+ },
+ {
+  "id": "F16",
+  "title": "Kluis update available (notify only)",
+  "where": "Background",
+  "given": "Newer GitHub release",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Daily check finds Kluis 1.0.1",
+    "expected": "Notification “Kluis 1.0.1 is available” + link; nothing installs"
+   },
+   {
+    "n": 2,
+    "action": "Beta access off, only a pre-release exists",
+    "expected": "No notification"
+   }
+  ]
+ },
+ {
+  "id": "F17",
+  "title": "Window and session",
+  "where": "App",
+  "given": "Running",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Close the window",
+    "expected": "Hides; keeps syncing; first time: notification “Kluis keeps syncing in the background”"
+   },
+   {
+    "n": 2,
+    "action": "Launch Kluis again",
+    "expected": "Same window comes back (single instance)"
+   },
+   {
+    "n": 3,
+    "action": "Log out and in (Start at login + Start hidden)",
+    "expected": "Only the panel icon appears; syncing runs"
+   },
+   {
+    "n": 4,
+    "action": "⚙ All settings… → Quit",
+    "expected": "Process ends; panel icon gone"
+   },
+   {
+    "n": 5,
+    "action": "Keyboard only: Tab through every screen",
+    "expected": "Visible focus everywhere; every action reachable"
+   }
+  ]
+ },
+ {
+  "id": "F18",
+  "title": "Home map and VPN",
+  "where": "Home",
+  "given": "Proton VPN connected to Zürich",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Press Ctrl+1",
+    "expected": "Chip “VPN on”, “Showing as Zürich”; pin “You · Zürich (VPN)”"
+   },
+   {
+    "n": 2,
+    "action": "Disconnect the VPN (NetworkManager event)",
+    "expected": "Within 2 s: chip “VPN off”, “Your location <home city>”; pin moves"
+   },
+   {
+    "n": 3,
+    "action": "Connect to Australia",
+    "expected": "Pin moves to the Australian capital"
+   },
+   {
+    "n": 4,
+    "action": "No home city set and no VPN",
+    "expected": "Pin uses the city from the system time zone"
+   }
+  ]
+ },
+ {
+  "id": "F19",
+  "title": "Advanced folder options and Edit (from 0.3.1)",
+  "where": "Folders",
+  "given": "Folder “Agriland”, two-way",
+  "steps": [
+   {
+    "n": 1,
+    "action": "Card ⋯ More → Edit…",
+    "expected": "Edit synced folder dialog, prefilled; button “Save”"
+   },
+   {
+    "n": 2,
+    "action": "Open “More options”, switch off “Copy deletions to the other side”, Save",
+    "expected": "Deleting a file locally does not trash it remotely; the next sync brings it back"
+   },
+   {
+    "n": 3,
+    "action": "Add skip pattern “*.tmp”, Save",
+    "expected": "New .tmp files are never uploaded (assert)"
+   },
+   {
+    "n": 4,
+    "action": "Switch off “Sync soon after I change files”",
+    "expected": "Edits wait for the next periodic check; status says so"
+   },
+   {
+    "n": 5,
+    "action": "⋯ More → Check every file again",
+    "expected": "Full rescan on the next sync; activity entry"
+   },
+   {
+    "n": 6,
+    "action": "⋯ More → Show in Kluis browser",
+    "expected": "Browse opens at the folder's remote path"
+   },
+   {
+    "n": 7,
+    "action": "⋯ More → Open Proton Drive on the web",
+    "expected": "Default browser opens drive.proton.me"
+   }
+  ]
+ }
+]

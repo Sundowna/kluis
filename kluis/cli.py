@@ -75,6 +75,11 @@ class RemoteNode:
     modified: str = ""  # ISO string
     shared: bool = False
     media_type: str = ""
+    role: str = ""          # viewer | editor | admin (shares)
+    shared_by: str = ""     # Shared with me: who shared it
+    shared_on: str = ""     # Shared with me: invite time (ISO)
+    trashed: str = ""       # /trash: trash time (ISO)
+    parent_uid: str = ""
 
     @property
     def is_folder(self) -> bool:
@@ -87,6 +92,10 @@ class RemoteNode:
             name = name.get("value") if name.get("ok", True) else ""
         rev = d.get("activeRevision") or {}
         digests = rev.get("claimedDigests") or {}
+        mem = d.get("membership") or {}
+        by = mem.get("sharedBy") or {}
+        if isinstance(by, dict):
+            by = by.get("value") if by.get("ok", True) else ""
         return cls(
             name=name or d.get("path") or d.get("uid", "?"),
             type=d.get("type", "folder" if "path" in d else "file"),
@@ -97,6 +106,11 @@ class RemoteNode:
             modified=rev.get("claimedModificationTime") or d.get("modificationTime") or "",
             shared=bool(d.get("isShared")),
             media_type=d.get("mediaType") or "",
+            role=mem.get("role") or d.get("directRole") or "",
+            shared_by=by or "",
+            shared_on=mem.get("inviteTime") or "",
+            trashed=d.get("trashTime") or "",
+            parent_uid=d.get("parentUid") or "",
         )
 
 
@@ -210,9 +224,30 @@ def platform_key() -> str:
     return f"linux/{arch}{'-musl' if musl else ''}"
 
 
+class ChecksumMismatch(CliError):
+    pass
+
+
+class IncompatibleCli(CliError):
+    pass
+
+
+def _manifest_url() -> str:
+    # Tests point Kluis at a local manifest; only honoured in test mode, never in a normal run.
+    if os.environ.get("KLUIS_TEST") == "1" and os.environ.get("KLUIS_TEST_MANIFEST"):
+        return os.environ["KLUIS_TEST_MANIFEST"]
+    return VERSION_JSON_URL
+
+
+def _official(url: str) -> bool:
+    if os.environ.get("KLUIS_TEST") == "1" and url.startswith(("file://", "http://127.0.0.1")):
+        return True
+    return url.startswith("https://proton.me/")
+
+
 def fetch_latest_release(timeout: int = 15) -> dict | None:
     """Returns {"version", "url", "sha512"} for this machine from Proton's official version.json."""
-    req = urllib.request.Request(VERSION_JSON_URL, headers={"User-Agent": "kluis"})
+    req = urllib.request.Request(_manifest_url(), headers={"User-Agent": "kluis"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         manifest = json.load(r)
     key = platform_key()
@@ -228,34 +263,54 @@ def fetch_latest_release(timeout: int = 15) -> dict | None:
     return None
 
 
-def download_cli(progress: Callable[[float], None] | None = None, dest_dir: Path = BIN_DIR) -> str:
-    """Download the official CLI to ~/.local/bin and verify its SHA-512 against version.json."""
-    rel = fetch_latest_release()
-    if not rel or not rel["url"].startswith("https://proton.me/"):
+def download_cli(progress: Callable[[int, int], None] | None = None, dest_dir: Path = BIN_DIR,
+                 verify: Callable[[str], tuple[bool, list]] | None = None, rel: dict | None = None) -> str:
+    """Download the official CLI, verify its SHA-512 against version.json, optionally run the
+    capability self-test on it, and only then switch to it atomically (os.replace)."""
+    rel = rel or fetch_latest_release()
+    if not rel or not _official(rel["url"]) or not rel.get("sha512"):
         raise CliError("Could not find an official Proton Drive CLI build for this computer.")
+    dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     tmp = dest_dir / ".proton-drive.download"
     h = hashlib.sha512()
     req = urllib.request.Request(rel["url"], headers={"User-Agent": "kluis"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
-        total = int(r.headers.get("Content-Length") or 0)
-        done = 0
-        while True:
-            chunk = r.read(1 << 16)
-            if not chunk:
-                break
-            out.write(chunk)
-            h.update(chunk)
-            done += len(chunk)
-            if progress and total:
-                progress(done / total)
-    if rel["sha512"] and h.hexdigest() != rel["sha512"]:
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                out.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
+    except BaseException:
         tmp.unlink(missing_ok=True)
-        raise CliError("Checksum mismatch: the download was discarded.")
-    dest = dest_dir / "proton-drive"
+        raise
+    if h.hexdigest() != rel["sha512"]:
+        tmp.unlink(missing_ok=True)
+        raise ChecksumMismatch("The download didn't match Proton's checksum, so it was deleted. Try again.")
     os.chmod(tmp, 0o755)
+    if verify:
+        ok, problems = verify(str(tmp))
+        if not ok:
+            tmp.unlink(missing_ok=True)
+            raise IncompatibleCli("Proton changed its Drive tool. Kluis needs an update for it.",
+                                  stderr="; ".join(problems))
+    dest = dest_dir / "proton-drive"
     os.replace(tmp, dest)
     return str(dest)
+
+
+def cli_version_of(text: str) -> str:
+    """'Proton Drive CLI cli-drive@0.9.0+756…' -> '0.9.0'"""
+    import re
+    m = re.search(r"cli-drive@([0-9][0-9A-Za-z.\-]*)", text or "")
+    return m.group(1) if m else ""
 
 
 class ProtonDriveCli:
@@ -425,6 +480,40 @@ class ProtonDriveCli:
 
     def trash(self, paths: list[str]):
         return self.run(["filesystem", "trash", *paths], timeout=300)
+
+    def list_trash(self) -> list[RemoteNode]:
+        return self.list("/trash")
+
+    @staticmethod
+    def trash_path(name: str) -> str:
+        """The real CLI addresses trashed items as /trash/<name> (uids are not accepted there)."""
+        return "/trash/" + name.replace("/", "\\/")      # the CLI's documented escape for "/"
+
+    def trashed(self, uids) -> list[RemoteNode] | None:
+        """The trash entries for these uids, or None when any of them can't be addressed safely:
+        missing, or its name appears more than once in the trash (it could hit someone else's item)."""
+        trash = self.list_trash()
+        counts: dict[str, int] = {}
+        for n in trash:
+            counts[n.name] = counts.get(n.name, 0) + 1
+        mine = [n for n in trash if n.uid in set(uids)]
+        if len(mine) != len(set(uids)) or any(counts[n.name] != 1 for n in mine):
+            return None
+        return mine
+
+    def restore(self, nodes: list[RemoteNode]):
+        """Undo a trash. `nodes` must come from trashed(): names checked unique in the trash."""
+        return self.run(["filesystem", "restore", *[self.trash_path(n.name) for n in nodes]], timeout=300)
+
+    def delete_trashed(self, nodes: list[RemoteNode]):
+        """Permanent delete. Only --selftest calls this, and only for items it created (decisions D12)."""
+        return self.run(["filesystem", "delete", *[self.trash_path(n.name) for n in nodes]], timeout=300)
+
+    def shared_with_me(self) -> list[RemoteNode]:
+        return [n for n in self.list("/shared-with-me") if n.type in ("file", "folder")]
+
+    def help_text(self, *cmd: str) -> str:
+        return self.run([*cmd, "--help"], json_out=False, timeout=60, ok_codes=(0, 1)) or ""
 
     def rename(self, path: str, new_name: str):
         return self.run(["filesystem", "rename", path, new_name], timeout=120)

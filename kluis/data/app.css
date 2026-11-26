@@ -1,0 +1,138 @@
+/* Kluis 1.0 layout classes. Appended to kluis-dark.css / kluis-light.css, so @k_* colours are defined. */
+.kluis { font-size: 14px; }
+.kluis label { color: @k_text; }
+.kluis .k-muted, .kluis .k-muted label { color: @k_muted; }
+.kluis .k-panel { padding: 16px; }
+.kluis .k-panel.k-tight { padding: 0; }
+.kluis .k-side { padding: 16px; }
+.kluis .k-statuspanel { background-color: transparent; border: none; padding: 4px 4px 0 4px; }
+.kluis .k-h0 { font-size: 32px; font-weight: 700; }
+.kluis .k-h1 { font-size: 20px; font-weight: 700; }
+.kluis .k-h2 { font-size: 18px; font-weight: 700; }
+.kluis .k-h3 { font-size: 15px; font-weight: 700; }
+.kluis .k-s13 { font-size: 13px; }
+.kluis .k-s12 { font-size: 12px; }
+.kluis .k-bold { font-weight: 700; }
+.kluis .k-dim { opacity: 0.55; }
+.kluis .k-mono { font-family: monospace; font-size: 13px; }
+.kluis .k-chip { background-color: @k_surface; border: 1px solid @k_line; border-radius: 999px; padding: 2px 10px;
+                 font-size: 12px; font-weight: 700; }
+.kluis .k-chip.k-on { background-color: @k_accent_soft; border-color: @k_accent; color: @k_text; }
+.kluis .k-chip.k-amber { color: @k_warn; border-color: @k_warn; }
+.kluis .k-card { background-color: @k_panel; border: 1px solid @k_line; border-radius: 10px; padding: 14px 16px; }
+.kluis .k-card.k-off { opacity: 0.6; }
+.kluis .k-card.k-drop { border-style: dashed; background-color: transparent; padding: 22px; }
+.kluis .k-drop.k-drag-over, .kluis .k-drag-over { border-color: @k_accent; background-color: alpha(@k_accent, 0.12); }
+.kluis .k-iconbox { min-width: 44px; min-height: 44px; border-radius: 10px; background-color: @k_surface;
+                    font-size: 20px; font-weight: 700; }
+.kluis .k-iconbox.k-ok { background-color: @k_accent_soft; color: @k_accent; }
+.kluis .k-iconbox.k-warn { color: @k_warn; }
+.kluis .k-iconbox.k-error { color: @k_error; }
+.kluis .k-warn, .kluis label.k-warn { color: @k_warn; }
+.kluis .k-error, .kluis label.k-error { color: @k_error; }
+.kluis .k-ok, .kluis label.k-ok { color: @k_accent; }
+.kluis button.k-flat { border-color: transparent; background-color: transparent; }
+.kluis button.k-flat:hover { background-color: @k_surface; }
+.kluis button.k-link { border: none; background-color: transparent; color: @k_accent; padding: 0 4px; min-height: 24px; font-weight: 600; }
+.kluis button.k-link:hover { text-decoration-line: underline; }
+.kluis button.k-danger { color: @k_error; }
+.kluis button.k-pressed, .kluis togglebutton:checked, .kluis button.k-chipbtn:checked {
+    background-color: @k_accent_soft; border-color: @k_accent; }
+.kluis button.k-big { min-height: 44px; }
+.kluis button.k-small { min-height: 28px; padding: 0 10px; font-size: 13px; }
+.kluis .k-nav button { min-height: 40px; padding: 0 12px; }
+.kluis .k-nav button label { font-size: 14px; }
+.kluis .k-key { color: @k_muted; font-size: 12px; font-weight: 400; }
+.kluis entry { min-height: 34px; border-radius: 8px; border: 1px solid @k_line; background-color: @k_surface;
+               color: @k_text; background-image: none; box-shadow: none; }
+.kluis combobox button, .kluis combobox box button { min-height: 32px; }
+.kluis .k-timeline-dot { min-width: 10px; min-height: 10px; border-radius: 5px; background-color: @k_accent; }
+.kluis .k-timeline-dot.k-warn { background-color: @k_warn; }
+.kluis .k-timeline-dot.k-error { background-color: @k_error; }
+.kluis .k-timeline-dot.k-info { background-color: @k_muted; }
+.kluis .k-tl-line { min-width: 2px; background-color: alpha(@k_line, 0.8); }
+.kluis .k-divider { min-height: 1px; background-image: linear-gradient(to right, alpha(@k_line, 0), @k_line, alpha(@k_line, 0)); }
+.kluis .k-qs-state { font-size: 11px; color: @k_muted; }
+.kluis .k-toast { box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08); }
+.kluis .k-toast label { color: @k_bg; }
+.kluis .k-toast button { background-color: transparent; border-color: alpha(@k_bg, 0.4); color: @k_bg; min-height: 30px; }
+.kluis .k-toast button label { color: @k_bg; }
+.kluis .k-step-bar { min-height: 4px; border-radius: 2px; background-color: @k_line; }
+.kluis .k-step-bar.k-on { background-color: @k_accent; }
+.kluis .k-tablehead { font-size: 12px; font-weight: 700; color: @k_muted; }
+.kluis treeview.view { background-color: @k_panel; color: @k_text; }
+.kluis treeview.view:hover { background-color: alpha(@k_surface, 0.6); }
+.kluis treeview header button { min-height: 32px; }
+.kluis .k-sizechip { background-color: @k_surface; border-radius: 6px; padding: 1px 8px; font-size: 12px; color: @k_muted; }
+.kluis .k-mini { min-height: 4px; }
+.kluis progressbar trough { min-height: 4px; border-radius: 2px; background-color: @k_line; border: none; }
+.kluis progressbar progress { min-height: 4px; border-radius: 2px; background-color: @k_accent; border: none; }
+.kluis .k-dialog { background-color: @k_bg; }
+.kluis .k-dialog .k-dlgbody { padding: 22px; }
+.kluis .k-modecard { padding: 10px 12px; border-radius: 10px; }
+.kluis .k-modecard:checked { background-color: @k_accent_soft; border-color: @k_accent; }
+.kluis .k-inline-error { color: @k_error; font-size: 13px; }
+.kluis .k-skeleton { background-color: alpha(@k_line, 0.35); border-radius: 6px; min-height: 14px; }
+.kluis .k-cardhead { padding: 0; }
+.kluis .k-section-head { font-size: 12px; font-weight: 700; color: @k_muted; }
+.kluis menu, .kluis .k-menu { padding: 6px; }
+.kluis modelbutton { min-height: 32px; padding: 0 10px; border-radius: 6px; }
+.kluis modelbutton:hover { background-color: @k_surface; }
+.kluis .k-banner { background-color: alpha(@k_error, 0.14); border: 1px solid @k_error; border-radius: 10px; padding: 10px 14px; }
+.kluis .k-banner.k-warn { background-color: alpha(@k_warn, 0.14); border-color: @k_warn; }
+/* button label colours win over the generic label colour */
+.kluis button.suggested-action label, .kluis button.k-primary label { color: @k_on_accent; }
+.kluis button.k-link label { color: @k_accent; }
+.kluis button.k-danger label, .kluis button.destructive-action label { color: @k_error; }
+.kluis button.destructive-action { background-color: alpha(@k_error, 0.14); border-color: @k_error; }
+.kluis .k-qs-toggle { min-height: 56px; padding: 6px 4px; }
+.kluis .k-qs-toggle label { font-size: 12px; }
+.kluis .k-qs-head { min-height: 36px; padding: 0 8px; }
+.kluis .k-nav button.k-current label { font-weight: 700; }
+/* GtkDialog / GtkMessageDialog / GtkAboutDialog use their own CSS node names, not "window" */
+dialog.kluis, messagedialog.kluis, aboutdialog.kluis, window.kluis.k-dialog { background-color: @k_bg; color: @k_text; }
+dialog.kluis headerbar, messagedialog.kluis headerbar, aboutdialog.kluis headerbar, window.kluis headerbar {
+    background-image: none; background-color: @k_panel; border-color: @k_line; color: @k_text; box-shadow: none; }
+dialog.kluis headerbar label, window.kluis headerbar label { color: @k_text; }
+dialog.kluis label, messagedialog.kluis label, aboutdialog.kluis label { color: @k_text; }
+dialog.kluis .k-muted, dialog.kluis .k-section-head { color: @k_muted; }
+dialog.kluis .k-inline-error { color: @k_error; }
+dialog.kluis expander title label { color: @k_text; }
+dialog.kluis textview, dialog.kluis textview text { background-color: @k_surface; color: @k_text; }
+dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k_text; }
+/* lists (Activity, Proton Drive folder picker) follow the Kluis theme, not the system one */
+.kluis list, .kluis list row { background-color: @k_panel; color: @k_text; }
+.kluis list row:hover { background-color: alpha(@k_surface, 0.7); }
+.kluis list row:selected { background-color: @k_accent_soft; }
+.kluis scrolledwindow, .kluis viewport { background-color: transparent; }
+
+/* Switches, check boxes and radio buttons: Kluis's own look in every state, whatever the desktop theme
+   draws (Mint-Y adds ✓/× images and its own colours). */
+.kluis switch, .kluis switch:hover, .kluis switch:backdrop, .kluis switch:disabled {
+    background-image: none; background-color: @k_line; border: 1px solid @k_line; box-shadow: none;
+    border-radius: 13px; min-width: 44px; min-height: 24px; color: transparent; font-size: 0; }
+.kluis switch:checked, .kluis switch:checked:hover, .kluis switch:checked:backdrop {
+    background-image: none; background-color: @k_accent; border-color: @k_accent; }
+.kluis switch:disabled { opacity: 0.45; }
+.kluis switch slider, .kluis switch:hover slider, .kluis switch:backdrop slider, .kluis switch:checked slider {
+    background-image: none; background-color: #ffffff; border: none; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    min-width: 20px; min-height: 20px; margin: 2px; border-radius: 10px; }
+.kluis switch image { color: transparent; -gtk-icon-source: none; opacity: 0; }
+.kluis check, .kluis radio, .kluis check:hover, .kluis radio:hover, .kluis check:backdrop, .kluis radio:backdrop {
+    background-image: none; background-color: @k_surface; border: 1px solid @k_muted; box-shadow: none;
+    min-width: 16px; min-height: 16px; -gtk-icon-source: none; color: @k_on_accent; }
+.kluis check { border-radius: 4px; }
+.kluis radio { border-radius: 9px; }
+.kluis check:checked, .kluis radio:checked, .kluis check:checked:hover, .kluis radio:checked:hover {
+    background-color: @k_accent; border-color: @k_accent; }
+.kluis check:checked { -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); }
+.kluis radio:checked { -gtk-icon-source: -gtk-icontheme("media-record-symbolic"); }
+.kluis checkbutton label, .kluis radiobutton label { color: @k_text; }
+/* Mode cards ("How should it sync?") are radio buttons: exactly two looks, never a half-selected tint */
+.kluis radiobutton.k-modecard, .kluis button.k-modecard, .kluis .k-modecard:hover, .kluis .k-modecard:active,
+.kluis .k-modecard:backdrop, .kluis .k-modecard:focus {
+    background-image: none; background-color: @k_surface; border: 1px solid @k_line; box-shadow: none; }
+.kluis .k-modecard:hover { border-color: @k_muted; }
+.kluis .k-modecard:checked, .kluis .k-modecard:checked:hover, .kluis .k-modecard:checked:active,
+.kluis .k-modecard:checked:backdrop, .kluis .k-modecard:checked:focus {
+    background-color: @k_accent_soft; border: 2px solid @k_accent; }

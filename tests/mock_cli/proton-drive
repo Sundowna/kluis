@@ -43,9 +43,11 @@ def node(p):
     n = {"uid": "uid-" + hashlib.md5(p.encode()).hexdigest()[:10], "name": {"ok": True, "value": os.path.basename(p)},
          "type": "folder" if os.path.isdir(p) else "file", "isShared": False, "isSharedByUrl": False,
          "creationTime": iso, "modificationTime": iso, "directRole": "admin", "treeEventScopeId": "x",
-         "keyAuthor": {"ok": True, "value": "me@proton.me"}}
+         "keyAuthor": {"ok": True, "value": "me@proton.me"}, "ownedBy": {"email": "me@proton.me"}}
     if os.path.isfile(p):
         s = sha1(p)
+        if os.environ.get("MOCK_BAD_SHA1") and os.environ["MOCK_BAD_SHA1"] in os.path.basename(p):
+            s = "0" * 40
         n["mediaType"] = "application/octet-stream"
         n["activeRevision"] = {"uid": f"rev-{s[:12]}-{st.st_mtime_ns}", "state": "active", "claimedSize": st.st_size,
                                "claimedModificationTime": iso, "claimedDigests": {"sha1": s, "sha1Verified": True}}
@@ -67,21 +69,70 @@ def opts(argv, names):
     return pos, o
 
 
+HELP = {
+    "": """Usage:
+    auth login
+    auth logout
+    filesystem list [-t TYPE] path
+    filesystem info path
+    filesystem size path
+    filesystem create-folder parentPath name
+    filesystem upload [-f STRATEGY] [-d STRATEGY] [-t] localPath... parentPath
+    filesystem download [-f STRATEGY] [-d STRATEGY] path... localFolder
+    filesystem rename path newName
+    filesystem trash path...
+    filesystem restore path...
+    filesystem delete path...
+    album list
+    album photos [-d] albumPath
+    photo timeline [-d]
+    photo upload [-c STRATEGY] localPath...
+    photo download [-c STRATEGY] path... localFolder
+""",
+    "filesystem upload": "-f, --file-conflict-strategy create-new-revision rename replace skip "
+                         "-d, --folder-conflict-strategy merge rename replace skip -t, --skip-thumbnails",
+    "filesystem download": "-f, --file-conflict-strategy rename remove skip -d, --folder-conflict-strategy merge rename remove skip",
+    "photo upload": "-c, --conflict-strategy skip rename",
+    "photo download": "-c, --conflict-strategy rename remove skip",
+}
+
+
+def mock_flag(name):
+    return os.path.exists(os.path.join(ROOT, "." + name))
+
+
 def main():
     argv = sys.argv[1:]
     if not argv:
         fail("interactive shell not supported in mock", 2)
+    try:
+        with open(os.path.join(ROOT, ".calls"), "a") as fh:
+            fh.write(" ".join(argv[:2]) + "\n")
+    except OSError:
+        pass
     group, cmd, rest = argv[0], (argv[1] if len(argv) > 1 else ""), argv[2:]
     if group == "fs":
         group = "filesystem"
+    if "--help" in argv or "-h" in argv:
+        key = " ".join(a for a in argv[:2] if not a.startswith("-")) if group not in ("--help", "-h") else ""
+        text = HELP.get(key, HELP[""] if not key else f"Usage:\n    {key}")
+        if os.environ.get("MOCK_INCOMPATIBLE") or mock_flag("incompatible"):
+            text = text.replace("filesystem restore path...\n", "").replace("create-new-revision", "new-rev")
+        print(text)
+        return
     if group == "version":
-        print("Proton Drive CLI cli-drive@0.9.0\nProton Drive SDK 0.14.0\nYou are running the latest version.")
+        v = os.environ.get("MOCK_VERSION") or "0.9.0"
+        print(f"Proton Drive CLI cli-drive@{v}\nProton Drive SDK 0.14.0\nYou are running the latest version.")
         return
     if group == "auth" and cmd == "login":
         print(json.dumps({"signInUrl": "https://account.proton.me/mock-sign-in"}), flush=True)
-        time.sleep(1.5)
+        if mock_flag("login-hang"):
+            time.sleep(3600)
+        time.sleep(float(os.environ.get("MOCK_LOGIN_DELAY", "1.5")))
         open(LOGGED, "w").close()
         return
+    if mock_flag("offline"):
+        fail("TypeError: fetch failed (getaddrinfo ENOTFOUND drive-api.proton.me)")
     if group == "auth" and cmd == "logout":
         if os.path.exists(LOGGED):
             os.remove(LOGGED)
@@ -91,22 +142,126 @@ def main():
     time.sleep(DELAY)
     pos, o = opts(rest, {"file-conflict-strategy", "folder-conflict-strategy", "type", "conflict-strategy"})
 
+    trash_dir = os.path.join(ROOT, ".trash")
+    index_p = os.path.join(trash_dir, "index.json")
+    index = json.load(open(index_p)) if os.path.exists(index_p) else {}
+    shared_p = os.path.join(ROOT, "shared.json")
+    shared = json.load(open(shared_p)) if os.path.exists(shared_p) else {}
+
+    def shared_node(name):
+        n = node(os.path.join(ROOT, "shared-with-me", name))
+        meta = shared.get(name, {})
+        n["uid"] = "share-" + hashlib.md5(name.encode()).hexdigest()[:8]
+        n["directRole"] = meta.get("role", "viewer")
+        n["membership"] = {"role": meta.get("role", "viewer"), "inviteTime": meta.get("on", "2026-01-01T00:00:00.000Z"),
+                           "sharedBy": {"ok": True, "value": meta.get("by", "someone@proton.me")}}
+        return n
+
+    def resolve(path):
+        """Map /shared-with-me/<uid or name>/… to the mock folder."""
+        parts = path.strip("/").split("/")
+        if parts[0] == "shared-with-me" and len(parts) > 1:
+            for name in os.listdir(os.path.join(ROOT, "shared-with-me")) if os.path.isdir(
+                    os.path.join(ROOT, "shared-with-me")) else []:
+                if parts[1] in (name, "share-" + hashlib.md5(name.encode()).hexdigest()[:8]):
+                    parts[1] = name
+            return os.path.join(ROOT, *parts)
+        return local(path)
+
     if group == "filesystem" and cmd == "list":
         path = pos[0]
         if path.strip("/") == "":
             print(json.dumps([{"path": "/my-files"}, {"path": "/devices"}, {"path": "/shared-with-me"},
                               {"path": "/trash"}]))
             return
-        d = local(path)
+        if path.strip("/") == "trash":
+            out = []
+            for uid, e in index.items():
+                if os.path.exists(e["stored"]):
+                    n = node(e["stored"])
+                    n["uid"], n["name"]["value"], n["trashTime"] = uid, os.path.basename(e["orig"]), e["time"]
+                    n["parentUid"] = "uid-" + hashlib.md5(os.path.dirname(e["orig"]).encode()).hexdigest()[:10]
+                    out.append(n)
+            print(json.dumps(out))
+            return
+        if path.strip("/") == "shared-with-me":
+            d = os.path.join(ROOT, "shared-with-me")
+            print(json.dumps([shared_node(n) for n in sorted(os.listdir(d))] if os.path.isdir(d) else []))
+            return
+        d = resolve(path)
         if not os.path.isdir(d):
             fail(f"Node not found: {os.path.basename(path)}")
         items = [node(os.path.join(d, n)) for n in sorted(os.listdir(d))]
         print("[\n" + ",\n".join(json.dumps(i) for i in items) + "\n]")
         return
 
+    if group == "filesystem" and cmd == "size":
+        d = resolve(pos[0])
+        if not os.path.exists(d):
+            fail(f"Node not found: {os.path.basename(pos[0])}")
+        tot, cnt = 0, 0
+        for dp, dns, fns in os.walk(d):
+            cnt += len(dns) + len(fns)
+            tot += sum(os.path.getsize(os.path.join(dp, f)) for f in fns)
+        print(json.dumps({"size": tot, "numberOfDescendants": cnt}))
+        return
+
+    if group == "filesystem" and cmd == "info":
+        d = resolve(pos[0])
+        if not os.path.exists(d):
+            fail(f"Node not found: {os.path.basename(pos[0])}")
+        print(json.dumps(node(d)))
+        return
+
+    if group == "filesystem" and cmd == "restore":
+        for p in pos:
+            if not p.startswith("/trash/"):
+                fail(f'Path "{p}" is not supported')
+            name = p[len("/trash/"):].replace("\\/", "/")       # like the real CLI: by name, not uid
+            hits = [u for u, e in index.items() if os.path.basename(e["orig"]) == name]
+            if not hits:
+                fail("Trashed node not found")
+            if len(hits) > 1:
+                fail(f"Multiple trashed nodes named {name}")
+            uid = hits[0]
+            e = index.get(uid)
+            if not e or not os.path.exists(e["stored"]):
+                fail(f"Node not found: {uid}")
+            if os.path.exists(e["orig"]):
+                fail("A file or folder with that name already exists")
+            os.makedirs(os.path.dirname(e["orig"]), exist_ok=True)
+            shutil.move(e["stored"], e["orig"])
+            del index[uid]
+        json.dump(index, open(index_p, "w"))
+        print(json.dumps([{"ok": True} for _ in pos]))
+        return
+
+    if group == "filesystem" and cmd == "delete":
+        for p in pos:
+            if not p.startswith("/trash/"):
+                fail(f'Path "{p}" is not supported')
+            name = p[len("/trash/"):].replace("\\/", "/")       # like the real CLI: by name, not uid
+            hits = [u for u, e in index.items() if os.path.basename(e["orig"]) == name]
+            if not hits:
+                fail("Trashed node not found")
+            if len(hits) > 1:
+                fail(f"Multiple trashed nodes named {name}")
+            uid = hits[0]
+            e = index.get(uid)
+            if not e:
+                fail(f"Node not found: {uid}")
+            if os.path.isdir(e["stored"]):
+                shutil.rmtree(e["stored"])
+            elif os.path.exists(e["stored"]):
+                os.unlink(e["stored"])
+            del index[uid]
+        json.dump(index, open(index_p, "w"))
+        print(json.dumps([{"ok": True} for _ in pos]))
+        return
+
     if group == "filesystem" and cmd == "create-folder":
         parent, name = pos
-        d = local(parent)
+        d = resolve(parent)
         if not os.path.isdir(d):
             fail(f"Node not found: {os.path.basename(parent)}")
         t = os.path.join(d, name)
@@ -118,7 +273,7 @@ def main():
 
     if group == "filesystem" and cmd == "upload":
         *srcs, parent = pos
-        d = local(parent)
+        d = resolve(parent)
         if not os.path.isdir(d):
             fail(f"Node not found: {os.path.basename(parent)}")
         fs = o.get("file-conflict-strategy", "")
@@ -145,7 +300,9 @@ def main():
                 summary["failedItems"] += 1
                 summary["failures"].append({"name": os.path.basename(src), "error": "Simulated failure"})
                 return
-            shutil.copyfile(src, t)
+            time.sleep(float(os.environ.get("MOCK_UPLOAD_DELAY", "0")))
+            shutil.copyfile(src, t + ".mock-upload")   # a cut connection never leaves a half file
+            os.replace(t + ".mock-upload", t)
             summary["transferredItems"] += 1
             summary["transferredBytes"] += os.path.getsize(src)
 
@@ -178,12 +335,23 @@ def main():
                     summary["failedItems"] += 1
                     summary["failures"].append({"name": os.path.basename(src), "error": "Name conflict"})
                     return
-            shutil.copyfile(src, t)
+            dd = float(os.environ.get("MOCK_DOWNLOAD_DELAY", "0"))
+            if dd:
+                data = open(src, "rb").read()
+                with open(t, "wb") as out:          # writes half, waits, writes the rest
+                    out.write(data[: len(data) // 2])
+                    out.flush()
+                    time.sleep(dd)
+                    out.write(data[len(data) // 2:])
+            else:
+                shutil.copyfile(src, t)
             summary["transferredItems"] += 1
             summary["transferredBytes"] += os.path.getsize(src)
 
+        if mock_flag("diskfull"):
+            fail("Error: ENOSPC: no space left on device, write")
         for s in srcs:
-            p = local(s)
+            p = resolve(s)
             if not os.path.exists(p):
                 fail(f"Node not found: {os.path.basename(s)}")
             down(p, dest)
@@ -193,12 +361,30 @@ def main():
     if group == "filesystem" and cmd == "trash":
         out = []
         for p in pos:
-            lp = local(p)
+            lp = resolve(p)
             if not os.path.exists(lp):
                 fail(f"Node not found: {os.path.basename(p)}")
-            shutil.move(lp, os.path.join(ROOT, ".trash", f"{time.time_ns()}-{os.path.basename(lp)}"))
-            out.append({"uid": "x", "ok": True})
+            uid = node(lp)["uid"]          # a trashed node keeps its uid (like the real CLI)
+            if uid in index:
+                uid += "-" + str(time.time_ns())[-6:]
+            stored = os.path.join(trash_dir, f"{time.time_ns()}-{os.path.basename(lp)}")
+            shutil.move(lp, stored)
+            index[uid] = {"orig": lp, "stored": stored, "time": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())}
+            out.append({"uid": uid, "ok": True})
+        json.dump(index, open(index_p, "w"))
         print(json.dumps(out))
+        return
+
+    if group == "filesystem" and cmd == "rename":
+        src, new = pos
+        lp = resolve(src)
+        if not os.path.exists(lp):
+            fail(f"Node not found: {os.path.basename(src)}")
+        t = os.path.join(os.path.dirname(lp), new)
+        if os.path.exists(t):
+            fail("A file or folder with that name already exists")
+        os.rename(lp, t)
+        print(json.dumps(node(t)))
         return
 
     # ---------- photos: $MOCK_ROOT/photostore/<uid>/<name>, meta.json, albums.json ----------

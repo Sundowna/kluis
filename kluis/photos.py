@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import re
 from collections import defaultdict
 from datetime import datetime
@@ -15,7 +16,9 @@ from typing import Callable
 
 from .cli import CliError, PhotoItem, ProtonDriveCli
 from .config import PhotoSettings
-from .engine import Cancelled, SyncResult, move_to_trash, sha1_file
+from .config import PART_DIR
+from .engine import GUARD_FILES, GUARD_SHARE, Cancelled, SyncResult, move_to_trash, sha1_file
+from .errors import DISK_FULL, HoldError, classify
 from .state import StateStore
 
 log = logging.getLogger("kluis.photos")
@@ -85,17 +88,29 @@ class PhotoSync:
         except Cancelled:
             res.status, res.message = "cancelled", "Stopped"
             return res
+        except HoldError as e:
+            res.status, res.hold_kind, res.message = "hold", e.kind, str(e)
+            return res
         except CliError as e:
             if e.code == 130:
                 res.status, res.message = "cancelled", "Stopped"
+                return res
+            if classify(e):
+                res.status, res.hold_kind, res.message = "hold", classify(e), str(e)
                 return res
             res.status, res.message = "error", str(e)
             res.errors.append(str(e))
             return res
         except OSError as e:
+            if classify(e) == DISK_FULL:
+                res.status, res.hold_kind, res.message = "hold", DISK_FULL, str(e)
+                return res
             res.status, res.message = "error", str(e)
             res.errors.append(str(e))
             return res
+        finally:
+            if ps.download_dir:
+                shutil.rmtree(os.path.join(ps.download_dir, PART_DIR), ignore_errors=True)
         if res.errors:
             res.status = "error"
             res.message = f"{len(res.errors)} problem(s): {res.errors[0]}"
@@ -121,9 +136,17 @@ class PhotoSync:
 
         if ps.remove_deleted:
             live = {p.uid for p in self.timeline}
-            for key, rel in have.items():
-                if "/" in key or key in live:   # album entries are handled with their album
-                    continue
+            gone = [(k, r) for k, r in have.items() if "/" not in k and k not in live]
+            existing = [(k, r) for k, r in gone if os.path.exists(os.path.join(ps.download_dir, r))]
+            base = max(1, sum(1 for k in have if "/" not in k))
+            if len(existing) > GUARD_FILES or len(existing) > GUARD_SHARE * base:
+                # §7.8: far more than usual; keep every copy and say so
+                res.pending_trash = len(existing)
+                self._emit("log", level="warning",
+                           text=f"Kept {len(existing)} photos that are no longer in Proton Photos",
+                           )
+                return
+            for key, rel in gone:   # album entries are handled with their album
                 path = os.path.join(ps.download_dir, rel)
                 if os.path.exists(path):
                     move_to_trash(path)
@@ -167,19 +190,40 @@ class PhotoSync:
                 chunk = pending[i:i + BATCH]
                 label = f"Saving photos to {rel_dir or os.path.basename(root)} ({done + len(chunk)}/{total})"
                 self._emit("progress", done=done, total=total, text=label)
-                before = set(os.listdir(abs_dir))
+                stage = os.path.join(root, PART_DIR, f"{os.getpid()}-{i}")
+                os.makedirs(stage, exist_ok=True)
                 try:
-                    summary = self.cli.photo_download([p.uid for p in chunk], abs_dir, "rename")
+                    summary = self.cli.photo_download([p.uid for p in chunk], stage, "rename")
                     for fl in summary.failures:
                         res.errors.append(f"Photo {fl.get('name')}: {fl.get('error')}")
                 except CliError as e:
                     if e.code == 130:
                         raise Cancelled()
+                    if classify(e):
+                        raise HoldError(classify(e), str(e))
                     res.errors.append(f"Saving photos into {rel_dir or root} failed: {e}")
-                new = sorted(set(os.listdir(abs_dir)) - before)
+                new = self._place(stage, abs_dir)
                 res.downloaded += self._match(abs_dir, rel_dir, chunk, new, key_prefix)
                 done += len(chunk)
         self._emit("progress", done=total, total=total, text="Photos saved")
+
+    @staticmethod
+    def _place(stage: str, abs_dir: str) -> list[str]:
+        """Move complete downloads from the staging folder into place without overwriting anything."""
+        out = []
+        for fn in sorted(os.listdir(stage)):
+            src = os.path.join(stage, fn)
+            if not os.path.isfile(src):
+                continue
+            stem, ext = os.path.splitext(fn)
+            name, i = fn, 1
+            while os.path.exists(os.path.join(abs_dir, name)):
+                name = f"{stem} ({i}){ext}"
+                i += 1
+            os.replace(src, os.path.join(abs_dir, name))
+            out.append(name)
+        shutil.rmtree(stage, ignore_errors=True)
+        return out
 
     def _hash_dir(self, abs_dir) -> dict[str, str]:
         out = {}
@@ -260,8 +304,12 @@ class PhotoSync:
             except CliError as e:
                 if e.code == 130:
                     raise Cancelled()
+                if classify(e):
+                    raise HoldError(classify(e), str(e))
                 res.errors.append(f"Adding photos failed: {e}")
                 continue
+            ps.added += summary.transferred
+            ps.skipped += summary.skipped
             failed = {fl.get("name") for fl in summary.failures}
             for fl in summary.failures:
                 res.errors.append(f"Photo {fl.get('name')}: {fl.get('error')}")

@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kluis – Proton Drive for Linux (prototype)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.k{--bg:oklch(0.27 0.02 290);--pn:oklch(0.24 0.02 290);--sf:oklch(0.32 0.022 290);--ln:oklch(0.42 0.022 290);--tx:oklch(0.95 0.01 290);--mu:oklch(0.80 0.02 290);--dot:oklch(0.46 0.025 290);--ac:oklch(0.80 0.13 165);--acs:oklch(0.40 0.07 165);--gl:oklch(0.55 0.11 165 / .45);--on:oklch(0.22 0.03 165);--up:oklch(0.76 0.12 20);--wa:oklch(0.82 0.13 80);--er:oklch(0.74 0.14 25);color-scheme:dark}
+.k.light{--bg:oklch(0.955 0.01 290);--pn:oklch(0.985 0.006 290);--sf:oklch(0.94 0.012 290);--ln:oklch(0.87 0.015 290);--tx:oklch(0.26 0.02 290);--mu:oklch(0.45 0.02 290);--dot:oklch(0.80 0.02 290);--ac:oklch(0.48 0.11 165);--acs:oklch(0.91 0.05 165);--gl:oklch(0.82 0.11 165 / .45);--on:oklch(0.99 0 0);--up:oklch(0.52 0.15 20);--wa:oklch(0.55 0.13 70);--er:oklch(0.52 0.17 25);color-scheme:light}
+.k button,.k select{font:inherit;cursor:pointer;color:var(--tx)}
+.k button{transition:transform 150ms ease-out,background-color 150ms ease-out}.k button:active{transform:scale(.97)}
+.k button:focus-visible,.k select:focus-visible,.k input:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.k button:disabled{opacity:.45;cursor:default;transform:none}
+.k select{height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--ln);background:var(--sf);font-size:13px}.k option{background:var(--sf);color:var(--tx)}
+.b{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--ln);background:var(--sf);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.bp{border:0;background:var(--ac);color:var(--on)!important}
+.card{background:var(--pn);border:1px solid var(--ln);border-radius:10px}
+.mu{color:var(--mu)}.num{font-variant-numeric:tabular-nums}
+.sw{width:44px;height:26px;border-radius:13px;border:1px solid var(--ln);padding:2px;display:inline-flex}.sw span{width:20px;height:20px;border-radius:50%;background:var(--mu);transition:transform 150ms ease-out}
+.sw[aria-checked=true]{background:var(--ac);border-color:var(--ac)}.sw[aria-checked=true] span{background:var(--on);transform:translateX(18px)}
+.ping{animation:ping 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}@keyframes ping{0%{transform:scale(.5);opacity:.9}100%{transform:scale(2.6);opacity:0}}
+.arc{stroke-dasharray:5 9;animation:arc 1.6s linear infinite}@keyframes arc{to{stroke-dashoffset:-28}}
+.tw{animation:tw 2.4s ease-in-out infinite}@keyframes tw{50%{opacity:.5}}
+.pop{animation:pop 220ms ease-out;transform-origin:top}@keyframes pop{from{opacity:0;transform:translateY(-8px) scale(.98)}}
+.rz{position:absolute;top:0;bottom:0;width:10px;padding:0;border:0;background:transparent;cursor:col-resize;touch-action:none}.rz::after{content:"";position:absolute;top:20%;bottom:20%;left:4px;width:2px;border-radius:1px;background:var(--ln)}.rz:hover::after,.rz:focus-visible::after{background:var(--ac)}
+.held .ping,.held .arc,.held .tw{animation:none}.held .ping{opacity:0}
+html,*{scrollbar-width:thin;scrollbar-color:oklch(0.80 0.13 165) transparent}
+::-webkit-scrollbar{width:12px;height:12px}::-webkit-scrollbar-track{background:linear-gradient(90deg,transparent 5px,oklch(0.42 0.022 290 / .6) 5px,oklch(0.42 0.022 290 / .6) 7px,transparent 7px)}
+::-webkit-scrollbar-thumb{border:3px solid transparent;background-clip:padding-box;border-radius:6px;background-image:linear-gradient(oklch(0.80 0.13 165),oklch(0.80 0.13 165 / .35))}::-webkit-scrollbar-thumb:hover{background-image:linear-gradient(oklch(0.85 0.13 165),oklch(0.80 0.13 165 / .6))}
+@media (prefers-reduced-motion:reduce){.ping,.arc,.tw,.pop{animation:none}}
+</style>
+</helmet>
+<div class="k {{mode}} {{held}}" style="width:100%;height:100vh;min-height:600px;overflow:hidden;display:flex;flex-direction:column;box-sizing:border-box;position:relative;background:linear-gradient(var(--gl),transparent 300px),var(--bg);color:var(--tx);font-family:'Segoe UI Variable','Segoe UI',Ubuntu,Cantarell,system-ui,sans-serif">
+
+<div style="flex:none;height:36px;display:flex;align-items:center;gap:8px;padding:0 8px 0 14px;border-bottom:1px solid var(--ln);background:var(--pn);font-size:13px">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="16" rx="2"/><rect x="6" y="6" width="12" height="10" rx="1"/><circle cx="11" cy="11" r="2.5"/></svg>
+  <span style="flex:1;font-weight:600">Kluis</span>
+  <span aria-hidden="true" class="mu" style="width:32px;text-align:center">–</span><span aria-hidden="true" class="mu" style="width:32px;text-align:center">▢</span><span aria-hidden="true" class="mu" style="width:32px;text-align:center">✕</span>
+</div>
+<!-- ================= ONBOARDING ================= -->
+<sc-if value="{{isOnboard}}" hint-placeholder-val="{{ false }}">
+<div style="flex:1;min-height:0;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box">
+  <div class="card pop" style="width:100%;max-width:640px;padding:40px;box-sizing:border-box;display:flex;flex-direction:column;gap:24px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="16" rx="2"/><rect x="6" y="6" width="12" height="10" rx="1"/><circle cx="11" cy="11" r="2.5"/><path d="M11 8.5v1M11 12.5v1M8.5 11h1M12.5 11h1M16 9.5v3M6 19v2M18 19v2"/></svg>
+      <div><div style="font-size:24px;font-weight:700">Welcome to Kluis</div><div class="mu" style="font-size:14px">Proton Drive on Linux, through Proton’s official CLI</div></div>
+    </div>
+    <div style="display:flex;gap:8px" aria-label="Progress">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="3"><div style="flex:1"><div style="height:4px;border-radius:2px;background:{{s.bar}}"></div><div style="font-size:12px;margin-top:6px;color:{{s.fg}};font-weight:600">{{s.label}}</div></div></sc-for>
+    </div>
+    <div class="mu" style="font-size:13px;font-weight:600">Step {{step}} of 3</div>
+
+    <sc-if value="{{st1}}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:12px">
+      <h1 style="margin:0;font-size:22px">Get the official Proton Drive CLI</h1>
+      <p class="mu" style="margin:0;line-height:1.5">One click downloads it from proton.me and checks Proton’s SHA-512 checksum. Kluis never touches your files any other way.</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button class="b bp" style="height:44px" onClick="{{getCli}}" disabled="{{cliBusy}}">{{cliBtn}}</button><span class="num" style="font-size:14px;color:{{cliColor}}">{{cliNote}}</span></div>
+    </div></sc-if>
+
+    <sc-if value="{{st2}}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:12px">
+      <h1 style="margin:0;font-size:22px">Sign in to Proton</h1>
+      <p class="mu" style="margin:0;line-height:1.5">Your browser opens Proton’s own sign-in page. Kluis never sees your password; the session is kept in your system keyring.</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button class="b bp" style="height:44px" onClick="{{signIn}}" disabled="{{signBusy}}">{{signBtn}}</button><span style="font-size:14px;color:{{signColor}}">{{signNote}}</span></div>
+      <p class="mu" style="margin:0;font-size:13px">On KDE Plasma, if sign-in isn’t remembered, install gnome-keyring and log in again.</p>
+    </div></sc-if>
+
+    <sc-if value="{{st3}}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:12px">
+      <h1 style="margin:0;font-size:22px">Pick folders to sync</h1>
+      <p class="mu" style="margin:0;line-height:1.5">Each starts as two-way sync. You can change that per folder later.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <sc-for list="{{picks}}" as="p" hint-placeholder-count="3"><button class="b" style="height:44px;background:{{p.bg}};border-color:{{p.bd}}" aria-pressed="{{p.on}}" onClick="{{p.flip}}">{{p.mark}} {{p.name}}</button></sc-for>
+        <button class="b" style="height:44px" onClick="{{addOther}}">+ Other folder…</button>
+      </div>
+    </div></sc-if>
+
+    <div style="display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--ln);padding-top:20px">
+      <button class="b" style="height:44px" onClick="{{stepBack}}" disabled="{{noBack}}">Back</button>
+      <button class="b bp" style="height:48px;min-width:160px" onClick="{{stepNext}}" disabled="{{nextOff}}">{{nextLabel}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ================= APP ================= -->
+<sc-if value="{{isApp}}" hint-placeholder-val="{{ true }}">
+<div style="flex:1;min-height:0;display:flex;gap:16px;padding:16px;box-sizing:border-box">
+
+  <nav class="card" style="flex:0 0 280px;padding:16px;display:flex;flex-direction:column;gap:4px;box-sizing:border-box;overflow-y:auto;min-height:0">
+    <div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;padding:2px 4px 14px 8px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="16" rx="2"/><rect x="6" y="6" width="12" height="10" rx="1"/><circle cx="11" cy="11" r="2.5"/><path d="M11 8.5v1M11 12.5v1M8.5 11h1M12.5 11h1M16 9.5v3M6 19v2M18 19v2"/></svg>
+      Kluis<span style="flex:1"></span>
+      <button aria-label="Settings (Ctrl+,)" title="Settings (Ctrl+,)" onClick="{{openSettings}}" style="width:36px;height:36px;border:0;border-radius:8px;background:transparent;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></button>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--ln);border-radius:8px;background:var(--sf);color:var(--mu);font-size:14px;margin-bottom:10px">
+      <span style="position:absolute;left:-9999px">Search Proton Drive</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input placeholder="Search files…" style="flex:1;min-width:0;border:0;background:transparent;color:var(--tx);font:inherit;outline:none"><span style="font-size:12px">Ctrl+F</span>
+    </label>
+    <sc-for list="{{nav}}" as="n" hint-placeholder-count="5">
+      <button onClick="{{n.pick}}" aria-current="{{n.cur}}" style="height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;border:0;border-radius:8px;background:{{n.bg}};font-size:14px;font-weight:{{n.weight}};box-shadow:inset 3px 0 0 {{n.bar}}"><span style="flex:1;text-align:left">{{n.label}}</span><sc-if value="{{n.badge}}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:var(--wa);color:var(--on)">{{n.badge}}</span></sc-if><span class="mu" style="font-size:12px">{{n.key}}</span></button>
+    </sc-for>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:18px 8px 12px"><h2 style="margin:0;font-size:15px">Today’s timeline</h2><span class="mu" style="font-size:12px">2026-11-26</span></div>
+    <div style="position:relative;display:flex;flex-direction:column;gap:14px;padding:0 4px 0 34px">
+      <div style="position:absolute;left:12px;top:6px;bottom:6px;width:2px;background:linear-gradient(var(--ac),var(--ln) 70%,transparent)"></div>
+      <sc-for list="{{timeline}}" as="e" hint-placeholder-count="5">
+        <div style="position:relative">
+          <span class="tw" style="position:absolute;left:-27px;top:4px;width:10px;height:10px;border-radius:50%;background:{{e.c}};box-shadow:0 0 0 4px var(--acs)"></span>
+          <div style="display:flex;gap:10px;font-size:13px"><span class="mu num">{{e.time}}</span><span style="font-weight:600;flex:1;min-width:0;overflow-wrap:anywhere">{{e.name}}</span></div>
+          <div class="mu" style="font-size:12px;margin-top:2px">{{e.what}}</div>
+        </div>
+      </sc-for>
+    </div>
+    <button class="b" style="margin:12px 4px 0;justify-content:center" onClick="{{goActivity}}">All activity</button>
+  </nav>
+
+  <main style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;position:relative">
+    <!-- header actions (Sync now · Pause · Menu) -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:20px;flex:1">{{tabTitle}}</h2>
+      <button class="b" onClick="{{syncNow}}" title="Ctrl+R" aria-label="{{syncAria}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>{{syncBtn}}</button>
+      <button class="b" onClick="{{togglePause}}" aria-pressed="{{pausedStr}}" style="background:{{pauseBg}}">{{pauseIcon}} {{pauseBtn}}</button>
+      
+      <sc-if value="{{qsClosed}}" hint-placeholder-val="{{ false }}"><button class="b" onClick="{{toggleQs}}" aria-expanded="{{qsStr}}" aria-label="{{qsAria}}" title="Quick settings" style="justify-content:center;padding:0 8px;background:{{qsBg}}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button></sc-if>
+
+    </div>
+
+    <div style="flex:1;min-height:0;position:relative;display:flex;flex-direction:column">
+    <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+    <!-- HOME -->
+    <sc-if value="{{tHome}}" hint-placeholder-val="{{ true }}">
+    <section style="display:flex;flex-direction:column;flex:1;gap:4px">
+      <div style="text-align:center">
+        <div style="display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px">
+          <button onClick="{{toggleVpn}}" aria-pressed="{{vpnStr}}" class="b" style="border-radius:18px;background:{{vpnBg}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>{{vpnLabel}}</button>
+          <label class="mu" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">{{locCaption}}<select onChange="{{pickLoc}}" value="{{here}}"><sc-for list="{{locs}}" as="l" hint-placeholder-count="8"><option value="{{l}}">{{l}}</option></sc-for></select></label>
+        </div>
+        <h1 style="margin:12px 0 4px;font-size:32px;line-height:1.2">{{heroTitle}}</h1>
+        <p class="mu" style="margin:0;font-size:15px">{{heroSub}}</p>
+      </div>
+      <svg viewBox="0 0 720 270" width="100%" style="flex:1;min-height:260px" role="img" aria-label="World map with your location and your Proton Drive">
+        <path d="M125 5h0M135 5h0M145 5h0M155 5h0M165 5h0M175 5h0M185 5h0M195 5h0M205 5h0M215 5h0M225 5h0M245 5h0M255 5h0M265 5h0M275 5h0M285 5h0M295 5h0M305 5h0M315 5h0M325 5h0M485 5h0M495 5h0M505 5h0M515 5h0M525 5h0M535 5h0M545 5h0M555 5h0M565 5h0M575 5h0M585 5h0M595 5h0M605 5h0M615 5h0M625 5h0M635 5h0M645 5h0M35 15h0M45 15h0M55 15h0M65 15h0M75 15h0M85 15h0M95 15h0M105 15h0M115 15h0M125 15h0M135 15h0M145 15h0M155 15h0M165 15h0M175 15h0M185 15h0M195 15h0M205 15h0M215 15h0M225 15h0M255 15h0M265 15h0M275 15h0M285 15h0M295 15h0M305 15h0M315 15h0M325 15h0M395 15h0M405 15h0M415 15h0M425 15h0M435 15h0M445 15h0M455 15h0M465 15h0M475 15h0M485 15h0M495 15h0M505 15h0M515 15h0M525 15h0M535 15h0M545 15h0M555 15h0M565 15h0M575 15h0M585 15h0M595 15h0M605 15h0M615 15h0M625 15h0M635 15h0M645 15h0M655 15h0M665 15h0M675 15h0M685 15h0M695 15h0M705 15h0M715 15h0M35 25h0M45 25h0M55 25h0M65 25h0M75 25h0M85 25h0M95 25h0M105 25h0M115 25h0M125 25h0M135 25h0M145 25h0M155 25h0M165 25h0M175 25h0M185 25h0M195 25h0M205 25h0M215 25h0M225 25h0M235 25h0M265 25h0M275 25h0M285 25h0M295 25h0M315 25h0M325 25h0M335 25h0M375 25h0M385 25h0M395 25h0M405 25h0M415 25h0M425 25h0M435 25h0M445 25h0M455 25h0M465 25h0M475 25h0M485 25h0M495 25h0M505 25h0M515 25h0M525 25h0M535 25h0M545 25h0M555 25h0M565 25h0M575 25h0M585 25h0M595 25h0M605 25h0M615 25h0M625 25h0M635 25h0M645 25h0M655 25h0M665 25h0M675 25h0M685 25h0M695 25h0M705 25h0M715 25h0M35 35h0M45 35h0M55 35h0M65 35h0M75 35h0M85 35h0M95 35h0M105 35h0M115 35h0M125 35h0M135 35h0M145 35h0M155 35h0M165 35h0M175 35h0M185 35h0M195 35h0M205 35h0M215 35h0M225 35h0M235 35h0M285 35h0M375 35h0M385 35h0M395 35h0M405 35h0M415 35h0M425 35h0M435 35h0M445 35h0M455 35h0M465 35h0M475 35h0M485 35h0M495 35h0M505 35h0M515 35h0M525 35h0M535 35h0M545 35h0M555 35h0M565 35h0M575 35h0M585 35h0M595 35h0M605 35h0M615 35h0M625 35h0M635 35h0M645 35h0M655 35h0M665 35h0M675 35h0M685 35h0M695 35h0M105 45h0M115 45h0M125 45h0M135 45h0M145 45h0M155 45h0M165 45h0M175 45h0M185 45h0M195 45h0M205 45h0M215 45h0M225 45h0M235 45h0M245 45h0M345 45h0M355 45h0M375 45h0M385 45h0M395 45h0M405 45h0M415 45h0M425 45h0M435 45h0M445 45h0M455 45h0M465 45h0M475 45h0M485 45h0M495 45h0M505 45h0M515 45h0M525 45h0M535 45h0M545 45h0M555 45h0M565 45h0M575 45h0M585 45h0M595 45h0M605 45h0M615 45h0M625 45h0M635 45h0M645 45h0M655 45h0M665 45h0M675 45h0M685 45h0M115 55h0M125 55h0M135 55h0M145 55h0M155 55h0M165 55h0M175 55h0M185 55h0M195 55h0M205 55h0M215 55h0M225 55h0M235 55h0M245 55h0M255 55h0M355 55h0M365 55h0M375 55h0M385 55h0M395 55h0M405 55h0M415 55h0M425 55h0M435 55h0M445 55h0M455 55h0M465 55h0M475 55h0M485 55h0M495 55h0M505 55h0M515 55h0M525 55h0M535 55h0M545 55h0M555 55h0M565 55h0M575 55h0M585 55h0M595 55h0M605 55h0M615 55h0M625 55h0M635 55h0M645 55h0M115 65h0M125 65h0M135 65h0M145 65h0M155 65h0M165 65h0M175 65h0M185 65h0M195 65h0M205 65h0M215 65h0M225 65h0M235 65h0M355 65h0M365 65h0M375 65h0M385 65h0M395 65h0M405 65h0M415 65h0M425 65h0M435 65h0M445 65h0M455 65h0M465 65h0M475 65h0M485 65h0M495 65h0M505 65h0M515 65h0M525 65h0M535 65h0M545 65h0M555 65h0M565 65h0M575 65h0M585 65h0M595 65h0M605 65h0M615 65h0M625 65h0M635 65h0M645 65h0M655 65h0M115 75h0M125 75h0M135 75h0M145 75h0M155 75h0M165 75h0M175 75h0M185 75h0M195 75h0M205 75h0M215 75h0M345 75h0M355 75h0M365 75h0M385 75h0M395 75h0M405 75h0M415 75h0M425 75h0M435 75h0M445 75h0M455 75h0M465 75h0M475 75h0M485 75h0M495 75h0M505 75h0M515 75h0M525 75h0M535 75h0M545 75h0M555 75h0M565 75h0M575 75h0M585 75h0M595 75h0M605 75h0M615 75h0M625 75h0M635 75h0M645 75h0M125 85h0M135 85h0M145 85h0M155 85h0M165 85h0M175 85h0M185 85h0M195 85h0M205 85h0M345 85h0M355 85h0M365 85h0M375 85h0M385 85h0M425 85h0M435 85h0M445 85h0M455 85h0M465 85h0M475 85h0M485 85h0M495 85h0M505 85h0M515 85h0M525 85h0M535 85h0M545 85h0M555 85h0M565 85h0M575 85h0M585 85h0M595 85h0M605 85h0M615 85h0M625 85h0M635 85h0M645 85h0M135 95h0M145 95h0M155 95h0M165 95h0M175 95h0M185 95h0M195 95h0M335 95h0M345 95h0M355 95h0M365 95h0M375 95h0M385 95h0M395 95h0M405 95h0M415 95h0M425 95h0M435 95h0M445 95h0M455 95h0M465 95h0M475 95h0M485 95h0M495 95h0M505 95h0M515 95h0M525 95h0M535 95h0M545 95h0M555 95h0M565 95h0M575 95h0M585 95h0M595 95h0M605 95h0M145 105h0M155 105h0M165 105h0M335 105h0M345 105h0M355 105h0M365 105h0M375 105h0M385 105h0M395 105h0M405 105h0M415 105h0M425 105h0M435 105h0M435 105h0M445 105h0M455 105h0M465 105h0M475 105h0M495 105h0M505 105h0M515 105h0M525 105h0M535 105h0M545 105h0M565 105h0M575 105h0M585 105h0M595 105h0M605 105h0M155 115h0M165 115h0M175 115h0M185 115h0M335 115h0M345 115h0M355 115h0M365 115h0M375 115h0M385 115h0M395 115h0M405 115h0M415 115h0M425 115h0M435 115h0M445 115h0M445 115h0M455 115h0M465 115h0M475 115h0M505 115h0M515 115h0M525 115h0M535 115h0M555 115h0M565 115h0M575 115h0M585 115h0M175 125h0M185 125h0M195 125h0M335 125h0M345 125h0M355 125h0M365 125h0M375 125h0M385 125h0M395 125h0M405 125h0M415 125h0M425 125h0M435 125h0M445 125h0M505 125h0M515 125h0M555 125h0M565 125h0M575 125h0M215 135h0M225 135h0M235 135h0M245 135h0M335 135h0M345 135h0M355 135h0M365 135h0M375 135h0M385 135h0M395 135h0M405 135h0M415 135h0M425 135h0M435 135h0M445 135h0M455 135h0M465 135h0M565 135h0M205 145h0M215 145h0M225 145h0M235 145h0M245 145h0M255 145h0M265 145h0M345 145h0M355 145h0M365 145h0M375 145h0M385 145h0M395 145h0M405 145h0M415 145h0M425 145h0M435 145h0M445 145h0M455 145h0M555 145h0M565 145h0M575 145h0M585 145h0M595 145h0M605 145h0M205 155h0M215 155h0M225 155h0M235 155h0M245 155h0M255 155h0M265 155h0M375 155h0M385 155h0M395 155h0M405 155h0M415 155h0M425 155h0M435 155h0M445 155h0M565 155h0M575 155h0M585 155h0M595 155h0M605 155h0M615 155h0M625 155h0M635 155h0M645 155h0M205 165h0M215 165h0M225 165h0M235 165h0M245 165h0M255 165h0M265 165h0M275 165h0M285 165h0M295 165h0M385 165h0M395 165h0M405 165h0M415 165h0M425 165h0M435 165h0M635 165h0M645 165h0M655 165h0M665 165h0M205 175h0M215 175h0M225 175h0M235 175h0M245 175h0M255 175h0M265 175h0M275 175h0M285 175h0M385 175h0M395 175h0M405 175h0M415 175h0M425 175h0M435 175h0M215 185h0M225 185h0M235 185h0M245 185h0M255 185h0M265 185h0M275 185h0M285 185h0M385 185h0M395 185h0M405 185h0M415 185h0M425 185h0M435 185h0M455 185h0M615 185h0M625 185h0M635 185h0M645 185h0M655 185h0M225 195h0M235 195h0M245 195h0M255 195h0M265 195h0M275 195h0M385 195h0M395 195h0M405 195h0M415 195h0M425 195h0M435 195h0M455 195h0M595 195h0M605 195h0M615 195h0M625 195h0M635 195h0M645 195h0M655 195h0M665 195h0M225 205h0M235 205h0M245 205h0M255 205h0M265 205h0M395 205h0M405 205h0M415 205h0M425 205h0M595 205h0M605 205h0M615 205h0M625 205h0M635 205h0M645 205h0M655 205h0M665 205h0M215 215h0M225 215h0M235 215h0M245 215h0M255 215h0M395 215h0M405 215h0M415 215h0M425 215h0M595 215h0M605 215h0M615 215h0M625 215h0M635 215h0M645 215h0M655 215h0M665 215h0M215 225h0M225 225h0M235 225h0M245 225h0M395 225h0M405 225h0M415 225h0M635 225h0M645 225h0M655 225h0M665 225h0M705 225h0M715 225h0M215 235h0M225 235h0M235 235h0M655 235h0M705 235h0M215 245h0M225 245h0M695 245h0M215 255h0M225 265h0" fill="none" stroke="var(--dot)" stroke-width="3.4" stroke-linecap="round"/>
+        <path class="arc" d="{{arcD}}" fill="none" stroke="var(--ac)" stroke-width="2"/>
+        <rect x="376" y="54" width="12" height="12" rx="3" fill="var(--sf)" stroke="var(--ac)" stroke-width="2"/>
+        <circle class="ping" cx="{{youX}}" cy="{{youY}}" r="9" fill="var(--ac)" opacity=".5"/>
+        <circle cx="{{youX}}" cy="{{youY}}" r="7" fill="var(--ac)" stroke="var(--bg)" stroke-width="2.5"/>
+        <g font-family="Segoe UI,system-ui,sans-serif" font-size="12" font-weight="600" fill="var(--tx)"><text x="394" y="42">Proton Drive · Switzerland</text><text x="{{labX}}" y="{{labY}}" text-anchor="{{labAnchor}}">{{youLabel}}</text></g>
+      </svg>
+    </section>
+    </sc-if>
+
+    <!-- FOLDERS -->
+    <sc-if value="{{tFolders}}" hint-placeholder-val="{{ false }}">
+    <section style="display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto">
+      <div class="card" style="display:flex;align-items:center;gap:16px;padding:16px 20px;flex-wrap:wrap">
+        <span style="font-size:28px;color:{{heroColor}}">{{heroIcon}}</span>
+        <div style="flex:1;min-width:220px"><div style="font-size:18px;font-weight:700">{{heroTitle}}</div><div class="mu" style="font-size:13px">{{heroSub}}</div></div>
+        <button class="b bp" style="height:44px" onClick="{{openAdd}}">+ Add folder <span style="font-weight:400;opacity:.8">Ctrl+N</span></button>
+      </div>
+      <sc-if value="{{noFolders}}" hint-placeholder-val="{{ false }}"><div class="card" style="padding:40px;text-align:center"><div style="font-size:18px;font-weight:700">Ready when you are</div><p class="mu">Add a folder to start syncing with Proton Drive.</p><button class="b bp" style="height:44px" onClick="{{openAdd}}">+ Add folder</button></div></sc-if>
+      <sc-for list="{{folders}}" as="f" hint-placeholder-count="4">
+        <div class="card" style="padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;opacity:{{f.op}}">
+          <button class="sw" role="switch" aria-checked="{{f.onStr}}" aria-label="Sync {{f.name}}" onClick="{{f.flip}}"><span></span></button>
+          <div style="flex:1 1 240px;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-weight:700;font-size:15px">{{f.name}}</span><span class="num" style="font-size:12px;font-weight:600;padding:1px 8px;border-radius:9px;background:var(--sf);border:1px solid var(--ln)" title="Folder size">{{f.size}}</span></div>
+            <div class="mu" style="font-size:12px;overflow-wrap:anywhere">{{f.local}} ⇢ Proton Drive{{f.remote}}</div>
+            <div style="font-size:12px;margin-top:3px;color:{{f.sc}}">{{f.status}}</div>
+          </div>
+          <label class="mu" style="font-size:12px;display:flex;align-items:center;gap:6px">Mode<select value="{{f.mode}}" onChange="{{f.setMode}}"><option value="two">⇄ Two-way</option><option value="backup">↑ Back up</option><option value="mirror">↓ Mirror down</option></select></label>
+          <button class="b" onClick="{{f.sync}}" disabled="{{f.off}}" title="Sync this folder now">↻ Sync</button>
+          <button class="b" onClick="{{f.open}}">Open</button>
+          <button class="b" onClick="{{f.remove}}" aria-label="Stop syncing {{f.name}}">Remove</button>
+        </div>
+      </sc-for>
+      <div style="border:2px dashed var(--ln);border-radius:10px;padding:16px;text-align:center;font-size:14px" class="mu">Drag a folder onto this window to start syncing it</div>
+      <div class="mu" style="font-size:12px;display:flex;gap:16px;flex-wrap:wrap"><span>⇄ Two-way: edits, new files and deletions travel both ways</span><span>↑ Back up: uploads only, never deletes in Proton Drive</span><span>↓ Mirror down: local copy, never changes Proton Drive</span></div>
+    </section>
+    </sc-if>
+
+    <!-- BROWSE -->
+    <sc-if value="{{tBrowse}}" hint-placeholder-val="{{ false }}">
+    <section class="card" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--ln)">
+        <nav aria-label="Path" style="display:flex;gap:4px;align-items:center;flex:1;min-width:200px;font-size:14px"><sc-for list="{{crumbs}}" as="c" hint-placeholder-count="2"><button onClick="{{c.go}}" style="border:0;background:transparent;padding:4px 6px;border-radius:6px;font-weight:{{c.w}}">{{c.name}}</button><span class="mu">{{c.sep}}</span></sc-for></nav>
+        <button class="b" onClick="{{upload}}">↑ Upload…</button>
+        <button class="b" onClick="{{newFolder}}">+ New folder</button>
+        <button class="b" onClick="{{download}}" disabled="{{noSel}}">↓ Download</button>
+        <button class="b" onClick="{{rename}}" disabled="{{notOne}}">Rename</button>
+        <button class="b" onClick="{{askTrash}}" disabled="{{noSel}}" style="color:var(--er)">Move to trash</button>
+      </div>
+      <div style="display:flex;gap:12px;padding:8px 16px;font-size:12px;font-weight:700" class="mu"><span style="width:24px"></span><span style="flex:1">Name</span><span style="position:relative;width:{{cw.b_files}}px;text-align:right"><button class="rz" style="left:-11px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.b_files.down}}" onKeyDown="{{rz.b_files.key}}"></button>Files</span><span style="position:relative;width:{{cw.b_size}}px;text-align:right"><button class="rz" style="left:-11px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.b_size.down}}" onKeyDown="{{rz.b_size.key}}"></button>Size</span><span style="position:relative;width:{{cw.b_date}}px"><button class="rz" style="left:-11px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.b_date.down}}" onKeyDown="{{rz.b_date.key}}"></button>Modified</span></div>
+      <sc-if value="{{emptyDir}}" hint-placeholder-val="{{ false }}"><div class="mu" style="padding:40px;text-align:center">This folder is empty. Drag files here to upload them.</div></sc-if>
+      <sc-for list="{{items}}" as="i" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;gap:12px;padding:0 16px;min-height:44px;border-top:1px solid var(--ln);background:{{i.bg}}">
+          <input type="checkbox" aria-label="Select {{i.name}}" checked="{{i.sel}}" onChange="{{i.toggle}}" style="width:18px;height:18px;accent-color:var(--ac)">
+          <button onClick="{{i.open}}" style="flex:1;min-width:0;border:0;background:transparent;text-align:left;display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px"><span style="color:var(--ac)">{{i.icon}}</span><span style="overflow-wrap:anywhere">{{i.name}}</span></button>
+          <span class="mu num" style="width:{{i.wf}}px;flex:none;text-align:right;font-size:13px">{{i.count}}</span><span class="mu num" style="width:{{i.ws}}px;flex:none;text-align:right;font-size:13px">{{i.size}}</span><span class="mu num" style="width:{{i.wd}}px;flex:none;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{i.date}}</span>
+        </div>
+      </sc-for>
+      <div class="mu" style="margin-top:auto;padding:10px 16px;font-size:12px;border-top:1px solid var(--ln)">Drag files onto this list to upload · click a folder to open it · trashed items can be restored from the Proton Drive trash</div>
+    </section>
+    </sc-if>
+
+    <!-- PHOTOS -->
+    <sc-if value="{{tPhotos}}" hint-placeholder-val="{{ false }}">
+    <section style="display:flex;flex-direction:column;gap:12px;flex:1;min-height:0">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:12px">
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px"><button aria-expanded="{{dlStr}}" aria-label="{{dlAria}}" onClick="{{toggleDl}}" style="flex:1;min-height:40px;margin:-8px 0 -8px -8px;padding:0 8px;border:0;border-radius:8px;background:transparent;display:flex;align-items:center;gap:10px;text-align:left"><span style="color:var(--ac)">↓</span><b style="flex:1;font-size:15px">Download</b><span class="mu" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--ln);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform:rotate({{dlRot}}deg);transition:transform 200ms ease-out"><path d="M6 9l6 6 6-6"/></svg></span></button><button class="sw" role="switch" aria-checked="{{saveStr}}" aria-label="Download my photos to this computer" onClick="{{toggleSave}}"><span></span></button></div>
+          <sc-if value="{{dlClosed}}" hint-placeholder-val="{{ false }}"><div class="mu num" style="font-size:12px">{{saveStatus}}</div></sc-if>
+          <sc-if value="{{dlOpen}}" hint-placeholder-val="{{ true }}"><div class="pop" style="display:flex;flex-direction:column;gap:10px">
+          <div class="mu" style="font-size:13px">New photos from your phone appear here automatically, sorted into folders.</div>
+          <div style="display:flex;gap:6px;align-items:center"><button class="b" style="flex:1;min-width:0;justify-content:flex-start;font-family:ui-monospace,monospace;font-weight:400" onClick="{{openSaved}}" title="Open in file manager">~/Pictures/Proton Photos</button><button class="b" aria-label="Choose folder" title="Choose folder…" onClick="{{pickSaveDir}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg> Change…</button></div>
+          <select value="{{layout}}" onChange="{{setLayout}}" aria-label="Folder layout"><option value="month">Folders by month (2026 / 2026-11)</option><option value="year">Folders by year (2026)</option><option value="flat">All in one folder</option></select>
+          <label style="font-size:13px;display:flex;gap:8px;align-items:center"><input type="checkbox" checked="{{albums}}" onChange="{{toggleAlbums}}" style="width:18px;height:18px;accent-color:var(--ac)">Also save albums as folders (Albums/…)</label>
+          <label style="font-size:13px;display:flex;gap:8px;align-items:center"><input type="checkbox" checked="{{trashLocal}}" onChange="{{toggleTrashLocal}}" style="width:18px;height:18px;accent-color:var(--ac)">If a photo is deleted in Proton, move my copy to the Trash</label>
+          <div class="mu num" style="font-size:12px">{{saveStatus}}</div>
+          </div></sc-if>
+        </div>
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px"><button aria-expanded="{{ulStr}}" aria-label="{{ulAria}}" onClick="{{toggleUl}}" style="flex:1;min-height:40px;margin:-8px 0 -8px -8px;padding:0 8px;border:0;border-radius:8px;background:transparent;display:flex;align-items:center;gap:10px;text-align:left"><span style="color:var(--ac)">↑</span><b style="flex:1;font-size:15px">Upload</b><span class="mu" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--ln);display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform:rotate({{ulRot}}deg);transition:transform 200ms ease-out"><path d="M6 9l6 6 6-6"/></svg></span></button></div>
+          <sc-if value="{{ulClosed}}" hint-placeholder-val="{{ false }}"><div class="mu num" style="font-size:12px">{{upStatus}}</div></sc-if>
+          <sc-if value="{{ulOpen}}" hint-placeholder-val="{{ true }}"><div class="pop" style="display:flex;flex-direction:column;gap:10px;flex:1">
+          <div class="mu" style="font-size:13px">New photos and videos in a folder (e.g. a camera import folder) are added to Proton Photos. Ones already there are skipped.</div>
+          <div style="display:flex;gap:6px;align-items:center"><button class="b" style="flex:1;min-width:0;justify-content:flex-start;font-family:ui-monospace,monospace;font-weight:400" onClick="{{openUpDir}}" title="Open in file manager">{{upDirLabel}}</button><button class="b" aria-label="Choose folder" title="Choose folder…" onClick="{{pickUpDir}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg> Change…</button></div>
+          <div class="mu" style="font-size:12px">Photos you downloaded above are never uploaded again.</div>
+          <div class="mu num" style="font-size:12px;margin-top:auto">{{upStatus}}</div>
+          </div></sc-if>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:16px;flex:1">Gallery</h3>
+        <label class="mu" style="font-size:13px;display:flex;gap:6px;align-items:center">Album<select value="{{album}}" onChange="{{setAlbum}}"><option>All photos</option><option>Kapstadt</option><option>Family</option></select></label>
+        <span class="mu num" style="font-size:13px">{{pselCount}}</span>
+        <button class="b" onClick="{{openPhoto}}" disabled="{{pselNotOne}}">Open</button>
+        <button class="b bp" onClick="{{dlPhotos}}" disabled="{{pselNone}}">↓ Download selected</button>
+      </div>
+      <div class="kgalwrap" style="flex:1;min-height:0;position:relative">
+      <div class="kgal" style="position:absolute;inset:0;overflow-y:auto;padding-right:96px">
+      <div style="display:flex;flex-direction:column;gap:20px;padding-bottom:12px">
+      <sc-for list="{{months}}" as="m" hint-placeholder-count="2">
+        <div class="km" style="position:relative;scroll-margin-top:8px">
+          <sc-if value="{{m.year}}" hint-placeholder-val="{{ false }}"><div style="font-size:22px;font-weight:700;margin:4px 0 12px">{{m.year}}</div></sc-if>
+          <div style="display:flex;align-items:baseline;gap:10px;margin:0 0 8px"><b style="font-size:14px">{{m.label}}</b><span class="mu num" style="font-size:12px">{{m.count}}</span></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:8px">
+            <sc-for list="{{m.tiles}}" as="t" hint-placeholder-count="6">
+              <button onClick="{{t.toggle}}" aria-pressed="{{t.sel}}" aria-label="{{t.name}}" style="position:relative;aspect-ratio:1;border-radius:8px;border:2px solid {{t.bd}};padding:0;overflow:hidden;background:linear-gradient({{t.ang}}deg,var(--acs),var(--sf) 55%,var(--dot))">
+                <sc-if value="{{t.video}}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:6px;bottom:6px;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--pn)">▶ 0:{{t.len}}</span></sc-if>
+                <sc-if value="{{t.selB}}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:6px;top:6px;width:20px;height:20px;border-radius:50%;background:var(--ac);color:var(--on);font-size:12px;display:flex;align-items:center;justify-content:center">✓</span></sc-if>
+                <span style="position:absolute;left:0;right:0;top:0;padding:4px 6px;font-size:10px;text-align:left;color:var(--tx);opacity:.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">{{t.name}}</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      </div>
+      </div>
+    <sc-if value="{{showScrub}}" hint-placeholder-val="{{ false }}">
+    <nav aria-label="Jump to month" style="position:absolute;top:0;bottom:0;right:0;width:88px">
+      <div aria-hidden="true" style="position:absolute;right:23px;top:12px;bottom:12px;width:2px;border-radius:1px;background:var(--ln)"><div style="width:2px;border-radius:1px;height:{{ringTop}};background:linear-gradient(var(--acs),var(--ac))"></div></div>
+      <div style="position:absolute;right:0;top:12px;bottom:12px;width:88px">
+        <div aria-hidden="true" style="position:absolute;right:15px;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:2px solid var(--ac);box-shadow:0 0 0 4px var(--acs);top:{{ringTop}};box-sizing:border-box"></div>
+        <div aria-hidden="true" class="num" style="position:absolute;right:40px;margin-top:-9px;height:18px;line-height:18px;font-size:11px;font-weight:700;white-space:nowrap;padding:0 6px;border-radius:6px;background:var(--pn);border:1px solid var(--ln);top:{{ringTop}}">{{ringLabel}}</div>
+        <sc-for list="{{scrub}}" as="d" hint-placeholder-count="24">
+          <button onClick="{{d.go}}" title="{{d.title}}" aria-label="{{d.title}}" aria-current="{{d.cur}}" style="position:absolute;right:12px;top:{{d.top}};margin-top:-12px;width:24px;height:24px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center"><span style="width:{{d.size}};height:{{d.size}};border-radius:50%;background:{{d.bg}}"></span></button>
+          <sc-if value="{{d.year}}" hint-placeholder-val="{{ false }}"><span class="mu num" style="position:absolute;right:40px;top:{{d.top}};margin-top:-8px;font-size:11px;font-weight:700;opacity:{{d.yOp}}">{{d.year}}</span></sc-if>
+        </sc-for>
+      </div>
+    </nav>
+    </sc-if>
+      </div>
+      <div class="mu" style="font-size:12px">Click to select (several at once is fine) · double-click opens a photo · previews are made on this computer</div>
+    </section>
+    </sc-if>
+
+    <!-- SHARED WITH ME -->
+    <sc-if value="{{tShared}}" hint-placeholder-val="{{ false }}">
+    <section class="card" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto">
+      <div style="padding:16px 16px 8px"><div class="mu num" style="font-size:13px">{{sharedCount}}</div></div>
+      <div style="overflow-x:auto">
+      <table style="width:{{cw.s_total}}px;min-width:100%;table-layout:fixed;border-collapse:collapse;font-size:14px"><colgroup><col style="width:{{cw.s_perm}}px"><col style="width:{{cw.s_name}}px"><col style="width:{{cw.s_by}}px"><col style="width:{{cw.s_target}}px"><col style="width:{{cw.s_date}}px"><col style="width:{{cw.s_sync}}px"></colgroup>
+        <thead><tr class="mu" style="font-size:12px;text-align:left">
+          <th style="position:relative;padding:8px 16px;font-weight:700">Permissions<button class="rz" style="right:-5px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.s_perm.down}}" onKeyDown="{{rz.s_perm.key}}"></button></th><th style="position:relative;padding:8px;font-weight:700">Name<button class="rz" style="right:-5px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.s_name.down}}" onKeyDown="{{rz.s_name.key}}"></button></th><th style="position:relative;padding:8px;font-weight:700">Shared by<button class="rz" style="right:-5px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.s_by.down}}" onKeyDown="{{rz.s_by.key}}"></button></th><th style="position:relative;padding:8px;font-weight:700">Local folder<button class="rz" style="right:-5px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.s_target.down}}" onKeyDown="{{rz.s_target.key}}"></button></th>
+          <th style="position:relative;padding:8px;font-weight:700"><button class="rz" style="right:-5px" aria-label="Resize column (arrow keys)" onPointerDown="{{rz.s_date.down}}" onKeyDown="{{rz.s_date.key}}"></button><button onClick="{{sortShared}}" aria-label="Sort by date shared" style="border:0;background:transparent;padding:0;font-size:12px;font-weight:700;color:var(--mu)">Shared on {{sortArrow}}</button></th>
+          <th style="padding:8px 16px;font-weight:700"><span style="display:inline-flex;align-items:center;gap:4px">Sync <span title="Synced items get a local copy in ~/Proton Drive/Shared with me and stay up to date" aria-label="About Sync" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--mu);display:inline-flex;align-items:center;justify-content:center;font-size:10px">i</span></span></th>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{shared}}" as="s" hint-placeholder-count="3">
+          <tr style="border-top:1px solid var(--ln)">
+            <td class="mu" style="padding:10px 16px">{{s.perm}}</td>
+            <td style="padding:10px 8px;overflow:hidden"><span style="display:inline-flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:4px;background:{{s.ic}};flex:none"></span><span style="overflow-wrap:anywhere">{{s.name}}</span></span></td>
+            <td class="mu" style="padding:10px 8px">{{s.by}}</td>
+            <td style="padding:6px 8px"><span style="display:flex;align-items:center;gap:6px;min-width:0"><button class="b" onClick="{{s.openT}}" title="Open in file manager" style="min-width:0;flex:1;justify-content:flex-start;font-family:ui-monospace,monospace;font-weight:400;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:{{s.tOp}}">{{s.target}}</button><button class="b" aria-label="Choose local folder for {{s.name}}" title="Choose folder…" onClick="{{s.pickT}}" style="width:36px;padding:0;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg></button></span></td>
+            <td class="mu num" style="padding:10px 8px">{{s.date}}</td>
+            <td style="padding:10px 16px"><button class="sw" role="switch" aria-checked="{{s.on}}" aria-label="Sync {{s.name}}" onClick="{{s.flip}}"><span></span></button></td>
+          </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      </div>
+      <div class="mu" style="margin-top:auto;padding:10px 16px;font-size:12px;border-top:1px solid var(--ln)">Items others shared with you · choose a local folder per item, then switch on Sync to keep a copy there · Viewer items sync down only</div>
+    </section>
+    </sc-if>
+
+    <!-- ACTIVITY -->
+    <sc-if value="{{tActivity}}" hint-placeholder-val="{{ false }}">
+    <section class="card" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--ln)">
+        <b style="flex:1">Recent activity</b>
+        <select value="{{actFilter}}" onChange="{{setActFilter}}" aria-label="Show"><option value="all">Everything</option><option value="problems">Problems only</option></select>
+        <button class="b" onClick="{{openLog}}">Open log folder</button>
+        <button class="b" onClick="{{clearAct}}">Clear</button>
+      </div>
+      <sc-if value="{{actEmpty}}" hint-placeholder-val="{{ false }}"><div class="mu" style="padding:40px;text-align:center">Nothing yet. Sync activity shows up here.</div></sc-if>
+      <sc-for list="{{acts}}" as="a" hint-placeholder-count="6">
+        <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-top:1px solid var(--ln);font-size:14px">
+          <span style="width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:{{a.bg}};color:var(--on)">{{a.icon}}</span>
+          <div style="flex:1;min-width:0"><div style="font-weight:600;overflow-wrap:anywhere">{{a.text}}</div><div class="mu" style="font-size:12px">{{a.sub}}</div></div>
+          <span class="mu num" style="font-size:12px">{{a.time}}</span>
+        </div>
+      </sc-for>
+    </section>
+    </sc-if>
+
+    </div>
+    </div>
+    <!-- STATUS PANEL (Proton-style, all tabs) -->
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px 40px;padding:8px 8px 4px;font-size:12px">
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:300px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="{{heroColor}}" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z"/></svg>
+          <b style="color:{{heroColor}}">{{protLabel}}</b><span class="mu">•</span><span class="mu num">{{since}}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px">
+          <div><div class="mu">Encryption</div><div style="font-weight:700;font-size:13px">End to end</div></div>
+          <div><div class="mu">Space used</div><div style="display:flex;align-items:center;gap:8px"><b class="num" style="font-size:13px">38.2 of 200 GB</b><span style="width:36px;height:4px;border-radius:2px;background:var(--ln);overflow:hidden"><span style="display:block;width:19%;height:100%;background:var(--ac)"></span></span></div></div>
+          <div><div class="mu">{{progTitle}}</div><div style="display:flex;align-items:center;gap:8px"><b class="num" style="font-size:13px">{{n}} of 40 files</b><span style="width:36px;height:4px;border-radius:2px;background:var(--ln);overflow:hidden"><span style="display:block;width:{{pct}};height:100%;background:var(--ac)"></span></span></div><div class="mu num">{{eta}}</div></div>
+          <div><div class="mu">Total today</div><div class="num" style="font-weight:700;font-size:13px">↑ 1.2 GB · ↓ 214 MB</div></div>
+        </div>
+      </div>
+      <div style="flex:1 1 320px;min-width:260px">
+        <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:4px"><span class="mu">Current transfer (KB/s)</span><span class="num" style="font-weight:700"><span style="color:var(--ac)">↓ {{down}}</span>  <span style="color:var(--up)">↑ {{up}}</span></span></div>
+        <div style="display:flex;gap:6px">
+          <div class="mu num" style="display:flex;flex-direction:column;justify-content:space-between;font-size:10px;text-align:right;width:16px;padding-bottom:2px"><span>16</span><span>8</span><span>0</span></div>
+          <svg viewBox="0 0 300 60" preserveAspectRatio="none" width="100%" height="64" aria-label="Transfer speed, last 2 minutes" role="img" style="flex:1">
+            <g stroke="var(--ln)" stroke-dasharray="3 5"><line x1="0" y1="2" x2="300" y2="2"/><line x1="0" y1="30" x2="300" y2="30"/></g><line x1="0" y1="58" x2="300" y2="58" stroke="var(--ln)"/>
+            <polyline points="{{downPts}}" fill="none" stroke="var(--ac)" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+            <polyline points="{{upPts}}" fill="none" stroke="var(--up)" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- QUICK SETTINGS -->
+  <sc-if value="{{qsOpen}}" hint-placeholder-val="{{ true }}"><aside style="flex:0 0 100px;align-self:stretch;min-height:0;display:flex;flex-direction:column;gap:4px;padding:0;box-sizing:border-box">
+    <button class="b" onClick="{{toggleQs}}" aria-expanded="{{qsStr}}" aria-label="{{qsAria}}" title="Quick settings" style="justify-content:center;padding:0 8px;background:{{qsBg}}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <sc-if value="{{qsOpen}}" hint-placeholder-val="{{ true }}">
+    <div class="pop card" style="display:flex;flex-direction:column;gap:4px;flex:1;padding:6px;min-height:0">
+      <div style="position:relative">      <sc-if value="{{menuOpen}}" hint-placeholder-val="{{ false }}">
+        <div class="card pop" role="menu" style="position:absolute;right:0;top:64px;z-index:5;min-width:240px;padding:6px;box-shadow:0 10px 15px rgb(0 0 0/.10),0 4px 6px rgb(0 0 0/.08)">
+          <sc-for list="{{menuItems}}" as="m" hint-placeholder-count="4"><button role="menuitem" onClick="{{m.go}}" style="width:100%;height:40px;border:0;border-radius:6px;background:transparent;display:flex;justify-content:space-between;align-items:center;padding:0 12px;font-size:14px"><span>{{m.label}}</span><span class="mu" style="font-size:12px">{{m.key}}</span></button></sc-for>
+        </div>
+      </sc-if><button onClick="{{toggleMenu}}" aria-haspopup="menu" aria-expanded="{{menuStr}}" style="width:100%;min-height:60px;border:0;border-radius:8px;background:{{menuBg}};font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>All settings…</button></div>
+      <div style="height:1px;margin:6px 4px 2px;background:linear-gradient(90deg,transparent,var(--ln) 15%,var(--ln) 85%,transparent)"></div>
+      <div class="mu" style="font-size:11px;font-weight:700;text-align:center;padding:4px 0">Quick settings</div>
+      <sc-for list="{{qs}}" as="q" hint-placeholder-count="5">
+        <button onClick="{{q.go}}" aria-pressed="{{q.pressed}}" style="min-height:68px;border:0;border-radius:8px;background:{{q.bg}};font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 2px">
+          <span style="width:10px;height:10px;border-radius:50%;background:{{q.dot}};border:2px solid var(--ac)"></span><span style="font-weight:600;line-height:1.2">{{q.label}}</span><span class="mu">{{q.state}}</span>
+        </button>
+      </sc-for>
+    
+    </div>
+    </sc-if>
+  </aside></sc-if>
+</div>
+</sc-if>
+
+<!-- ================= DIALOGS ================= -->
+<sc-if value="{{dlgOpen}}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;z-index:10;background:rgb(0 0 0/.45);display:flex;align-items:flex-start;justify-content:center;padding:80px 16px;box-sizing:border-box">
+  <div class="card pop" role="dialog" aria-modal="true" aria-label="{{dlgTitle}}" style="width:100%;max-width:560px;padding:28px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px;box-shadow:0 10px 15px rgb(0 0 0/.10),0 4px 6px rgb(0 0 0/.08)">
+    <div style="display:flex;align-items:center"><h2 style="margin:0;font-size:20px;flex:1">{{dlgTitle}}</h2><button aria-label="Close" onClick="{{closeDlg}}" style="width:36px;height:36px;border:0;border-radius:8px;background:transparent;font-size:18px">✕</button></div>
+
+    <sc-if value="{{dAdd}}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:14px">
+      <div><div class="mu" style="font-size:12px;font-weight:700;margin-bottom:6px">Folder on this computer</div><button class="b" style="width:100%;height:44px" onClick="{{pickAddLocal}}">{{addLocal}}</button></div>
+      <div><div class="mu" style="font-size:12px;font-weight:700;margin-bottom:6px">Folder in Proton Drive</div><button class="b" style="width:100%;height:44px" onClick="{{pickAddRemote}}">{{addRemote}}</button></div>
+      <div role="radiogroup" aria-label="How to sync" style="display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{addModes}}" as="m" hint-placeholder-count="3"><button role="radio" aria-checked="{{m.on}}" onClick="{{m.pick}}" style="text-align:left;padding:12px 14px;border-radius:8px;border:2px solid {{m.bd}};background:{{m.bg}}"><b>{{m.label}}</b><div class="mu" style="font-size:13px;margin-top:2px">{{m.desc}}</div></button></sc-for>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px"><button class="b" style="height:44px" onClick="{{closeDlg}}">Cancel</button><button class="b bp" style="height:44px" onClick="{{confirmAdd}}">Start syncing</button></div>
+    </div></sc-if>
+
+    <sc-if value="{{dSettings}}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:2px">
+      <div class="mu" style="font-size:12px;font-weight:700">Your Proton Drive folder</div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;margin:6px 0 10px;border:1px solid var(--ln);border-radius:10px;background:var(--sf)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+        <div style="flex:1;min-width:0"><b style="font-size:14px">Location</b><div class="mu" style="font-size:13px;font-family:ui-monospace,monospace;overflow-wrap:anywhere">{{rootDir}}</div></div>
+        <span style="color:var(--ac)" aria-label="Folder is available" title="Folder is available">✓</span>
+        <button class="b" onClick="{{changeRoot}}">Change…</button>
+      </div>
+      <div class="mu" style="font-size:12px;font-weight:700;margin-top:4px">General</div>
+      <sc-for list="{{toggles}}" as="t" hint-placeholder-count="2"><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--ln)"><div style="flex:1"><b style="font-size:14px">{{t.label}}</b><div class="mu" style="font-size:12px">{{t.desc}}</div></div><button class="sw" role="switch" aria-checked="{{t.on}}" aria-label="{{t.label}}" onClick="{{t.flip}}"><span></span></button></div></sc-for>
+      <sc-for list="{{choices}}" as="c" hint-placeholder-count="3"><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--ln)"><div style="flex:1"><b style="font-size:14px">{{c.label}}</b><div class="mu" style="font-size:12px">{{c.desc}}</div></div><select value="{{c.val}}" onChange="{{c.set}}" aria-label="{{c.label}}"><sc-for list="{{c.opts}}" as="o" hint-placeholder-count="3"><option value="{{o}}">{{o}}</option></sc-for></select></div></sc-for>
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--ln)"><div style="flex:1"><b style="font-size:14px">Proton Drive CLI</b><div class="mu num" style="font-size:12px">{{cliVer}}</div></div><button class="b" onClick="{{updateCli}}" disabled="{{cliUpBusy}}">{{cliUpBtn}}</button></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0"><div style="flex:1"><b style="font-size:14px">Account</b><div class="mu" style="font-size:12px">walter@proton.me (sample) · session kept in your keyring</div></div><button class="b" style="color:var(--er)" onClick="{{askSignOut}}">Sign out…</button></div>
+      <div class="mu" style="font-size:12px;margin-top:8px">Shortcuts: Ctrl+R sync · Ctrl+N add folder · Ctrl+, settings · Ctrl+Q quit · Kluis 0.3.0, not affiliated with Proton AG</div>
+    </div></sc-if>
+
+    <sc-if value="{{dConfirm}}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:16px">
+      <p style="margin:0;line-height:1.5">{{confText}}</p>
+      <div style="display:flex;justify-content:flex-end;gap:8px"><button class="b" style="height:44px" onClick="{{closeDlg}}">{{confNo}}</button><button class="b" style="height:44px;background:var(--er);border:0;color:var(--on)" onClick="{{confYes}}">{{confOk}}</button></div>
+    </div></sc-if>
+
+    <sc-if value="{{dAbout}}" hint-placeholder-val="{{ false }}"><div class="mu" style="line-height:1.6">Kluis 0.3.0 · unofficial Proton Drive client for Linux Mint and EndeavourOS. Every transfer goes through Proton’s official CLI, so files stay end-to-end encrypted. GPL-3.0 · not affiliated with Proton AG.</div></sc-if>
+  </div>
+</div>
+</sc-if>
+
+<!-- TOAST -->
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+<div class="pop" role="status" style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:16px;padding:12px 16px;border-radius:10px;background:var(--tx);color:var(--bg);font-size:14px;box-shadow:0 10px 15px rgb(0 0 0/.10),0 4px 6px rgb(0 0 0/.08)">
+  <span>{{toast}}</span>
+  <sc-if value="{{toastUndo}}" hint-placeholder-val="{{ false }}"><button onClick="{{undo}}" style="border:0;background:transparent;color:var(--bg);font-weight:700;text-decoration:underline;padding:4px">Undo</button></sc-if>
+</div>
+</sc-if>
+<div aria-live="polite" style="position:absolute;left:-9999px">{{toast}}</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startScreen":{"editor":"enum","options":["onboard","app"],"default":"app"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p){
+    super(p);
+    this.state = {
+      screen: p.startScreen || 'app', step:1, cli:'idle', sign:'idle', picks:{Documents:true, Pictures:true, Desktop:false},
+      tab:'home', dlg:null, conf:null, menu:false, light:false, paused:false, syncing:false, n:40, qs:true, vpn:true, exit:'Adelaide',
+      folders:[
+        {id:1,name:'Agriland',local:'~/Documents/Agriland',remote:'/Agriland',size:'4.2 GB',mode:'two',on:true,status:'Synced 08:33 · 1’204 files'},
+        {id:2,name:'SecondBrain',local:'~/SecondBrain',remote:'/SecondBrain',size:'312 MB',mode:'two',on:true,status:'1 conflict copy kept: Plan (conflict 2026-11-26 0814 laptop).md',conflict:true},
+        {id:3,name:'SAP Projekte',local:'~/Documents/SAP',remote:'/SAP Projekte',size:'1.8 GB',mode:'backup',on:true,status:'Backed up 08:20 · 930 files'},
+        {id:4,name:'Shared invoices',local:'~/Invoices',remote:'/Shared/Invoices',size:'96 MB',mode:'mirror',on:false,status:'Off'}],
+      path:[], sel:{}, trashed:{}, extra:[], album:'All photos', psel:{}, save:true, layout:'month', albums:true, trashLocal:false, dlOpen:false, ulOpen:false, root:'~/Proton Drive', activeM:0, pos:0, shSync:{}, shDesc:true, shTarget:{}, colW:{ b_files:80, b_size:90, b_date:110, s_perm:120, s_name:260, s_by:180, s_target:300, s_date:130, s_sync:90 },
+      upDir:null, actFilter:'all', cleared:false, set:{login:true, hidden:false, notif:true, interval:'15 min', theme:'Dark', notifs:'All', lang:'Auto (English)', beta:false},
+      cliUp:'idle', addMode:'two', addLocal:'~/Documents/Startup', addRemote:'/Startup', toast:null, undoFn:null
+    };
+  }
+  componentDidMount(){
+    this.mv = (e) => { const d = this.drag; if (!d) return; const w = Math.max(56, Math.min(600, Math.round(d.w + d.dir * (e.clientX - d.x)))); this.setState({ colW:{ ...this.state.colW, [d.k]:w } }); };
+    this.up = () => { this.drag = null; };
+    window.addEventListener('pointermove', this.mv); window.addEventListener('pointerup', this.up); this.track();
+  }
+  gal(){ return document.querySelector('.kgal'); }
+  jump(k){ const sc = this.gal(); if (!sc) return; const el = sc.querySelectorAll('.km')[k]; if (el) sc.scrollTo({ top: Math.max(0, el.offsetTop - 8), behavior:'smooth' }); }
+  track(){ const sc = this.gal(); if (!sc || sc === this.galEl) return; this.galEl = sc; sc.addEventListener('scroll', () => this.onGal(sc), { passive:true }); this.onGal(sc); }
+  onGal(sc){ if (this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = 0;
+    const els = [...sc.querySelectorAll('.km')], n = els.length; if (!n) return;
+    const y = sc.scrollTop + 8; let a = 0; els.forEach((el, k) => { if (el.offsetTop <= y) a = k; });
+    let p; if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2) { p = n - 1; a = n - 1; }
+    else { const top = els[a].offsetTop, nxt = a < n - 1 ? els[a + 1].offsetTop : sc.scrollHeight; p = a + Math.max(0, Math.min(1, (y - top) / Math.max(1, nxt - top))); }
+    if (Math.abs(p - this.state.pos) > 0.004 || a !== this.state.activeM) this.setState({ pos:p, activeM:a }); }); }
+  componentDidUpdate(){ this.track(); }
+  componentWillUnmount(){ clearInterval(this.iv); clearTimeout(this.tt); window.removeEventListener('pointermove', this.mv); window.removeEventListener('pointerup', this.up); }
+  say(msg, undoFn){ clearTimeout(this.tt); this.setState({ toast:msg, undoFn:undoFn||null }); this.tt = setTimeout(() => this.setState({ toast:null, undoFn:null }), undoFn ? 8000 : 5000); }
+  startSync(){
+    clearInterval(this.iv);
+    this.setState({ syncing:true, n:19, paused:false });
+    this.iv = setInterval(() => {
+      const n = this.state.n + 1;
+      if (n >= 40) { clearInterval(this.iv); this.setState({ n:40, syncing:false }); this.say('Everything is up to date ✓'); }
+      else this.setState({ n });
+    }, 160);
+  }
+  renderVals() {
+    const S = this.state, set = (o) => this.setState(o);
+    const P = { 'Cape Town':[-33.9,18.4], 'Adelaide':[-34.9,138.6], 'Lisbon':[38.7,-9.1], 'Zürich':[47.4,8.5], 'New York':[40.7,-74], 'São Paulo':[-23.5,-46.6], 'Tokyo':[35.7,139.7], 'Reykjavík':[64.1,-21.9] };
+    const home = 'Cape Town', here = S.vpn ? S.exit : home, [lat, lon] = P[here];
+    const x = Math.round(2*(lon+180)+5), y = Math.round(2*(75-lat)+5), right = x > 560;
+    const on = S.folders.filter(f => f.on), conflicts = S.folders.filter(f => f.on && f.conflict).length;
+    const pct = Math.round(S.n/40*1000)/10 + '%';
+    // hero status
+    let heroTitle, heroSub, heroIcon, heroColor = 'var(--ac)', protLabel;
+    if (S.paused) { heroTitle = 'Sync paused — your files are safe'; heroSub = 'New changes wait on this computer until you resume'; heroIcon = '⏸'; heroColor = 'var(--wa)'; protLabel = 'Paused'; }
+    else if (S.syncing) { heroTitle = `Syncing ${S.n} of 40 files`; heroSub = `From ${S.vpn ? here + ' via VPN' : here} to Proton Drive · about ${Math.max(1, Math.round((40-S.n)*0.16))} sec left`; heroIcon = '↻'; protLabel = 'Syncing'; }
+    else if (!S.folders.length) { heroTitle = 'Ready when you are'; heroSub = 'Add a folder to start syncing with Proton Drive'; heroIcon = '☁'; protLabel = 'No folders'; }
+    else { heroTitle = conflicts ? `Up to date · ${conflicts} with conflict copies` : 'Everything is up to date'; heroSub = `Watching ${on.length} of ${S.folders.length} folders · local edits sync ~10 s after you save · Proton Drive checked 08:41`; heroIcon = '✓'; protLabel = 'In sync'; }
+    // browse data
+    const ROOT = [['Agriland','dir','4.2 GB','2026-11-26','1\u2019204'],['SecondBrain','dir','312 MB','2026-11-26','1\u2019980'],['SAP Projekte','dir','1.8 GB','2026-11-25','930'],['Shared','dir','96 MB','2026-11-20','41'],['Lebenslauf_Walter_2026.pdf','file','412 KB','2026-11-12','—'],['Steuererklärungsunterlagen_2026.xlsx','file','96 KB','2026-11-20','—']];
+    const SUB = [['Archiv','dir','1.1 GB','2026-10-02','312'],['Q4 Rechnung.pdf','file','412 KB','2026-11-26','—'],['Offerte_2026-11.docx','file','88 KB','2026-11-24','—'],['Notes.md','file','4 KB','2026-11-26','—']];
+    const pkey = S.path.join('/');
+    const raw = (S.path.length ? (S.path.length > 1 ? [] : SUB) : ROOT).concat(S.extra.filter(e => e.at === pkey).map(e => [e.name, e.kind, e.kind==='dir'?'0 B':'1.2 MB','2026-11-26', e.kind==='dir'?'0':'—']));
+    const list = raw.filter(r => !S.trashed[pkey + '/' + r[0]]);
+    const selNames = list.map(r => r[0]).filter(n => S.sel[pkey + '/' + n]);
+    // photos
+    const mk = (prefix, count, vids, seed) => Array.from({length:count}, (_, i) => { const id = prefix + i, isV = vids.includes(i); return { id, name: (isV ? 'VID_' : 'IMG_') + prefix.replace(/\D/g,'') + '_' + String(i+1).padStart(4,'0') + (isV ? '.mp4' : '.jpg'), video:isV, len: String(10 + i*7 % 50), ang: (seed + i*47) % 360 }; });
+    const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    let M = Array.from({length:24}, (_, k) => { const mi = (10 - k + 240) % 12, yr = 2026 - Math.floor((k + 1) / 12) + (k >= 11 ? 0 : 0), y = k <= 10 ? 2026 : (k <= 22 ? 2025 : 2024);
+      const cnt = 5 + (k * 7) % 11, vids = [1, 6, 11].filter(v => v < cnt && (k + v) % 3 === 0);
+      return { label: MN[mi] + ' ' + y, y, tiles: mk(String(y).slice(2) + String(mi + 1).padStart(2,'0') + '_', cnt, vids, k * 37) }; });
+    if (S.album === 'Kapstadt') M = M.slice(0, 3).map(m => ({ ...m, tiles: m.tiles.slice(0, 4) }));
+    if (S.album === 'Family') M = M.filter((_, k) => k % 4 === 1).map(m => ({ ...m, tiles: m.tiles.slice(0, 3) }));
+    M = M.map((m, k) => ({ ...m, i:k, year: (k === 0 || M[k - 1].y !== m.y) ? String(m.y) : '', count: m.tiles.length + ' items', dotTop: (k === 0 || M[k - 1].y !== m.y) ? '52px' : '5px' }));
+    const pselIds = Object.keys(S.psel).filter(k => S.psel[k]);
+    // activity
+    const ACT = [
+      ['ok','↑ 21 uploaded · Photos/Kapstadt','Two-way · Agriland, SecondBrain','08:33'],
+      ['warning','Conflict: both copies of “Plan.md” kept','Plan (conflict 2026-11-26 0814 laptop).md','08:14'],
+      ['ok','↓ 3 downloaded · SAP Projekte','Mirror check','08:02'],
+      ['info','Proton Drive checked, nothing new','Every 15 min','07:45'],
+      ['error','Upload failed for “Big_video.mov”, will retry','Network timeout (rate limit) · retry 07:31','07:30'],
+      ['ok','Proton Drive CLI 0.9.0 verified (SHA-512)','Checked at start','06:58']];
+    const acts = S.cleared ? [] : ACT.filter(a => S.actFilter === 'all' || a[0] === 'warning' || a[0] === 'error');
+    const AIC = { ok:['✓','var(--ac)'], info:['i','var(--mu)'], warning:['!','var(--wa)'], error:['✕','var(--er)'] };
+    const tabs = [['home','Home','Ctrl+1'],['folders','Folders','Ctrl+2'],['browse','Browse','Ctrl+3'],['photos','Photos','Ctrl+4'],['shared','Shared with me','Ctrl+5'],['activity','Activity','Ctrl+6']];
+    const MODES = { two:['⇄ Two-way','Edits, new files and deletions travel both ways'], backup:['↑ Back up','Uploads new and changed files. Never deletes in Proton Drive, never changes this computer'], mirror:['↓ Mirror down','Keeps a local copy of a Proton Drive folder. Never changes Proton Drive'] };
+    const dlgTitles = { add:'Add a folder', settings:'Settings', confirm:S.conf ? S.conf.title : '', about:'About Kluis' };
+    const closeAll = { dlg:null, conf:null, menu:false };
+    return {
+      mode: S.light ? 'light' : '', held: S.paused ? 'held' : '',
+      isOnboard: S.screen === 'onboard', isApp: S.screen === 'app',
+      cw: { ...S.colW, s_total: ['s_perm','s_name','s_by','s_target','s_date','s_sync'].reduce((a,k) => a + S.colW[k], 0) },
+      rz: Object.fromEntries(Object.keys(S.colW).map(k => { const dir = k.startsWith('b_') ? -1 : 1; return [k, {
+        down: (e) => { e.preventDefault(); this.drag = { k, dir, x:e.clientX, w:S.colW[k] }; },
+        key: (e) => { const st = e.key==='ArrowRight' ? 16 : e.key==='ArrowLeft' ? -16 : 0; if (!st) return; e.preventDefault(); set({ colW:{ ...S.colW, [k]:Math.max(56, S.colW[k] + dir*st) } }); } }]; })),
+      // onboarding
+      step: S.step, st1: S.step===1, st2: S.step===2, st3: S.step===3,
+      steps: ['Get the CLI','Sign in','Pick folders'].map((l,i) => ({ label:l, bar: i+1 <= S.step ? 'var(--ac)' : 'var(--ln)', fg: i+1 === S.step ? 'var(--tx)' : 'var(--mu)' })),
+      cliBusy: S.cli==='busy', cliBtn: S.cli==='done' ? '✓ Downloaded' : S.cli==='busy' ? 'Downloading…' : 'Download from proton.me',
+      cliNote: S.cli==='done' ? 'proton-drive 0.9.0 · SHA-512 checksum matches' : S.cli==='busy' ? '12.4 of 38.0 MB' : 'about 38 MB', cliColor: S.cli==='done' ? 'var(--ac)' : 'var(--mu)',
+      getCli: () => { set({ cli:'busy' }); setTimeout(() => set({ cli:'done' }), 1400); },
+      signBusy: S.sign==='busy', signBtn: S.sign==='done' ? '✓ Signed in' : S.sign==='busy' ? 'Waiting for your browser…' : 'Open Proton sign-in',
+      signNote: S.sign==='done' ? 'walter@proton.me (sample)' : S.sign==='busy' ? 'Finish signing in, then come back' : '', signColor: S.sign==='done' ? 'var(--ac)' : 'var(--mu)',
+      signIn: () => { set({ sign:'busy' }); setTimeout(() => set({ sign:'done' }), 1500); },
+      picks: Object.keys(S.picks).map(k => ({ name:k, on: S.picks[k]?'true':'false', mark: S.picks[k]?'✓':'+', bg: S.picks[k]?'var(--acs)':'var(--sf)', bd: S.picks[k]?'var(--ac)':'var(--ln)', flip: () => set({ picks:{...S.picks, [k]:!S.picks[k]} }) })),
+      addOther: () => set({ picks:{...S.picks, Music:true} }),
+      noBack: S.step===1, nextOff: (S.step===1 && S.cli!=='done') || (S.step===2 && S.sign!=='done'),
+      nextLabel: S.step===3 ? 'Start syncing' : 'Next',
+      stepBack: () => set({ step: Math.max(1, S.step-1) }),
+      stepNext: () => { if (S.step < 3) set({ step:S.step+1 }); else { set({ screen:'app', tab:'home' }); this.startSync(); } },
+      // nav
+      nav: tabs.map(([id,l,k]) => ({ label:l, key:k, cur: id===S.tab?'page':'false', bg: id===S.tab?'var(--sf)':'transparent', bar: id===S.tab?'var(--ac)':'transparent', weight: id===S.tab?700:400, badge: id==='activity' && !S.cleared ? '2' : (id==='folders' && conflicts ? String(conflicts) : ''), pick: () => set({ tab:id, menu:false }) })),
+      tabTitle: tabs.find(t => t[0]===S.tab)[1],
+      tHome: S.tab==='home', tFolders: S.tab==='folders', tBrowse: S.tab==='browse', tPhotos: S.tab==='photos', tActivity: S.tab==='activity', tShared: S.tab==='shared',
+      goActivity: () => set({ tab:'activity' }),
+      timeline: ACT.slice(0,5).map(a => ({ time:a[3], name:a[1], what:a[2], c:AIC[a[0]][1] })),
+      // header
+      syncBtn: S.syncing ? 'Stop' : 'Sync now', syncAria: S.syncing ? 'Stop syncing' : 'Sync everything now (Ctrl+R)',
+      syncNow: () => { if (S.syncing) { clearInterval(this.iv); set({ syncing:false }); this.say(`Stopped at ${S.n} of 40 · nothing lost`); } else this.startSync(); },
+      pausedStr: S.paused?'true':'false', pauseBg: S.paused?'var(--acs)':'var(--sf)', pauseIcon: S.paused?'▶':'⏸', pauseBtn: S.paused?'Resume':'Pause',
+      togglePause: () => { clearInterval(this.iv); set({ paused:!S.paused, syncing:false }); this.say(S.paused ? 'Syncing resumed' : 'Sync paused · nothing is lost'); },
+      menuBg: S.menu?'var(--acs)':'transparent', menuOpen: S.menu, menuStr: S.menu?'true':'false', toggleMenu: () => set({ menu:!S.menu }),
+      menuItems: [['+ Add folder','Ctrl+N',() => set({ dlg:'add', menu:false })],['Settings','Ctrl+,',() => set({ dlg:'settings', menu:false })],['Run setup again','',() => set({ screen:'onboard', step:1, cli:'idle', sign:'idle', menu:false })],['About Kluis','',() => set({ dlg:'about', menu:false })],['Quit','Ctrl+Q',() => { set({ menu:false }); this.say('Kluis keeps running in the panel when you close the window · Quit stops syncing'); }]].map(([label,key,go]) => ({ label, key, go })),
+      // home
+      heroTitle, heroSub, heroIcon, heroColor, protLabel,
+      vpnStr: S.vpn?'true':'false', vpnBg: S.vpn?'var(--acs)':'var(--sf)', vpnLabel: S.vpn?'VPN on':'VPN off',
+      locCaption: S.vpn ? 'Showing as' : 'Your location', locs: S.vpn ? Object.keys(P) : [home], here,
+      toggleVpn: () => set({ vpn:!S.vpn }), pickLoc: (e) => set({ exit:e.target.value }),
+      youX:x, youY:y, arcD:`M${x} ${y} Q${Math.round((x+382)/2)} ${Math.min(y,60)-50} 382 60`,
+      labX: right ? x-12 : x+12, labY: y+18, labAnchor: right?'end':'start', youLabel: S.vpn ? `You · ${here} (VPN)` : `You · ${here}`,
+      // folders
+      noFolders: !S.folders.length,
+      folders: S.folders.map(f => ({ ...f, onStr: f.on?'true':'false', op: f.on?1:.7, off: !f.on || S.paused,
+        sc: f.conflict && f.on ? 'var(--wa)' : 'var(--mu)', status: f.on ? f.status : 'Off · not syncing',
+        flip: () => set({ folders: S.folders.map(g => g.id===f.id ? {...g, on:!g.on, status: g.on ? 'Off' : 'Synced just now'} : g) }),
+        setMode: (e) => { set({ folders: S.folders.map(g => g.id===f.id ? {...g, mode:e.target.value} : g) }); this.say(`${f.name}: ${MODES[e.target.value][0]}`); },
+        sync: () => { set({ folders: S.folders.map(g => g.id===f.id ? {...g, status:'Synced just now'} : g) }); this.say(`${f.name} synced ✓`); },
+        open: () => this.say(`Opened ${f.local} in the file manager`),
+        remove: () => { const before = S.folders; set({ folders: S.folders.filter(g => g.id!==f.id) }); this.say(`Stopped syncing ${f.name} · files kept on both sides`, () => set({ folders:before, toast:null })); } })),
+      openAdd: () => set({ dlg:'add' }),
+      // browse
+      crumbs: ['My files', ...S.path].map((c,i,a) => ({ name:c, sep: i<a.length-1 ? '›' : '', w: i===a.length-1 ? 700 : 400, go: () => set({ path:S.path.slice(0,i), sel:{} }) })),
+      items: list.map(r => { const k = pkey + '/' + r[0]; return { name:r[0], icon: r[1]==='dir' ? '▸' : '·', size:r[2], date:r[3], count:r[4], wf:S.colW.b_files, ws:S.colW.b_size, wd:S.colW.b_date, sel: !!S.sel[k], bg: S.sel[k] ? 'var(--acs)' : 'transparent',
+        toggle: () => set({ sel:{...S.sel, [k]:!S.sel[k]} }),
+        open: () => r[1]==='dir' ? set({ path:[...S.path, r[0]], sel:{} }) : this.say(`Opening ${r[0]}…`) }; }),
+      emptyDir: !list.length, noSel: !selNames.length, notOne: selNames.length !== 1,
+      upload: () => { set({ extra:[...S.extra, {at:pkey, name:'Upload_' + (S.extra.length+1) + '.pdf', kind:'file'}] }); this.say('Uploaded 1 file ✓'); },
+      newFolder: () => { set({ extra:[...S.extra, {at:pkey, name:'New folder ' + (S.extra.length+1), kind:'dir'}] }); this.say('Folder created'); },
+      download: () => this.say(`Downloading ${selNames.length} item(s) to ~/Downloads`),
+      rename: () => this.say(`Rename “${selNames[0]}”: type a new name (dialog in the real app)`),
+      askTrash: () => set({ dlg:'confirm', conf:{ title:`Move ${selNames.length} item(s) to the trash?`, text:`${selNames.slice(0,3).join(', ')}${selNames.length>3?'…':''}. You can restore them from the Proton Drive trash.`, ok:'Move to trash', no:'Keep files',
+        yes: () => { const t = {...S.trashed}; selNames.forEach(n => t[pkey+'/'+n] = true); const before = S.trashed; set({ trashed:t, sel:{}, dlg:null, conf:null }); this.say(`Moved ${selNames.length} item(s) to the Proton Drive trash`, () => set({ trashed:before, toast:null })); } } }),
+      // photos
+      dlOpen: S.dlOpen, dlClosed: !S.dlOpen, dlStr: S.dlOpen?'true':'false', dlAria: S.dlOpen?'Collapse Download':'Expand Download', dlRot: S.dlOpen?180:0, toggleDl: () => set({ dlOpen:!S.dlOpen }),
+      ulOpen: S.ulOpen, ulClosed: !S.ulOpen, ulStr: S.ulOpen?'true':'false', ulAria: S.ulOpen?'Collapse Upload':'Expand Upload', ulRot: S.ulOpen?180:0, toggleUl: () => set({ ulOpen:!S.ulOpen }),
+      saveStr: S.save?'true':'false', toggleSave: () => set({ save:!S.save }),
+      pickSaveDir: () => this.say('Folder chooser opens here (sample keeps ~/Pictures/Proton Photos)'),
+      layout: S.layout, setLayout: (e) => set({ layout:e.target.value }),
+      albums: S.albums, toggleAlbums: () => set({ albums:!S.albums }), trashLocal: S.trashLocal, toggleTrashLocal: () => set({ trashLocal:!S.trashLocal }),
+      saveStatus: S.save ? '2’311 photos saved · last 08:30' : 'Off', openSaved: () => this.say('Opened ~/Pictures/Proton Photos'),
+      upDirLabel: S.upDir || 'No folder yet', pickUpDir: () => set({ upDir:'~/Pictures/Camera imports' }), openUpDir: () => S.upDir ? this.say('Opened ' + S.upDir) : set({ upDir:'~/Pictures/Camera imports' }),
+      upStatus: S.upDir ? '14 new added · 3 skipped (already in Proton Photos)' : 'No folder chosen yet',
+      album: S.album, setAlbum: (e) => set({ album:e.target.value, psel:{}, activeM:0, pos:0 }),
+      months: M.map(m => ({ label:m.label, tiles: m.tiles.map(t => ({ ...t, sel: S.psel[t.id]?'true':'false', selB: !!S.psel[t.id], bd: S.psel[t.id] ? 'var(--ac)' : 'transparent', toggle: () => set({ psel:{...S.psel, [t.id]:!S.psel[t.id]} }) })) })),
+      pselCount: pselIds.length ? `${pselIds.length} selected` : '', pselNone: !pselIds.length, pselNotOne: pselIds.length !== 1,
+      openPhoto: () => this.say('Opening in the image viewer…'),
+      dlPhotos: () => { this.say(`Downloading ${pselIds.length} photo(s) to ~/Pictures/Proton Photos`); set({ psel:{} }); },
+      shared: [['Editor','Papies.protonsheet','Sheet','Anna Meier (sample)','2026-11-03'],['Editor','Zürcher Reisebüros.protonsheet','Sheet','Anna Meier (sample)','2026-08-25'],['Viewer','Troue','Folder','Jan de Wet (sample)','2026-06-16']]
+        .sort((p,q) => S.shDesc ? q[4].localeCompare(p[4]) : p[4].localeCompare(q[4]))
+        .map(([perm,name,kind,by,date]) => ({ perm, name, by, date, target: S.shTarget[name] || (S.root + '/Shared with me/' + name), tOp: S.shSync[name] ? 1 : .7,
+          pickT: () => { const nx = S.shTarget[name] ? null : '~/Documents/' + name; set({ shTarget:{...S.shTarget, [name]:nx} }); this.say(`${name} will sync to ${nx || S.root + '/Shared with me/' + name}`); },
+          openT: () => this.say(S.shSync[name] ? 'Opened ' + (S.shTarget[name] || S.root + '/Shared with me/' + name) : 'Switch on Sync first to create the local copy'), ic: kind==='Folder' ? 'var(--wa)' : 'var(--ac)', on: S.shSync[name]?'true':'false',
+          flip: () => { set({ shSync:{...S.shSync, [name]:!S.shSync[name]} }); this.say(S.shSync[name] ? `Stopped syncing ${name} · local copy kept` : `Syncing ${name} to ~/Proton Drive/Shared with me`); } })),
+      sharedCount: `${Object.values(S.shSync).filter(Boolean).length} of 3 items synced`,
+      sortArrow: S.shDesc ? '▼' : '▲', sortShared: () => set({ shDesc:!S.shDesc }),
+      showScrub: M.length > 1,
+      ringTop: (M.length > 1 ? (Math.min(S.pos, M.length-1) / (M.length-1) * 100) : 0) + '%',
+      ringLabel: (M[Math.min(S.activeM, M.length-1)] || {label:''}).label.replace(/^(\w{3})\w*/, '$1'),
+      scrub: M.map((m, k) => ({ top: (M.length > 1 ? k/(M.length-1)*100 : 0) + '%', title: m.label + ' · ' + m.count, cur: k===S.activeM ? 'true' : 'false',
+        size: k===S.activeM ? '10px' : '6px', bg: k===S.activeM ? 'var(--ac)' : 'var(--mu)', year: m.year, yOp: Math.abs(k - S.activeM) < 2 ? 0 : 1,
+        go: () => this.jump(k) })),
+      // activity
+      actFilter: S.actFilter, setActFilter: (e) => set({ actFilter:e.target.value }),
+      openLog: () => this.say('Opened ~/.local/state/kluis'),
+      clearAct: () => { set({ cleared:true }); this.say('Activity cleared', () => set({ cleared:false, toast:null })); },
+      actEmpty: !acts.length,
+      acts: acts.map(a => ({ icon:AIC[a[0]][0], bg:AIC[a[0]][1], text:a[1], sub:a[2], time:a[3] })),
+      // stats bar
+      n:S.n, pct, progTitle: S.syncing ? 'Uploading' : 'Last run', since: S.paused ? 'paused 08:59' : S.syncing ? 'started 08:59' : 'for 2 h 14 min', eta: S.paused ? 'paused' : S.syncing ? `about ${Math.max(1,Math.round((40-S.n)*0.16))} sec left` : 'done ✓',
+      down: S.paused ? '0 B/s' : S.syncing ? '592 KB/s' : '12 KB/s', up: S.paused ? '0 B/s' : S.syncing ? '608 KB/s' : '4 KB/s',
+      downPts: S.paused ? '0,58 300,58' : S.syncing ? '0,54 20,50 40,40 60,46 80,18 100,36 120,44 140,6 160,32 180,42 200,24 220,46 240,38 260,30 280,44 300,34' : '0,56 30,55 60,57 90,52 120,56 150,54 180,57 210,55 240,56 270,53 300,56',
+      upPts: S.paused ? '0,58 300,58' : S.syncing ? '0,56 20,40 40,50 60,12 80,44 100,50 120,34 140,46 160,20 180,50 200,40 220,30 240,50 260,40 280,46 300,28' : '0,57 30,56 60,57 90,55 120,57 150,56 180,57 210,56 240,57 270,55 300,57',
+      // quick settings
+      qsOpen: S.qs, qsClosed: !S.qs, qsStr: S.qs?'true':'false', qsAria: S.qs?'Collapse quick settings':'Expand quick settings', qsBg: S.qs?'transparent':'var(--acs)', chev: S.qs?0:180, qsAlign: S.qs?'stretch':'flex-start',
+      toggleQs: () => set({ qs:!S.qs }),
+      qs: [
+        ['Pause sync', S.paused, S.paused?'On':'Off', () => { clearInterval(this.iv); set({ paused:!S.paused, syncing:false }); }],
+        ['Notifi­cations', S.set.notifs!=='Off', S.set.notifs, () => { const o=['All','Problems only','Off']; set({ set:{...S.set, notifs:o[(o.indexOf(S.set.notifs)+1)%3]} }); }],
+        ['Dark mode', !S.light, S.light?'Off':'On', () => set({ light:!S.light, set:{...S.set, theme: S.light?'Dark':'Light'} })],
+        ['Start at login', S.set.login, S.set.login?'On':'Off', () => set({ set:{...S.set, login:!S.set.login} })],
+        ['VPN view', S.vpn, S.vpn?'On':'Off', () => set({ vpn:!S.vpn })]
+      ].map(([label,p,state,go]) => ({ label, state, go, pressed: p?'true':'false', bg: p?'var(--acs)':'transparent', dot: p?'var(--ac)':'transparent' })),
+      // dialogs
+      dlgOpen: !!S.dlg, dlgTitle: dlgTitles[S.dlg] || '', closeDlg: () => set(closeAll),
+      dAdd: S.dlg==='add', dSettings: S.dlg==='settings', dConfirm: S.dlg==='confirm', dAbout: S.dlg==='about',
+      rootDir: S.root, changeRoot: () => { const nx = S.root==='~/Proton Drive' ? '/mnt/data/CloudDrives/Proton' : '~/Proton Drive'; set({ root:nx }); this.say(`Proton Drive folder moved to ${nx} · files are moved, not copied`, () => set({ root:S.root, toast:null })); },
+      openSettings: () => set({ dlg:'settings', menu:false }),
+      addLocal: S.addLocal, addRemote: S.addRemote,
+      pickAddLocal: () => set({ addLocal: S.addLocal==='~/Documents/Startup' ? '~/Music' : '~/Documents/Startup' }),
+      pickAddRemote: () => set({ addRemote: S.addRemote==='/Startup' ? '/Music' : '/Startup' }),
+      addModes: Object.keys(MODES).map(k => ({ label:MODES[k][0], desc:MODES[k][1], on: S.addMode===k?'true':'false', bd: S.addMode===k?'var(--ac)':'var(--ln)', bg: S.addMode===k?'var(--acs)':'var(--sf)', pick: () => set({ addMode:k }) })),
+      confirmAdd: () => { const nm = S.addLocal.split('/').pop(); set({ dlg:null, tab:'folders', folders:[...S.folders, {id:Date.now(), name:nm, local:S.addLocal, remote:S.addRemote, size:'Measuring…', mode:S.addMode, on:true, status:'First sync started…'}] }); this.say(`Syncing ${nm} · ${MODES[S.addMode][0]}`); },
+      toggles: [['Start at login','Kluis starts with your desktop','login'],['Start hidden','Only the panel icon shows at start','hidden'],['Beta access','Get new Kluis versions early and help test them','beta']].map(([label,desc,k]) => ({ label, desc, on: S.set[k]?'true':'false', flip: () => set({ set:{...S.set, [k]:!S.set[k]} }) })),
+      choices: [
+        ['Check Proton Drive every','Local changes are picked up straight away; this is for changes made elsewhere','interval',['5 min','15 min','30 min','60 min']],
+        ['Theme','','theme',['System','Light','Dark']],
+        ['Language','','lang',['Auto (English)','English','Deutsch','Afrikaans']],
+        ['Notifications','Desktop notifications','notifs',['All','Problems only','Off']]
+      ].map(([label,desc,k,opts]) => ({ label, desc, opts, val:S.set[k], set: (e) => { const v = e.target.value; const o = { set:{...S.set, [k]:v} }; if (k==='theme') o.light = v==='Light'; set(o); } })),
+      cliVer: S.cliUp==='done' ? 'Version 0.9.1 · checksum verified · up to date' : 'Version 0.9.0 · installed 2026-11-17', cliUpBusy: S.cliUp==='busy',
+      cliUpBtn: S.cliUp==='busy' ? 'Updating…' : S.cliUp==='done' ? '✓ Up to date' : 'Check for update',
+      updateCli: () => { set({ cliUp:'busy' }); setTimeout(() => set({ cliUp:'done' }), 1500); },
+      askSignOut: () => set({ dlg:'confirm', conf:{ title:'Sign out of Proton?', text:'Syncing stops until you sign in again. Your files stay on this computer and in Proton Drive.', ok:'Sign out', no:'Stay signed in', yes: () => set({ dlg:null, conf:null, screen:'onboard', step:2, sign:'idle', cli:'done' }) } }),
+      confText: S.conf ? S.conf.text : '', confOk: S.conf ? S.conf.ok : '', confNo: S.conf ? S.conf.no : '', confYes: () => S.conf && S.conf.yes(),
+      // toast
+      toastOn: !!S.toast, toast: S.toast || '', toastUndo: !!S.undoFn, undo: () => { const f = S.undoFn; clearTimeout(this.tt); if (f) f(); set({ toast:'Undone', undoFn:null }); this.tt = setTimeout(() => set({ toast:null }), 2500); }
+    };
+  }
+}
+</script>
+</body>
+</html>
