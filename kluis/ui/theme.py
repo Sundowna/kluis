@@ -31,6 +31,17 @@ def windows_dark() -> bool:
         return False
 
 
+def windows_text():
+    """F-036 Windows: smooth text in grey, not with ClearType's coloured edges. GTK copies Windows' ClearType
+    setting, but its windows have see-through edges, where ClearType can't blend: letters get red and green
+    fringes. Grey smoothing with slight hinting looks like Linux and stays sharp."""
+    s = Gtk.Settings.get_default()
+    s.set_property("gtk-xft-antialias", 1)
+    s.set_property("gtk-xft-hinting", 1)
+    s.set_property("gtk-xft-hintstyle", "hintslight")
+    s.set_property("gtk-xft-rgba", "none")
+
+
 class Theme:
     def __init__(self):
         self.provider = Gtk.CssProvider()
@@ -43,6 +54,7 @@ class Theme:
         self._portal_dark = None
         self._portal = None
         if os.name == "nt":
+            windows_text()
             self._win_dark = windows_dark()
             GLib.timeout_add_seconds(3, self._windows_poll)
             return
