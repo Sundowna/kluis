@@ -1,6 +1,7 @@
 """What each side looked like after the last successful sync (one sqlite db for all folders)."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ class Entry:
 class StateStore:
     def __init__(self, path=STATE_DB):
         ensure_dirs()
+        os.makedirs(os.path.dirname(str(path)) or ".", exist_ok=True)    # a further Proton account's own folder
         self._db = sqlite3.connect(str(path), check_same_thread=False)
         self._lock = threading.Lock()
         with self._db:

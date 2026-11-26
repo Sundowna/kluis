@@ -219,6 +219,9 @@ check(v.load("lindi.kirsten@pm.me") is None, "F-008 a signed-out account's kept 
 check(accounts.Vault().available is False and accounts.Vault().load("x") is None,
       "F-005 without a keyring switching falls back to the browser sign-in")
 
+from kluis.state import StateStore  # noqa: E402
+StateStore(accounts.state_path(lindi))
+check(os.path.exists(accounts.state_path(lindi)), "F-006 the second account's sync history opens in its own new folder")
 diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
       "F-006 Copy diagnostics names no account email and no other account's folders")
