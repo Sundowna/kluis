@@ -1176,6 +1176,51 @@ def f19(d, env, app):
     d.expect(OPENED[-1] == "https://drive.proton.me/", "Open Proton Drive on the web")
 
 
+# ------------------------------------------------------------------ F20 (§8 B.13 keyboard only)
+def setup_f20(env):
+    set_cfg(env, folders=folders_cfg(env, "Agriland"))
+    env.cloud_write("my-files/Agriland/a.txt", "a")
+
+
+def f20(d, env, app):
+    """Tab alone reaches every control the flows use, on every tab, with a visible focus ring."""
+    from gi.repository import Gtk
+    yield main_ready(app)
+    yield idle(app)
+    need = {
+        "home": ["Home", "Folders", "Browse", "Photos", "Shared with me", "Activity", "Sync now", "Pause",
+                 "Search Proton Drive", "Settings (Ctrl+,)", "All settings…", "Pause sync", "Notifications",
+                 "Dark mode", "Start at login", "VPN view", "Collapse quick settings"],
+        "folders": ["+ Add folder", "Sync Agriland", "Mode of Agriland", "Sync Agriland now", "Open Agriland",
+                    "Remove Agriland", "More for Agriland"],
+        "browse": ["↑ Upload…", "+ New folder", "Files in this folder"],
+        "photos": ["Expand Download", "Download my photos to this computer", "Expand Upload", "Album",
+                   "Show my photos"],
+        "shared": ["Shared with me"],
+        "activity": ["Show", "Open log folder", "Clear"],
+    }
+    win = app.window
+    for i, (tab, names) in enumerate(need.items(), 1):
+        d.press(f"<Primary>{i}")
+        yield 0.8
+        reached = set()
+        for _k in range(160):
+            win.emit("move-focus", Gtk.DirectionType.TAB_FORWARD)
+            f = win.get_focus()
+            while f is not None:                 # a combo box focuses its inner button: credit the combo
+                n = getattr(f, "kluis_name", None) or (f.get_accessible().get_name() if f.get_accessible() else "")
+                if n:
+                    reached.add(n)
+                if getattr(f, "kluis_name", None):
+                    break
+                f = f.get_parent()
+        missing = [n for n in names if n not in reached]
+        d.expect(not missing, f"{tab}: Tab reaches {len(names)} controls (missing {missing})")
+        d.shot(f"{tab} focus")
+    css = open(os.path.join(os.path.dirname(HERE), "..", "kluis", "data", "kluis-dark.css")).read()
+    d.expect("*:focus { outline: 2px solid @k_accent" in css, "visible 2 px accent focus ring")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1184,6 +1229,7 @@ FLOWS = {
     "F12": (f12, setup_f12, {}), "F13": (f13, None, {}), "F14": (f14, setup_f14, {}),
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
+    "F20": (f20, setup_f20, {}),
 }
 
 

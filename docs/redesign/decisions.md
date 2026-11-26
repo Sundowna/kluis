@@ -100,3 +100,9 @@ Found by F9.
 **D24 · Photos "follow deletions" and the mass-deletion guard.** When far more photos than usual (over 50, or
 over 10 %) disappear from Proton Photos in one check, Kluis keeps every local copy and logs a warning instead
 of asking. Photo copies are never synced back, so keeping them is always safe.
+
+**D25 · Trash restore works by name only.** Found by the first `--selftest` run against the real account: the CLI
+resolves trashed items as `/trash/<name>`, not by uid. A name can repeat in the trash (someone may have trashed
+another "Notes.txt"), and restoring or deleting by name could then hit the wrong item. So Kluis offers Undo, and
+the self-test permanently deletes its own items, **only when each name is unique in the trash**. Otherwise the
+item stays in the Proton Drive trash, where it can be restored on the web. The mock CLI now behaves like the real one.

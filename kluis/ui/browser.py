@@ -444,22 +444,29 @@ class BrowserPage(Gtk.Box):
         uids = [x.uid for x in nodes]
         here = self.path
 
-        def done(_r):
+        def done(found):
             self.stats.forget(here)
             msg = ngettext("Moved {n} item to the Proton Drive trash", "Moved {n} items to the Proton Drive trash",
                            n).format(n=n)
             self.app.manager.log("info", "", msg)
-            self.app.toast(msg, (_("Undo"), lambda: self._restore(uids, here)))
+            if found:
+                self.app.toast(msg, (_("Undo"), lambda: self._restore(found, here)))
+            else:
+                # another item in the trash has the same name: restoring by name could hit it, so no Undo
+                self.app.toast(msg + " · " + _("restore it on drive.proton.me"))
             self.load()
-        run_bg(lambda: self.app.cli.trash(paths), done,
-               lambda e: self.app.toast(_("Couldn't move to the trash: {e}").format(e=e)))
 
-    def _restore(self, uids, here):
+        def work():
+            self.app.cli.trash(paths)
+            return self.app.cli.trashed(uids)
+        run_bg(work, done, lambda e: self.app.toast(_("Couldn't move to the trash: {e}").format(e=e)))
+
+    def _restore(self, nodes, here):
         def done(_r):
             self.stats.forget(here)
             self.app.toast(_("Restored from the Proton Drive trash"))
             if self.path == here:
                 self.load()
-        run_bg(lambda: self.app.cli.restore(uids), done,
+        run_bg(lambda: self.app.cli.restore(nodes), done,
                lambda e: self.app.toast(_("Couldn't restore: {e}").format(e=e)))
 

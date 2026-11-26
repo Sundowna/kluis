@@ -131,5 +131,32 @@ check("walter@proton.me" not in txt and "abc123" not in txt and "A" * 40 not in 
       "no email, no tokens")
 check("<path>" in txt and "/home/x/Docs/b.txt" in txt.replace("~", "/home/x"), "paths outside synced folders hidden")
 
+print("contrast (§5): text ≥ 4.5:1, UI parts ≥ 3:1, both themes")
+from kluis.ui.theme import TOKENS  # noqa: E402
+
+
+def lum(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def ratio(a, b):
+    la, lb = sorted((lum(a), lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+for theme, t in TOKENS.items():
+    for fg in ("text", "muted"):
+        for bg in ("bg", "panel", "surface"):
+            r = ratio(t[fg], t[bg])
+            check(r >= 4.5, f"{theme}: {fg} on {bg} {r:.1f}:1")
+    for fg in ("accent", "warn", "error", "upload"):
+        for bg in ("bg", "panel"):
+            r = ratio(t[fg], t[bg])
+            check(r >= 3.0, f"{theme}: {fg} on {bg} {r:.1f}:1 (UI part)")
+    r = ratio(t["on_accent"], t["accent"])
+    check(r >= 4.5, f"{theme}: text on accent buttons {r:.1f}:1")
+
 print(f"\n{check.passed} checks passed")
 harness.cleanup(TMP)

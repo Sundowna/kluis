@@ -154,7 +154,9 @@ class SelfTest:
         self.cli.trash([target])
         t = [n for n in self.cli.list_trash() if n.name == "file 01.txt" and n.parent_uid in self.folder_uids]
         self.ok(len(t) == 1, "Browse “Move to trash” works")
-        self.cli.restore([t[0].uid])
+        found = self.cli.trashed([t[0].uid])
+        self.ok(found is not None, "the trashed item can be addressed safely (unique name in the trash)")
+        self.cli.restore(found)
         self.ok("sub dir/file 01.txt" in self.remote_tree(), "Undo restores it from the trash (filesystem restore)")
 
         # mirror and back-up rules
@@ -209,14 +211,18 @@ class SelfTest:
             except CliError as e:
                 self.out(f"  !!  could not trash {self.remote}: {e}")
             try:
-                mine = [n.uid for n in self.cli.list_trash()
-                        if n.uid in self.uids or n.parent_uid in self.folder_uids
+                trash = self.cli.list_trash()
+                counts: dict[str, int] = {}
+                for n in trash:
+                    counts[n.name] = counts.get(n.name, 0) + 1
+                mine = [n for n in trash if n.uid in self.uids or n.parent_uid in self.folder_uids
                         or (n.name == self.name and n.is_folder)]
-                if mine:
-                    self.cli.delete_trashed(mine)
-                left = [n for n in self.cli.list_trash() if n.uid in self.uids]
-                self.out(f"  ok  removed {len(mine)} test item(s) from the Proton Drive trash"
-                         + (f"; {len(left)} left" if left else ""))
+                safe = [n for n in mine if counts[n.name] == 1]     # never risk someone else's item
+                if safe:
+                    self.cli.delete_trashed(safe)
+                left = len(mine) - len(safe)
+                self.out(f"  ok  removed {len(safe)} test item(s) from the Proton Drive trash"
+                         + (f"; {left} left there because another trashed item has the same name" if left else ""))
             except CliError as e:
                 self.out(f"  !!  test items stay in the Proton Drive trash: {e}")
         shutil.rmtree(self.tmp, ignore_errors=True)

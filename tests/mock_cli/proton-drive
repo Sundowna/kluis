@@ -215,7 +215,15 @@ def main():
 
     if group == "filesystem" and cmd == "restore":
         for p in pos:
-            uid = p.strip("/").split("/")[-1]
+            if not p.startswith("/trash/"):
+                fail(f'Path "{p}" is not supported')
+            name = p[len("/trash/"):].replace("\\/", "/")       # like the real CLI: by name, not uid
+            hits = [u for u, e in index.items() if os.path.basename(e["orig"]) == name]
+            if not hits:
+                fail("Trashed node not found")
+            if len(hits) > 1:
+                fail(f"Multiple trashed nodes named {name}")
+            uid = hits[0]
             e = index.get(uid)
             if not e or not os.path.exists(e["stored"]):
                 fail(f"Node not found: {uid}")
@@ -230,7 +238,15 @@ def main():
 
     if group == "filesystem" and cmd == "delete":
         for p in pos:
-            uid = p.strip("/").split("/")[-1]
+            if not p.startswith("/trash/"):
+                fail(f'Path "{p}" is not supported')
+            name = p[len("/trash/"):].replace("\\/", "/")       # like the real CLI: by name, not uid
+            hits = [u for u, e in index.items() if os.path.basename(e["orig"]) == name]
+            if not hits:
+                fail("Trashed node not found")
+            if len(hits) > 1:
+                fail(f"Multiple trashed nodes named {name}")
+            uid = hits[0]
             e = index.get(uid)
             if not e:
                 fail(f"Node not found: {uid}")

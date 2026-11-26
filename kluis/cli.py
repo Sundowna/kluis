@@ -484,13 +484,30 @@ class ProtonDriveCli:
     def list_trash(self) -> list[RemoteNode]:
         return self.list("/trash")
 
-    def restore(self, uids: list[str]):
-        """Undo a trash: restores by uid (/trash/<uid>), which works even when names repeat."""
-        return self.run(["filesystem", "restore", *[f"/trash/{u}" for u in uids]], timeout=300)
+    @staticmethod
+    def trash_path(name: str) -> str:
+        """The real CLI addresses trashed items as /trash/<name> (uids are not accepted there)."""
+        return "/trash/" + name.replace("/", "\\/")      # the CLI's documented escape for "/"
 
-    def delete_trashed(self, uids: list[str]):
+    def trashed(self, uids) -> list[RemoteNode] | None:
+        """The trash entries for these uids, or None when any of them can't be addressed safely:
+        missing, or its name appears more than once in the trash (it could hit someone else's item)."""
+        trash = self.list_trash()
+        counts: dict[str, int] = {}
+        for n in trash:
+            counts[n.name] = counts.get(n.name, 0) + 1
+        mine = [n for n in trash if n.uid in set(uids)]
+        if len(mine) != len(set(uids)) or any(counts[n.name] != 1 for n in mine):
+            return None
+        return mine
+
+    def restore(self, nodes: list[RemoteNode]):
+        """Undo a trash. `nodes` must come from trashed(): names checked unique in the trash."""
+        return self.run(["filesystem", "restore", *[self.trash_path(n.name) for n in nodes]], timeout=300)
+
+    def delete_trashed(self, nodes: list[RemoteNode]):
         """Permanent delete. Only --selftest calls this, and only for items it created (decisions D12)."""
-        return self.run(["filesystem", "delete", *[f"/trash/{u}" for u in uids]], timeout=300)
+        return self.run(["filesystem", "delete", *[self.trash_path(n.name) for n in nodes]], timeout=300)
 
     def shared_with_me(self) -> list[RemoteNode]:
         return [n for n in self.list("/shared-with-me") if n.type in ("file", "folder")]
