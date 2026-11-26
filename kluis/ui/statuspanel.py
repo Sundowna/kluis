@@ -129,6 +129,8 @@ class StatusPanel(Gtk.Box):
         self.line_box.pack_start(self.mini, False, False, 0)
         self.line_rates = label("", "k-num", "k-s12")
         self.line_box.pack_start(self.line_rates, False, False, 0)
+        for wdg in (self.line, self.mini, self.line_rates):
+            wdg.show()                # the box's no_show_all also stops show_all() inside it
         self.line_box.set_no_show_all(True)
         self.pack_start(self.line_box, True, True, 0)
         # §6: the CLI has no quota command, so "Space used" is hidden (never faked)
@@ -156,8 +158,6 @@ class StatusPanel(Gtk.Box):
         self.left.set_visible(not on)
         self.right.set_visible(not on)
         self.line_box.set_visible(on)
-        if on:
-            self.line_box.show_all()
         self.toggle_img.set_from_icon_name("kluis-chevron-up-symbolic" if on else "kluis-chevron-down-symbolic",
                                            Gtk.IconSize.BUTTON)
         name = _("Show the full status panel") if on else _("Make the status panel one line")
