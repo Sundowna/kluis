@@ -19,6 +19,7 @@ have_gi Gtk 3.0 || { missing_apt+=(python3-gi gir1.2-gtk-3.0); missing_pac+=(pyt
 have_gi XApp 1.0 || have_gi AyatanaAppIndicator3 0.1 \
   || { missing_apt+=(gir1.2-ayatanaappindicator3-0.1); missing_pac+=(libayatana-appindicator); }
 ldconfig -p 2>/dev/null | grep -q libsecret-1 || { missing_apt+=(libsecret-1-0); missing_pac+=(libsecret); }
+have_gi Secret 1 || { missing_apt+=(gir1.2-secret-1); missing_pac+=(libsecret); }   # switching Proton accounts
 command -v ffmpegthumbnailer >/dev/null || { missing_apt+=(ffmpegthumbnailer); missing_pac+=(ffmpegthumbnailer); }
 
 if command -v pacman >/dev/null; then pm=(sudo pacman -S --needed); missing=("${missing_pac[@]}")

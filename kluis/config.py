@@ -121,6 +121,10 @@ class Settings:
     folders: list = field(default_factory=list)
     shares: dict = field(default_factory=dict)      # share uid -> folder id (Shared with me sync)
     photos: PhotoSettings = field(default_factory=PhotoSettings)
+    # Proton accounts (kluis/accounts.py). folders/shares/photos above belong to `account`; the other
+    # accounts' ones wait in accounts[i]["data"].
+    account: str = ""
+    accounts: list = field(default_factory=list)    # [{email, cache, state, signed_out[, data]}]
 
     # ---------- persistence ----------
     @classmethod
@@ -147,6 +151,7 @@ class Settings:
         ph = raw.pop("photos", {}) or {}
         s = cls(**{k: v for k, v in raw.items() if k in cls.__dataclass_fields__})
         s.folders = folders
+        s.accounts = [a for a in (s.accounts or []) if isinstance(a, dict) and a.get("email")]
         s.photos = PhotoSettings(**{k: v for k, v in ph.items() if k in PhotoSettings.__dataclass_fields__})
         return s
 
@@ -170,7 +175,7 @@ class Settings:
         return next((f for f in self.folders if f.id == fid), None)
 
     def overlaps(self, local: str, exclude_id: str = "") -> FolderPair | None:
-        """Nested or identical local folders would sync twice; refuse them."""
+        """Nested or identical local folders would sync twice; refuse them (also across accounts)."""
         a = os.path.realpath(local).rstrip("/") + "/"
         for f in self.folders:
             if f.id == exclude_id:
@@ -178,6 +183,17 @@ class Settings:
             b = os.path.realpath(f.local).rstrip("/") + "/"
             if a.startswith(b) or b.startswith(a):
                 return f
+        other = self.other_account_overlap(local)
+        return other[1] if other else None
+
+    def other_account_overlap(self, local: str) -> tuple[str, FolderPair] | None:
+        """(email, folder) when another Proton account in Kluis already syncs this folder or one around it."""
+        from .accounts import stashed_folders
+        a = os.path.realpath(local).rstrip("/") + "/"
+        for email, f in stashed_folders(self):
+            b = os.path.realpath(f.local).rstrip("/") + "/"
+            if a.startswith(b) or b.startswith(a):
+                return email, f
         return None
 
 
@@ -227,6 +243,9 @@ def validate_local(settings: Settings, path: str, exclude_id: str = "") -> str |
         return "That folder holds Kluis's own settings"
     if not os.path.isdir(real):
         return "That folder doesn't exist"
+    acc = settings.other_account_overlap(real)
+    if acc:
+        return f"Your other Proton account {acc[0]} already syncs {acc[1].name}"
     other = settings.overlaps(real, exclude_id)
     if other:
         if os.path.realpath(other.local) == real:

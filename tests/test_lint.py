@@ -83,6 +83,15 @@ try:
 except Exception as e:  # noqa: BLE001
     problems.append(f"GdkPixbuf check failed: {e}")
 
+# Switching Proton accounts keeps each account's session in the keyring: the libsecret typelib
+# (gir1.2-secret-1 on Mint; part of libsecret on Arch). Without it Kluis falls back to a browser sign-in.
+try:
+    import gi
+    gi.require_version("Secret", "1")
+    from gi.repository import Secret  # noqa: F401
+except Exception as e:  # noqa: BLE001
+    problems.append(f"libsecret typelib missing (install gir1.2-secret-1 / libsecret): {e}")
+
 # Cairo drawing (map, gallery, graph) needs the gi ↔ pycairo bridge: python-cairo / python3-gi-cairo
 try:
     import gi

@@ -21,6 +21,10 @@ def setup(prefix="kluis-test-"):
     os.environ["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")
     os.environ["MOCK_ROOT"] = os.path.join(tmp, "cloud")
     os.environ["KLUIS_TEST"] = "1"
+    # Proton accounts (kluis/accounts.py): kept sessions in files; the mock CLI's session file is its keyring slot
+    os.environ["KLUIS_TEST_VAULT"] = os.path.join(tmp, "vault")
+    os.environ["KLUIS_TEST_VAULT_SLOT"] = os.path.join(tmp, "cloud", ".logged_in")
+    os.environ.pop("PROTON_DRIVE_CACHE_DIR", None)
     for k in ("MOCK_DELAY", "MOCK_BAD_SHA1", "MOCK_DOWNLOAD_DELAY", "MOCK_UPLOAD_DELAY", "MOCK_INCOMPATIBLE"):
         os.environ.pop(k, None)
     os.makedirs(os.path.join(tmp, "cloud", "my-files"), exist_ok=True)

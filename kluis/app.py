@@ -15,12 +15,13 @@ gi.require_version("Gdk", "3.0")
 gi.require_foreign("cairo")      # map, gallery and graph draw with Cairo: fail clearly if the bridge is missing
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, APP_NAME, VERSION, geo  # noqa: E402
+from . import APP_ID, APP_NAME, VERSION, accounts, geo  # noqa: E402
 from .cli import ProtonDriveCli, find_cli  # noqa: E402
 from .config import MODES, PHOTOS_ID, FolderPair, Settings  # noqa: E402
 from .errors import DISK_FULL, SIGNED_OUT  # noqa: E402
 from .i18n import _, ngettext  # noqa: E402
 from .manager import SyncManager  # noqa: E402
+from .state import StateStore  # noqa: E402
 from .paths import AUTOSTART_DIR, LOG_FILE, STATE_DIR, ensure_dirs  # noqa: E402
 from .status import Snapshot, compute, estimate_eta  # noqa: E402
 
@@ -58,6 +59,8 @@ class KluisApp(Gtk.Application):
         self._last_note = 0.0
         self._note_src = 0
         self._removed: dict[str, tuple] = {}
+        self.switch_back = ""            # account to go back to when a switch/add ends on the sign-in page
+        self._pending_cache = None       # CLI cache folder for an account being added
 
     # ---------- startup ----------
     def do_startup(self):
@@ -66,7 +69,10 @@ class KluisApp(Gtk.Application):
         log.info("Kluis %s starting", VERSION)
         self.settings = Settings.load()
         self.cli = ProtonDriveCli(find_cli(self.settings.cli_path), self.settings.skip_thumbnails)
-        self.manager = SyncManager(self.settings, self.cli)
+        rec = accounts.record(self.settings, self.settings.account)
+        self.cli.cache_dir = (rec or {}).get("cache", "")
+        self.vault = accounts.open_vault()
+        self.manager = SyncManager(self.settings, self.cli, StateStore(accounts.state_path(rec)))
         self.manager.listeners.append(self._on_manager)
         icons = Gtk.IconTheme.get_default()
         icons.append_search_path(os.path.join(DATA, "icons"))
@@ -160,6 +166,7 @@ class KluisApp(Gtk.Application):
 
     def quit_app(self):
         self.manager.shutdown()
+        self.cli.cancel()                # also a Browse download or preview fetch that is still running
         self.settings.save()
         if self.tray:
             self.tray.close()
@@ -433,11 +440,23 @@ class KluisApp(Gtk.Application):
         self.settings.onboarded = False
         self.settings.save()
 
-    def sign_out(self):
+    def sign_out(self, switch=True):
+        """Signs out of the active Proton account. With other accounts kept in Kluis, the next one takes over
+        (like Proton's own account menu); otherwise Kluis shows the sign-in page."""
         from .ui.common import run_bg
         self.manager.cancel()
+        me = self.settings.account
+        rec = accounts.record(self.settings, me)
+        nxt = next((r["email"] for r in accounts.others(self.settings) if not r.get("signed_out")), "") \
+            if switch else ""
 
         def done(_r):
+            if rec is not None:
+                rec["signed_out"] = True
+            if nxt:
+                self.manager.log("info", "", _("Signed out of {e}").format(e=me))
+                self.switch_account(nxt, force=True)
+                return
             self.manager.logged_in = False
             self.manager.email = ""
             self.settings.onboarded = False
@@ -447,7 +466,212 @@ class KluisApp(Gtk.Application):
             self.window.show_onboarding("signed-out")
             self.manager.log("info", "", _("Signed out"), _("Your files stay on this computer and in Proton Drive."))
             self._update_tray()
-        run_bg(self.cli.logout, done, lambda e: self.toast(_("Sign-out failed: {e}").format(e=e)))
+            self.refresh_accounts()
+
+        def work():
+            self.cli.logout()
+            if me and self.vault.available:          # in the same step: gone before anything else happens
+                try:
+                    self.vault.forget(me)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("keyring: %s", e)
+        run_bg(work, done, lambda e: self.toast(_("Sign-out failed: {e}").format(e=e)))
+
+    # ---------- more than one Proton account (kluis/accounts.py, decisions D30) ----------
+    def _stop_for_switch(self):
+        self.manager.switching = True
+        if self.manager.busy:
+            self.manager.cancel()
+
+    def _wait_idle(self, limit=60.0):
+        """Worker thread only: the current folder run stops at its next file."""
+        end = time.time() + limit
+        while self.manager.current is not None and time.time() < end:
+            time.sleep(0.1)
+
+    def _keep_live_session(self, email):
+        """Worker thread: copy the CLI's current session to the account it belongs to."""
+        if not email or not self.vault.available:
+            return
+        try:
+            live = self.vault.read_live()
+            if live:
+                self.vault.save(email, live)
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not keep the session of %s: %s", email, e)
+
+    def switch_account(self, email, force=False):
+        """One click when the account's session is kept in the keyring; otherwise Proton's browser sign-in."""
+        if not email or (self.manager.switching and not force):
+            return
+        if not force and email.lower() == (self.settings.account or "").lower() and self.manager.logged_in:
+            return
+        self._stop_for_switch()
+        prev = self.settings.account
+        rec = accounts.record(self.settings, email) or {}
+        self.toast(_("Switching to {e}…").format(e=email))
+
+        def work():
+            self._wait_idle()
+            if prev and prev.lower() != email.lower():
+                self._keep_live_session(prev)
+            saved = None
+            try:
+                saved = self.vault.load(email) if self.vault.available else None
+            except Exception as e:  # noqa: BLE001
+                log.warning("keyring: %s", e)
+            self.cli.cache_dir = rec.get("cache", "")
+            if saved:
+                try:
+                    self.vault.write_live(saved)
+                    if self.cli.is_logged_in():
+                        info = self.cli.info("/my-files")
+                        owner = info.get("ownedBy") or {}
+                        return "ok", (owner.get("email") if isinstance(owner, dict) else "") or email
+                except Exception as e:  # noqa: BLE001
+                    log.info("kept session of %s didn't work (%s); asking for a sign-in", email, e)
+            try:
+                self.vault.clear_live()           # local only: never ends the other account's session at Proton
+            except Exception as e:  # noqa: BLE001
+                log.warning("keyring: %s", e)
+            return "sign-in", email
+
+        def done(res):
+            kind, who = res
+            accounts.swap_profile(self.settings, who)
+            r = accounts.record(self.settings, who)
+            self.manager.email = who
+            self.manager.use_account(accounts.state_path(r))
+            self.window.account_changed()
+            self._pending_cache = None
+            if kind == "ok":
+                self.switch_back = ""
+                self.manager.logged_in = True
+                self.manager.switching = False
+                self.settings.onboarded = True
+                self.settings.onboarding_step = 1
+                self.settings.save()
+                self.window.show_main()
+                self.toast(_("Switched to {e}").format(e=who))
+                self.manager.log("info", "", _("Switched to {e}").format(e=who))
+                self.manager.request(reason="start")
+            else:
+                self.manager.logged_in = False
+                self._ask_sign_in(prev, who)
+            self.refresh_accounts()
+
+        def fail(e):
+            self.manager.switching = False
+            self.toast(_("Couldn't switch accounts: {e}").format(e=e))
+            self.refresh_accounts()
+        from .ui.common import run_bg
+        run_bg(work, done, fail)
+
+    def _ask_sign_in(self, back_to, expect=""):
+        """Proton's browser sign-in for another account, with a way back to the one before."""
+        self.switch_back = back_to if back_to and back_to.lower() != (expect or "").lower() else ""
+        self.settings.onboarded = False
+        self.settings.onboarding_step = 2
+        self.settings.save()
+        ob = self.window.onboarding
+        ob.sign_state = "idle"
+        ob.expect_email = expect
+        ob.picks = {}
+        self.present_window()
+        self.window.show_onboarding("signed-out")
+
+    def add_account(self):
+        """Sign in to one more Proton account; the current one stays in the account list."""
+        if self.manager.switching:
+            return
+        self._stop_for_switch()
+        prev = self.settings.account
+        import uuid
+        pending = os.path.join(str(accounts.DATA_DIR), "accounts", "new-" + uuid.uuid4().hex[:8], "cli")
+
+        def work():
+            self._wait_idle()
+            self._keep_live_session(prev)
+            try:
+                self.vault.clear_live()
+            except Exception as e:  # noqa: BLE001
+                log.warning("keyring: %s", e)
+            self.cli.cache_dir = pending
+
+        def done(_r):
+            self._pending_cache = pending
+            self.manager.logged_in = False
+            self._ask_sign_in(prev)
+
+        def fail(e):
+            self.manager.switching = False
+            self.toast(_("Couldn't add an account: {e}").format(e=e))
+        from .ui.common import run_bg
+        run_bg(work, done, fail)
+
+    def cancel_switch(self):
+        """"Stay with …" on the sign-in page: back to the account before."""
+        back = self.switch_back
+        self.window.onboarding.cancel_sign_in()
+        if back:
+            self.switch_account(back, force=True)
+
+    def _adopt_account(self):
+        """The CLI is signed in as manager.email: make sure Kluis shows and syncs that account's folders."""
+        email = self.manager.email
+        if not email:
+            self.manager.switching = False
+            return
+        changed = accounts.adopt(self.settings, email)
+        rec = accounts.record(self.settings, email)
+        if self._pending_cache is not None:
+            rec["cache"] = self._pending_cache        # the folder this account's sign-in used
+            self._pending_cache = None
+        elif changed:
+            self.cli.cache_dir = rec.get("cache", "")
+        if changed:
+            self.manager.use_account(accounts.state_path(rec))
+            if self.window:
+                self.window.account_changed()
+            self.manager.log("info", "", _("Signed in as {e}").format(e=email))
+        self.switch_back = ""
+        self.manager.switching = False
+        self.settings.save()
+        if accounts.others(self.settings):      # one account: nothing to switch to, keep no extra copy
+            from .ui.common import run_bg
+            run_bg(lambda: self._keep_live_session(email))
+        self.refresh_accounts()
+
+    def forget_account(self, email):
+        """Remove another account from Kluis. Its folders on this computer stay as they are."""
+        if email.lower() == (self.settings.account or "").lower():
+            return
+        accounts.forget(self.settings, email)
+        self.settings.save()
+        from .ui.common import run_bg
+        run_bg(lambda: self.vault.forget(email))
+        self.toast(_("Removed {e} from Kluis").format(e=email))
+        self.refresh_accounts()
+
+    def sign_out_all(self):
+        from .ui.common import run_bg
+        others = [r["email"] for r in accounts.others(self.settings)]
+
+        def forget_all():
+            for e in others:
+                try:
+                    self.vault.forget(e)
+                except Exception:  # noqa: BLE001
+                    pass
+        run_bg(forget_all)
+        for r in accounts.others(self.settings):
+            r["signed_out"] = True
+        self.sign_out(switch=False)
+
+    def refresh_accounts(self):
+        if self.window and hasattr(self.window, "account_btn"):
+            self.window.account_btn.refresh()
+        self.refresh_all()
 
     def run_setup_again(self):
         self.settings.onboarding_step = 1
@@ -635,8 +859,10 @@ class KluisApp(Gtk.Application):
         run_bg(self.cli.version, got, lambda e: got("?"))
 
     def search(self, q):
-        """Names Kluis already knows: synced folders (from the sync state) and folders opened in Browse (D17)."""
+        """Names Kluis already knows: synced folders (from the sync state), the folder open in Browse and all
+        its subfolders (read while counting Files/Size; D17, Walter 2026-11-26)."""
         hits = []
+        seen = set()
         for f in self.settings.folders:
             for rel in self.manager.store.load(f.id):
                 if q in rel.rsplit("/", 1)[-1].lower():
@@ -648,6 +874,17 @@ class KluisApp(Gtk.Application):
             for n in b.nodes:
                 if q in n.name.lower():
                     hits.append((f"{b.path}/{n.name}", n.name))
+            seen.update(h[0] for h in hits)
+            here = b.path.rstrip("/") + "/"
+            for root, found in list(b.stats.names.items()):
+                if not (root + "/").startswith(here):
+                    continue
+                for path, name in found:
+                    if q in name.lower() and path not in seen:
+                        seen.add(path)
+                        hits.append((path, name))
+                        if len(hits) > 200:
+                            return hits
         return hits
 
     def _write_autostart(self):
@@ -684,6 +921,9 @@ class KluisApp(Gtk.Application):
         if kind == "rate":
             if w and w.get_visible() and w.root.get_visible_child_name() == "main":
                 w.status_panel.refresh_rate()
+            return
+        if kind == "account" and payload == "ok":
+            self._adopt_account()        # before anything syncs: the folders must be this account's
             return
         if not w:
             return

@@ -125,3 +125,18 @@ chevrons, ⋯) ship with Kluis. A lint test fails if a named Kluis icon is missi
 **D29 · SVG loader as a hard dependency.** Found on CI: without GdkPixbuf's SVG loader, Kluis's own icons and the
 logo show as "missing image". The pacman package depends on `librsvg` and the `.deb` on `librsvg2-common`;
 `tests/test_lint.py` fails without the loader.
+
+**D30 · More than one Proton account (Walter's request, 2026-11-26).** Like Proton's own account menu
+(account button at the top right → active account, *Sign out*, *Other accounts* with ⋮), in Kluis's look.
+Proton's CLI keeps exactly one session per Linux user, in one fixed keyring item (service
+`ch.proton.drive/drive-sdk-cli`). Kluis therefore copies the CLI's keyring item, unchanged and with the exact schema
+and attributes the CLI wrote, into its own keyring entry per account ("Kluis: Proton session for …"), and puts the
+chosen account's copy back to switch. Kluis never reads or changes what is inside a session. Before a switch the
+current session is copied again, because the CLI rotates its tokens. Switching clears the slot locally and never
+runs `auth logout`, which would end the kept session at Proton. If a kept copy no longer works, or there is no
+keyring, Kluis opens Proton's browser sign-in for that account, with "Use … instead" to go back.
+Each account has its own `PROTON_DRIVE_CACHE_DIR` (the CLI's caches are encrypted per session) and its own
+`state.sqlite`, so a sync can never act on another account's files. The first account keeps the original locations,
+so existing installs change nothing. Only the active account syncs. A local folder synced by one account is refused
+for the others. *Sign out* ends the active session (`auth logout`) and hands over to the next kept account.
+Tests: `tests/test_units.py` (accounts) and GUI flow F21; FEATURES.md F-001…F-009.

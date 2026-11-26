@@ -34,6 +34,20 @@ VERSION_JSON_URL = "https://proton.me/download/drive/cli/version.json"
 DOWNLOAD_PAGE_URL = "https://proton.me/download/drive/cli/index.html"
 NOT_LOGGED_IN_MARKERS = ("need to login", "need to log in", "not logged in", "login first")
 
+# A PROTON_DRIVE_CACHE_DIR the user set themselves stays the first account's cache.
+_USER_CACHE_DIR = os.environ.get("PROTON_DRIVE_CACHE_DIR", "")
+
+def _die_with_kluis():
+    """Child side of every CLI process: if Kluis ends for any reason (Quit, crash, force quit), the kernel
+    stops the CLI too. Found on a test laptop: a force-quit Kluis left a CLI download of 4 GB running."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)    # PR_SET_PDEATHSIG
+    except Exception:  # noqa: BLE001  (not Linux/glibc: nothing to do)
+        pass
+
+
 # The CLI keeps a local sqlite cache and an events lock: run one process at a time.
 _CLI_LOCK = threading.RLock()
 
@@ -98,7 +112,8 @@ class RemoteNode:
             by = by.get("value") if by.get("ok", True) else ""
         return cls(
             name=name or d.get("path") or d.get("uid", "?"),
-            type=d.get("type", "folder" if "path" in d else "file"),
+            # a computer under /devices ("type": "Windows", "Linux", …) opens like a folder: /devices/<name>/…
+            type="folder" if "rootFolderUid" in d else d.get("type", "folder" if "path" in d else "file"),
             uid=d.get("uid", ""),
             size=rev.get("claimedSize", d.get("totalStorageSize")),
             revision=rev.get("uid", ""),
@@ -319,6 +334,29 @@ class ProtonDriveCli:
         self.skip_thumbnails = skip_thumbnails
         self._current: subprocess.Popen | None = None
         self._cancelled = False
+        self._cache_dir = ""
+
+    @property
+    def cache_dir(self) -> str:
+        """Per Proton account (kluis/accounts.py); "" = the CLI's own default. Set in os.environ too, so the
+        capability self-test and every other CLI process Kluis starts uses the same account's cache."""
+        return self._cache_dir
+
+    @cache_dir.setter
+    def cache_dir(self, path: str):
+        self._cache_dir = path or ""
+        if path:
+            os.makedirs(path, mode=0o700, exist_ok=True)
+            os.environ["PROTON_DRIVE_CACHE_DIR"] = path
+        elif _USER_CACHE_DIR:
+            os.environ["PROTON_DRIVE_CACHE_DIR"] = _USER_CACHE_DIR
+        else:
+            os.environ.pop("PROTON_DRIVE_CACHE_DIR", None)
+
+    def env(self) -> dict:
+        env = dict(os.environ)
+        env.setdefault("PROTON_DRIVE_LOG_LEVEL", "INFO")
+        return env
 
     # ---------- plumbing ----------
     def _require(self):
@@ -330,12 +368,11 @@ class ProtonDriveCli:
         self._require()
         cmd = [self.path, *args] + (["--json"] if json_out else [])
         log.debug("run %s", cmd)
-        env = dict(os.environ)
-        env.setdefault("PROTON_DRIVE_LOG_LEVEL", "INFO")
+        env = self.env()
         with _CLI_LOCK:
             self._cancelled = False
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=env)
+                                    stderr=subprocess.PIPE, text=True, env=env, preexec_fn=_die_with_kluis)
             self._current = proc
             try:
                 out, err = proc.communicate(timeout=timeout)
@@ -384,7 +421,8 @@ class ProtonDriveCli:
         """Starts browser sign-in. Blocks until finished. The CLI opens the browser itself."""
         self._require()
         proc = subprocess.Popen([self.path, "auth", "login", "--json"], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env(),
+                                preexec_fn=_die_with_kluis)
         self._current = proc
         try:
             for line in proc.stdout:

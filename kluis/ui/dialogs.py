@@ -483,10 +483,21 @@ class SettingsDialog:
         run_bg(app.cli.version, lambda v: self.cli_ver.set_text(v), lambda e: self.cli_ver.set_text("?"))
 
         # 4. Account
-        email = app.manager.email or _("Signed in")
+        email = app.settings.account or app.manager.email or _("Signed in")
         group(_("Account"), [(email if app.manager.logged_in else _("Not signed in"),
                               _("Session kept in your keyring"),
                               button(_("Sign out…"), self._sign_out, "k-danger"))])
+        from .. import accounts as acc
+        rows = [(r["email"], _("Signed out") if r.get("signed_out") else _("Kept in Kluis · one click to switch"),
+                 button(_("Switch"), lambda e=r["email"]: (self.dialog.response(Gtk.ResponseType.CLOSE),
+                                                          GLib.idle_add(lambda: (self.app.switch_account(e), False)[1])),
+                        name=_("Switch to {e}").format(e=r["email"])))
+                for r in acc.others(app.settings)]
+        rows.append((_("Another Proton account"), _("Sign in once; then switch from the account menu."),
+                     button(_("Add…"), lambda: (self.dialog.response(Gtk.ResponseType.CLOSE),
+                                                GLib.idle_add(lambda: (self.app.add_account(), False)[1])),
+                            name=_("Add another Proton account"))))
+        group(_("Other accounts"), rows)
 
         # Troubleshooting
         group(_("Troubleshooting"), [

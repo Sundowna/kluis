@@ -11,10 +11,19 @@ import shutil
 import sys
 import time
 
-ROOT = os.environ.get("MOCK_ROOT", "/tmp/mock-proton")
+BASE = os.environ.get("MOCK_ROOT", "/tmp/mock-proton")
+# The session "keyring slot" is $MOCK_ROOT/.logged_in; its text is the signed-in account's email
+# (empty = the default me@proton.me). Other accounts have their own cloud: $MOCK_ROOT/accounts/<email>/.
+# `auth login` signs in as the email in $MOCK_ROOT/.next_login (if any), like choosing an account in the browser.
+LOGGED = os.path.join(BASE, ".logged_in")
+DEFAULT_EMAIL = "me@proton.me"
+try:
+    EMAIL = open(LOGGED).read().strip() or DEFAULT_EMAIL
+except OSError:
+    EMAIL = DEFAULT_EMAIL
+ROOT = BASE if EMAIL == DEFAULT_EMAIL else os.path.join(BASE, "accounts", EMAIL)
 os.makedirs(os.path.join(ROOT, "my-files"), exist_ok=True)
 os.makedirs(os.path.join(ROOT, ".trash"), exist_ok=True)
-LOGGED = os.path.join(ROOT, ".logged_in")
 DELAY = float(os.environ.get("MOCK_DELAY", "0"))
 
 
@@ -43,7 +52,7 @@ def node(p):
     n = {"uid": "uid-" + hashlib.md5(p.encode()).hexdigest()[:10], "name": {"ok": True, "value": os.path.basename(p)},
          "type": "folder" if os.path.isdir(p) else "file", "isShared": False, "isSharedByUrl": False,
          "creationTime": iso, "modificationTime": iso, "directRole": "admin", "treeEventScopeId": "x",
-         "keyAuthor": {"ok": True, "value": "me@proton.me"}, "ownedBy": {"email": "me@proton.me"}}
+         "keyAuthor": {"ok": True, "value": EMAIL}, "ownedBy": {"email": EMAIL}}
     if os.path.isfile(p):
         s = sha1(p)
         if os.environ.get("MOCK_BAD_SHA1") and os.environ["MOCK_BAD_SHA1"] in os.path.basename(p):
@@ -98,7 +107,7 @@ HELP = {
 
 
 def mock_flag(name):
-    return os.path.exists(os.path.join(ROOT, "." + name))
+    return os.path.exists(os.path.join(BASE, "." + name))
 
 
 def main():
@@ -106,7 +115,7 @@ def main():
     if not argv:
         fail("interactive shell not supported in mock", 2)
     try:
-        with open(os.path.join(ROOT, ".calls"), "a") as fh:
+        with open(os.path.join(BASE, ".calls"), "a") as fh:
             fh.write(" ".join(argv[:2]) + "\n")
     except OSError:
         pass
@@ -129,7 +138,14 @@ def main():
         if mock_flag("login-hang"):
             time.sleep(3600)
         time.sleep(float(os.environ.get("MOCK_LOGIN_DELAY", "1.5")))
-        open(LOGGED, "w").close()
+        try:
+            who = open(os.path.join(BASE, ".next_login")).read().strip()
+        except OSError:
+            who = ""
+        with open(LOGGED, "w") as fh:
+            fh.write("" if who in ("", DEFAULT_EMAIL) else who)
+        with open(os.path.join(BASE, ".cache_dirs"), "a") as fh:      # which CLI cache each sign-in used
+            fh.write(f"{who or DEFAULT_EMAIL} {os.environ.get('PROTON_DRIVE_CACHE_DIR', '')}" + chr(10))
         return
     if mock_flag("offline"):
         fail("TypeError: fetch failed (getaddrinfo ENOTFOUND drive-api.proton.me)")
@@ -173,6 +189,14 @@ def main():
         if path.strip("/") == "":
             print(json.dumps([{"path": "/my-files"}, {"path": "/devices"}, {"path": "/shared-with-me"},
                               {"path": "/trash"}]))
+            return
+        if path.strip("/") == "devices":       # computers, as the real CLI prints them (printDevices)
+            d = os.path.join(ROOT, "devices")
+            names = sorted(os.listdir(d)) if os.path.isdir(d) else []
+            print(json.dumps([{"uid": "dev-" + hashlib.md5(n.encode()).hexdigest()[:10], "type": "Windows",
+                               "rootFolderUid": "root-" + hashlib.md5(n.encode()).hexdigest()[:10],
+                               "creationTime": "2025-12-04T06:47:54.000Z", "hasDeprecatedName": False,
+                               "name": {"ok": True, "value": n}} for n in names if os.path.isdir(os.path.join(d, n))]))
             return
         if path.strip("/") == "trash":
             out = []

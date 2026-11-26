@@ -28,6 +28,7 @@ class Onboarding(Gtk.Box):
         self.on_finished = on_finished
         self.cli_state = "idle"         # idle | busy | done | error
         self.sign_state = "idle"        # idle | busy | done | timeout | error
+        self.expect_email = ""          # switching to this account (decisions D30)
         self.picks: dict[str, bool] = {}
         self._signin_src = 0
         card = vbox(spacing=22)
@@ -205,7 +206,17 @@ class Onboarding(Gtk.Box):
 
     # ---------- step 2 ----------
     def _step2(self):
-        self.body.pack_start(label(_("Sign in to Proton"), "k-h1"), False, False, 0)
+        from .. import accounts
+        back = (self.app.switch_back or "").lower()
+        others = [r for r in accounts.records(self.app.settings) if not r.get("signed_out") and
+                  (r["email"].lower() != (self.app.settings.account or "").lower() or r["email"].lower() == back)]
+        if self.expect_email:
+            title = _("Sign in as {e}").format(e=self.expect_email)
+        elif self.app.switch_back:
+            title = _("Sign in to another Proton account")
+        else:
+            title = _("Sign in to Proton")
+        self.body.pack_start(label(title, "k-h1", wrap=True, max_chars=50), False, False, 0)
         self.body.pack_start(label(_("Your browser opens Proton’s own sign-in page. Kluis never sees your password; "
                                      "the session is kept in your system keyring."), "k-muted", wrap=True,
                                    max_chars=70), False, False, 0)
@@ -219,6 +230,14 @@ class Onboarding(Gtk.Box):
                                     "again."), "k-muted", "k-s13", wrap=True, max_chars=70)
             a11y(self.kde_note, "KDE keyring note")
             self.body.pack_start(self.kde_note, False, False, 0)
+        for r in others:                # accounts Kluis keeps: one click back, no sign-in
+            if r["email"].lower() == (self.expect_email or "").lower():
+                continue
+            b = button(_("Use {e} instead").format(e=r["email"]),
+                       lambda e=r["email"]: self.app.cancel_switch() if e == self.app.switch_back
+                       else (self.cancel_sign_in(), self.app.switch_account(e, force=True)), "k-link")
+            b.set_halign(Gtk.Align.START)
+            self.body.pack_start(b, False, False, 0)
         self._paint_sign()
 
     def _paint_sign(self, text=None):
@@ -295,6 +314,17 @@ class Onboarding(Gtk.Box):
             if self.step == 2:
                 self._paint_sign(str(e))
         run_bg(lambda: self.app.cli.login(on_url), done, fail)
+
+    def cancel_sign_in(self):
+        """Leaving the sign-in page for another account: stop waiting for the browser."""
+        if self.sign_state == "busy":
+            self._attempt = None
+            if self._signin_src:
+                GLib.source_remove(self._signin_src)
+                self._signin_src = 0
+            self.app.cli.cancel()
+        self.sign_state = "idle"
+        self.expect_email = ""
 
     # ---------- step 3 ----------
     def _step3(self):

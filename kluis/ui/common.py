@@ -272,11 +272,25 @@ def wrapbar(*children, spacing=8, per_line=3):
 
 
 def wrap_check(check: Gtk.CheckButton, chars=40):
+    """A check box whose text wraps. GtkCheckButton reports the height of its narrowest wrap, which left empty
+    space under it in wide cards, so the text is a separate label next to the box (a click on it still toggles)."""
     lb = check.get_child()
-    if isinstance(lb, Gtk.Label):
-        lb.set_line_wrap(True)
-        lb.set_max_width_chars(chars)
-    return check
+    if not isinstance(lb, Gtk.Label):
+        return check
+    text = lb.get_text()
+    check.remove(lb)
+    check.set_valign(Gtk.Align.START)
+    t = Gtk.Label(label=text, xalign=0.0, wrap=True)
+    t.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+    t.set_max_width_chars(chars * 3)
+    ev = Gtk.EventBox(visible_window=False)
+    ev.add(t)
+    ev.connect("button-release-event", lambda *_a: (check.set_active(not check.get_active()), True)[1])
+    row = Gtk.Box(spacing=6)
+    row.pack_start(check, False, False, 0)
+    row.pack_start(ev, True, True, 0)
+    row.kluis_check = check
+    return row
 
 
 def ellipsize_button(b: Gtk.Button, chars=24):

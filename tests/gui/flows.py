@@ -1,4 +1,4 @@
-"""End-to-end flows F1–F19 (HANDOVER §12), automated against the mock CLI.
+"""End-to-end flows F1–F23 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
 
 Run one: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/flows.py F4 dark 1440x900 OUT
 All:     tests/gui/run_all.sh OUT
@@ -882,8 +882,15 @@ def f13(d, env, app):
     d.click("Notifications", root=col)
     d.expect(app.settings.notifications in ("all", "problems", "off"), "Settings shows the same value")
     w_before = app.window.stack.get_allocated_width()
+
+    def header_x():
+        win = app.window
+        return [w.translate_coordinates(win, 0, 0)[0] for w in (win.sync_btn, win.pause_btn, win.account_btn)
+                if w.get_mapped()]
+    x_before = header_x()
     d.click(app.window.qs_btn)
     yield 0.5
+    d.expect(header_x() == x_before, f"F-015 Sync now, Pause and the account button stay put ({x_before} → {header_x()})")
     d.expect(not col.get_visible() and app.window.qs_header_btn.get_visible(), "column gone; button in header")
     icons = app.window.qs_header_btn.get_child().get_children()
     d.expect(icons and all(i.get_visible() for i in icons), "the header button shows its sliders icon and chevron")
@@ -891,6 +898,16 @@ def f13(d, env, app):
     d.shot("collapsed")
     import kluis.config as kc
     d.expect(kc.Settings.load().qs_collapsed, "state saved (stays collapsed after restart)")
+    d.click(app.window.qs_header_btn)
+    yield 0.5
+    d.expect(col.get_visible() and header_x() == x_before, "expanding again: the header buttons still don't move")
+    yield 0.3
+    win = app.window
+    d.expect(app.window.qs_header_btn.get_allocated_width() < 90,
+             f"F-018 Quick settings is a small icon button ({app.window.qs_header_btn.get_allocated_width()} px)")
+    col_y = col.translate_coordinates(win, 0, 0)[1]
+    page_y = win.stack.translate_coordinates(win, 0, 0)[1]
+    d.expect(abs(col_y - page_y) <= 2, f"F-018 the Quick settings column starts level with the page ({col_y}/{page_y})")
 
 
 # ------------------------------------------------------------------ F14
@@ -1035,22 +1052,33 @@ def f15(d, env, app):
 
 
 # ------------------------------------------------------------------ F16
+def newer_version():
+    """One patch above the running Kluis, so F16 stays right after every version bump."""
+    from kluis import VERSION
+    major, minor, patch = (int(x) for x in VERSION.split(".")[:3])
+    return f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0-beta.1"
+
+
 def setup_f16(env):
     rel = os.path.join(env.tmp, "releases.json")
-    json.dump([{"tag_name": "v1.0.1", "prerelease": False, "html_url": "https://github.com/Sundowna/kluis/releases/tag/v1.0.1"},
-               {"tag_name": "v1.1.0-beta.1", "prerelease": True, "html_url": "u"}], open(rel, "w"))
+    newer, beta = newer_version()
+    json.dump([{"tag_name": f"v{newer}", "prerelease": False,
+                "html_url": f"https://github.com/Sundowna/kluis/releases/tag/v{newer}"},
+               {"tag_name": f"v{beta}", "prerelease": True, "html_url": "u"}], open(rel, "w"))
     os.environ["KLUIS_TEST_RELEASES"] = "file://" + rel
     set_cfg(env, app_last_check=0, cli_last_check=time.time())
 
 
 def f16(d, env, app):
     yield main_ready(app)
-    yield until(lambda: any(t.startswith("Kluis 1.0.1 is available") for t, _b in app.sent_notifications), 40,
+    newer, beta = newer_version()
+    yield until(lambda: any(t.startswith(f"Kluis {newer} is available") for t, _b in app.sent_notifications), 40,
                 "update notice")
     d.expect(not any(f.endswith(".deb") or f.endswith(".zst") for f in os.listdir(env.home)), "nothing installs")
     d.shot("notice")
     from kluis import appupdate
-    d.expect(appupdate.pick([{"tag_name": "v1.1.0-beta.1", "prerelease": True}], "1.0.0", False) is None,
+    from kluis import VERSION
+    d.expect(appupdate.pick([{"tag_name": f"v{beta}", "prerelease": True}], VERSION, False) is None,
              "beta off: pre-release ignored")
 
 
@@ -1230,6 +1258,330 @@ def f20(d, env, app):
     d.expect("*:focus { outline: 2px solid @k_accent" in css, "visible 2 px accent focus ring")
 
 
+# ------------------------------------------------------------------ F21
+LINDI = "lindi.kirsten@pm.me"
+ME = "me@proton.me"
+
+
+def setup_f21(env):
+    set_cfg(env, folders=folders_cfg(env, "Documents"))
+    env.write("Documents/a.txt", "a")
+
+
+def open_account_menu(app):
+    btn = app.window.account_btn
+    pop = btn.get_popover()
+    pop.popup()
+    btn._fill()                       # always the current accounts, even if the menu was still closing
+    return pop
+
+
+def next_login(env, email):
+    with open(os.path.join(env.cloud, ".next_login"), "w") as fh:
+        fh.write(email)
+
+
+def browse_names(app):
+    return sorted(n.name for n in app.window.browser.nodes)
+
+
+def live_slot(env):
+    try:
+        return open(os.path.join(env.cloud, ".logged_in")).read().strip() or ME
+    except OSError:
+        return ""
+
+
+def f21(d, env, app):
+    """F-001…F-009 (FEATURES.md): Proton account menu, a second account, one-click switching, the browser
+    sign-in fallback, sign out with hand-over to the other account, and removing an account."""
+    from kluis import accounts as acc
+    lindi_cloud = os.path.join(env.cloud, "accounts", LINDI, "my-files")
+    yield main_ready(app)
+    yield idle(app)
+
+    # F-001 / F-006: the existing setup belongs to the signed-in account
+    d.expect(app.settings.account == ME and [f.id for f in app.settings.folders] == ["documents"],
+             "existing folders belong to the signed-in account")
+    d.press("<Primary>3")
+    yield until(lambda: browse_names(app) == ["Documents"], 20, "Browse lists the first account's Drive")
+    btn = d.get(f"Account: {ME}")
+    d.expect(d.has_text("me", root=btn), "header shows the account name next to its initials")
+    pop = open_account_menu(app)
+    yield 0.5
+    d.expect(pop.get_visible(), "account menu opens")
+    d.expect(d.has_text(ME, root=pop) and d.has_text("ME", root=pop), "menu shows the email and big initials")
+    d.expect(d.find(f"Sign out of {ME}", root=pop) is not None, "Sign out in the menu")
+    d.expect(d.has_text("Other accounts", root=pop) and d.find("More account actions", root=pop) is not None,
+             "Other accounts heading with its ⋮ menu")
+    d.shot("account menu, one account")
+
+    # F-004: add a second account through Proton's browser sign-in
+    next_login(env, LINDI)
+    d.click("+ Add another Proton account", root=pop)
+    yield until(lambda: d.has_text("Sign in to another Proton account"), 20, "sign-in page for another account")
+    d.expect(app.manager.switching and not app.manager.busy, "nothing syncs while the other account signs in")
+    d.expect(d.find(f"Use {ME} instead") is not None, "a way back to the first account")
+    d.expect(live_slot(env) == "", "the first account's session left the CLI's slot (kept by Kluis)")
+    d.expect(app.vault.load(ME) is not None, "the first account's session is kept")
+    d.shot("sign in to another account")
+    d.click("Open Proton sign-in")
+    yield until(lambda: d.has_text(f"✓ Signed in as {LINDI}"), 20, "signed in as the second account")
+    d.expect(app.settings.account == LINDI and app.settings.folders == [], "the new account starts without folders")
+    d.expect(not app.manager.switching, "syncing allowed again")
+    d.click("Next")
+    yield 0.6
+    ob = app.window.onboarding
+    d.expect(d.find("Documents", root=ob) is None and d.find("Pictures", root=ob) is not None,
+             "F-007 Documents isn't offered (the other account syncs it); Pictures is")
+    d.shot("pick folders for the second account")
+    d.click("Skip for now", root=ob)
+    yield main_ready(app)
+    rec = acc.record(app.settings, LINDI)
+    used = open(os.path.join(env.cloud, ".cache_dirs")).read().splitlines()[-1].split(" ", 1)
+    d.expect(used[0] == LINDI and "/accounts/new-" in used[1] and rec["cache"] == used[1],
+             "F-006 the second account signed in with its own CLI cache folder")
+    d.expect(acc.state_path(rec) != acc.state_path(acc.record(app.settings, ME)), "F-006 own sync history")
+    os.makedirs(os.path.join(env.home, "Lindi"), exist_ok=True)
+    env.write("Lindi/l1.txt", "lindi")
+    from kluis.config import FolderPair
+    app.add_folder(FolderPair(local=os.path.join(env.home, "Lindi"), remote="/my-files/Lindi", id="lindi"), quiet=True)
+    yield idle(app)
+    yield until(lambda: os.path.exists(os.path.join(lindi_cloud, "Lindi", "l1.txt")), 20, "upload to the 2nd account")
+    d.expect(not os.path.exists(os.path.join(env.cloud, "my-files", "Lindi")), "nothing went to the first account")
+    d.expect(d.find(f"Account: {LINDI}") is not None, "header shows the second account")
+    d.press("<Primary>3")
+    yield until(lambda: browse_names(app) == ["Lindi"], 20,
+                "F-011 Browse lists the second account's own Drive (not what it showed for the first)")
+    d.shot("browse: second account's Drive")
+
+    # F-002 / F-003: the menu lists the other account; one click switches, no browser
+    pop = open_account_menu(app)
+    yield 0.5
+    d.expect(d.find(f"Switch to {ME}", root=pop) is not None and d.has_text("lindi.kirsten", root=pop),
+             "menu: active account on top, the other one under Other accounts")
+    d.shot("account menu, two accounts")
+    d.click(f"Switch to {ME}", root=pop)
+    yield until(toast_has(app, f"Switched to {ME}"), 20, "switched to the first account")
+    yield main_ready(app)
+    d.expect([f.id for f in app.settings.folders] == ["documents"], "the first account's folders are back")
+    yield until(lambda: browse_names(app) == ["Documents"], 20, "F-011 the open Browse tab reloads for the account")
+    d.expect(live_slot(env) == ME and app.vault.load(LINDI) is not None,
+             "the CLI uses the first account's session; the second one's is kept")
+    d.expect(d.find(f"Account: {ME}") is not None, "header shows the first account again")
+    env.write("Documents/b.txt", "b")
+    env.write("Lindi/l2.txt", "l2")
+    app.manager.request()
+    yield idle(app)
+    yield until(lambda: os.path.exists(os.path.join(env.cloud, "my-files", "Documents", "b.txt")), 20, "first syncs")
+    yield 1
+    d.expect(not os.path.exists(os.path.join(lindi_cloud, "Lindi", "l2.txt")),
+             "the inactive account's folder doesn't sync")
+    d.shot("switched to the first account")
+
+    pop = open_account_menu(app)
+    yield 0.5
+    d.click(f"Switch to {LINDI}", root=pop)
+    yield until(toast_has(app, f"Switched to {LINDI}"), 20, "switched back without a sign-in")
+    yield main_ready(app)
+    app.manager.request()
+    yield idle(app)
+    yield until(lambda: os.path.exists(os.path.join(lindi_cloud, "Lindi", "l2.txt")), 20, "its changes sync now")
+
+    # F-010: Settings lists the other account (Switch) and Add…
+    from gi.repository import GLib, Gtk
+    seen = {}
+
+    def in_settings():
+        dlg = d.dialog("Settings")
+        if not dlg:
+            return True
+        seen["switch"] = d.find(f"Switch to {ME}", root=dlg) is not None
+        seen["add"] = d.find("Add another Proton account", root=dlg) is not None
+        seen["active"] = d.has_text(LINDI, root=dlg)
+        d.shot("settings: accounts")
+        dlg.response(Gtk.ResponseType.CLOSE)
+        return False
+    GLib.timeout_add(600, in_settings)
+    yield d.act_key("<Primary>comma")
+    yield until(lambda: "add" in seen, 15, "settings handled")
+    d.expect(seen["switch"] and seen["add"] and seen["active"],
+             f"Settings: active account, Switch for the other one, Add… ({seen})")
+
+    # F-005: a kept session Proton no longer accepts → browser sign-in for that account, with a way back
+    app.vault.forget(ME)
+    pop = open_account_menu(app)
+    yield 0.5
+    d.click(f"Switch to {ME}", root=pop)
+    yield until(lambda: d.has_text(f"Sign in as {ME}"), 20, "sign-in page for that account")
+    d.expect(d.find(f"Use {LINDI} instead") is not None, "a way back")
+    d.shot("switch needs a sign-in")
+    d.click(f"Use {LINDI} instead")
+    yield until(toast_has(app, f"Switched to {LINDI}"), 20, "back to the second account")
+    yield main_ready(app)
+    d.expect(app.settings.account == LINDI and [f.id for f in app.settings.folders] == ["lindi"],
+             "the second account with its folder")
+
+    # F-008: sign out of the active account → the other account takes over
+    pop = open_account_menu(app)
+    yield 0.5
+    yield d.act(f"Sign out of {LINDI}", root=pop)
+    yield until(lambda: dialog_with_text(d, f"Sign out of {LINDI}?"), 5, "sign-out question")
+    d.expect(dialog_with_text(d, f"Kluis switches to {ME}") is not None, "says which account takes over")
+    d.click("Sign out", root=dialog_with_text(d, f"Sign out of {LINDI}?"))
+    yield until(lambda: d.has_text(f"Sign in as {ME}"), 20, "the other account (session gone) asks for a sign-in")
+    d.expect(app.vault.load(LINDI) is None, "the signed-out account's kept session is deleted")
+    next_login(env, ME)
+    d.click("Open Proton sign-in")
+    yield until(lambda: d.has_text(f"✓ Signed in as {ME}"), 20, "signed in again")
+    d.click("Next")
+    yield 0.5
+    d.click("Skip for now", root=app.window.onboarding)
+    yield main_ready(app)
+    d.expect(app.settings.account == ME and [f.id for f in app.settings.folders] == ["documents"],
+             "signing in again brings back that account's folders")
+    pop = open_account_menu(app)
+    yield 0.5
+    d.expect(d.has_text("Signed out · sign in to switch", root=pop), "the signed-out account is still listed")
+    d.shot("signed-out account in the menu")
+
+    # F-009: remove an account from Kluis
+    yield d.act(f"Remove {LINDI} from Kluis", root=pop)
+    yield until(lambda: dialog_with_text(d, f"Remove {LINDI} from Kluis?"), 5, "remove question")
+    d.click("Remove", root=dialog_with_text(d, f"Remove {LINDI} from Kluis?"))
+    yield until(lambda: acc.record(app.settings, LINDI) is None, 5, "account removed")
+    d.expect(os.path.exists(os.path.join(env.home, "Lindi", "l1.txt")), "its local files stay")
+    import kluis.config as kc
+    saved = kc.Settings.load()
+    d.expect(saved.account == ME and not acc.others(saved), "saved for the next launch")
+
+
+
+# ------------------------------------------------------------------ F22
+def setup_f22(env):
+    env.cloud_write("devices/WalterXPS/Documents/plan.txt", "p")
+    env.cloud_write("devices/WalterXPS/Desktop/note.txt", "n")
+
+
+def f22(d, env, app):
+    """F-012…F-014 (FEATURES.md): section buttons; My files empty but a computer syncs folders → Browse says so."""
+    yield main_ready(app)
+    b = app.window.browser
+    # F-016: the status panel is one line on Browse and Photos, the full card elsewhere; nothing is left out
+    sp = app.window.status_panel
+    d.press("<Primary>1")
+    yield 0.6
+    full_h = sp.get_allocated_height()
+    d.expect(not sp.compact and not sp.toggle.get_visible(), "F-016 Home: full status card, no chevron")
+    d.press("<Primary>3")
+    yield 0.8
+
+    def row_y(w):
+        return w.translate_coordinates(app.window, 0, 0)[1] + w.get_allocated_height() // 2
+
+    parts = [sp.line, sp.mini, sp.line_rates]
+    d.expect(sp.compact and sp.get_allocated_height() < full_h * 0.6,
+             f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
+    text = sp.line.get_text()
+    d.expect(all(w.get_mapped() for w in parts) and all(k in text for k in ("Encryption", "End to end", "Total today"))
+             and ("Last run" in text or "Uploading" in text or "Downloading" in text),
+             f"F-016 status, Encryption, Last run, Total today, graph and rates all in the line ({text})")
+    ys = [row_y(w) for w in parts]
+    d.expect(max(ys) - min(ys) <= 4, f"F-016 side by side, vertically centred on one line ({ys})")
+    if env.size[0] >= 1440:
+        d.expect(not sp.line.get_layout().is_ellipsized(), "F-016 with room to spare nothing is shortened with …")
+    d.shot("compact status line")
+    d.click(sp.toggle)
+    yield 0.6
+    d.expect(not sp.compact and sp.get_allocated_height() >= full_h - 2, "F-016 the chevron opens the full card")
+    d.press("<Primary>1")
+    yield 0.4
+    d.press("<Primary>3")
+    yield 0.4
+    d.expect(not sp.compact, "F-016 Browse keeps the full card you chose")
+    d.click(sp.toggle)
+    yield 0.4
+    d.press("<Primary>4")
+    yield 0.8
+    d.expect(sp.compact and sp.toggle.get_visible(), "F-016 Photos: one line too")
+    d.press("<Primary>6")
+    yield 0.6
+    acts = [d.get(n, root=app.window.activity) for n in ("Show", "Open log folder", "Clear")]
+    mids = [row_y(a) for a in acts]
+    xs = [a.translate_coordinates(app.window, 0, 0)[0] for a in acts]
+    d.expect(max(mids) - min(mids) <= 4 and xs == sorted(xs), f"F-019 Activity buttons side by side ({mids}, {xs})")
+    d.shot("activity buttons")
+    d.press("<Primary>3")
+    yield 0.4
+
+    d.press("<Primary>3")
+    yield until(lambda: d.has_text("Folders synced from your computers are under Computers: WalterXPS"), 20,
+                "F-012 empty My files points to Computers")
+    d.expect(d.find("Open Computers") is not None and d.get("Open Computers").is_visible(), "Open Computers button")
+    d.shot("empty My files, computers")
+    d.click("Open Computers")
+    yield until(lambda: b.path == "/devices" and browse_names(app) == ["WalterXPS"], 20, "Computers lists WalterXPS")
+    d.expect(b.nodes[0].is_folder, "F-013 a computer opens like a folder")
+    pressed = lambda n: "k-pressed" in d.get(f"Section: {n}").get_style_context().list_classes()  # noqa: E731
+    d.expect(pressed("Computers") and not pressed("My files"), "F-014 the Computers section button is highlighted")
+    d.expect("k-flat" not in d.get("Reload").get_style_context().list_classes(), "F-014 ↻ has a normal border")
+    from gi.repository import Gtk as _Gtk
+    calls_before = len(harness.calls(env.tmp))
+    b._activated(None, _Gtk.TreePath(0), None)            # double-click on the computer
+    yield until(lambda: b.path == "/devices/WalterXPS" and browse_names(app) == ["Desktop", "Documents"], 20,
+                "F-013 double-click opens the computer's synced folders")
+    d.expect(not any(c.startswith("filesystem download") for c in harness.calls(env.tmp)[calls_before:]),
+             "F-013 opening a computer never downloads it")
+    # F-017: search finds names in subfolders of the folder open in Browse
+    win = app.window
+    win.search.set_text("plan")
+    yield until(lambda: d.find("plan.txt", root=win.search_list) is not None, 30,
+                "F-017 search finds plan.txt in the Documents subfolder")
+    d.shot("search in subfolders")
+    d.click("plan.txt", root=win.search_list)
+    yield until(lambda: b.path == "/devices/WalterXPS/Documents" and browse_names(app) == ["plan.txt"], 20,
+                "F-017 a hit opens the folder it is in")
+    win.search.set_text("")
+    b.go("/devices/WalterXPS")
+    yield until(lambda: browse_names(app) == ["Desktop", "Documents"], 20, "back in WalterXPS")
+    d.shot("WalterXPS folders")
+    d.click("Section: My files")
+    yield until(lambda: b.path == "/my-files" and d.has_text("My files is empty"), 20, "F-014 back via the section row")
+    d.click("Section: Shared with me")
+    yield until(lambda: b.path == "/shared-with-me" and pressed("Shared with me"), 20, "F-014 Shared with me section")
+    d.click("Section: My files")
+    yield until(lambda: b.path == "/my-files", 20, "My files again")
+    env.cloud_write("my-files/Own/x.txt", "x")
+    b.go("/my-files")
+    yield until(lambda: browse_names(app) == ["Own"], 20, "My files with content: no Computers hint")
+    d.expect(not d.get("Open Computers", visible=False).is_visible(), "hint hidden when My files has items")
+
+
+# ------------------------------------------------------------------ F23
+def setup_f23(env):
+    set_cfg(env, folders=folders_cfg(env, "Documents"))
+
+
+def f23(d, env, app):
+    """F-020: every tab fits a half-screen tile of a 1920 px screen (960 px), so the window manager can snap it."""
+    from kluis.ui.window import MIN_W
+    yield main_ready(app)
+    yield idle(app)
+    win = app.window
+    d.expect(MIN_W <= 960 and win.get_size_request()[0] <= 960, "F-020 the window asks for at most 960 px")
+    for i, tab in enumerate(("home", "folders", "browse", "photos", "shared", "activity"), 1):
+        for collapsed in (False, True):
+            win.set_qs_collapsed(collapsed, save=False)
+            d.press(f"<Primary>{i}")
+            yield 0.8
+            need = win.get_preferred_width()[0]
+            d.expect(need <= 960, f"F-020 {tab}{' (Quick settings hidden)' if collapsed else ''} fits 960 px ({need} px)")
+    win.set_qs_collapsed(False, save=False)
+    win.resize(960, 640)
+    yield 1
+    d.shot("960 px wide")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1238,7 +1590,8 @@ FLOWS = {
     "F12": (f12, setup_f12, {}), "F13": (f13, None, {}), "F14": (f14, setup_f14, {}),
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
-    "F20": (f20, setup_f20, {}),
+    "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
+    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}),
 }
 
 

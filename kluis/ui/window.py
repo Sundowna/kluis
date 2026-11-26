@@ -5,9 +5,10 @@ import os
 import time
 from urllib.parse import unquote, urlparse
 
-from gi.repository import Atk, Gdk, Gio, GLib, Gtk
+from gi.repository import Atk, Gdk, Gio, GLib, Gtk, Pango
 
 from ..i18n import _
+from .accounts import AccountButton
 from .activity import ActivityPage
 from .browser import BrowserPage
 from .common import (WEB_URL, a11y, button, clear, hbox, label, open_uri, popover_menu, set_button_text, set_class,
@@ -21,6 +22,7 @@ from .statuspanel import StatusPanel
 
 TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")), ("photos", _("Photos")),
         ("shared", _("Shared with me")), ("activity", _("Activity"))]
+MIN_W = 960            # the window's narrowest width: a half-screen tile on 1920 px
 TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
 
 
@@ -41,9 +43,10 @@ class MainWindow(Gtk.ApplicationWindow):
         s = app.settings
         styled(self, "kluis")
         self.set_icon_name("dev.kluis.Kluis")
-        self.set_size_request(1024, 640)
+        # 960 px: half of a 1920 px screen, so Cinnamon/KDE can snap Kluis to a side (Walter, 2026-11-26)
+        self.set_size_request(MIN_W, 640)
         win = s.window or {}
-        self.set_default_size(max(1024, int(win.get("w", 1440))), max(640, int(win.get("h", 900))))
+        self.set_default_size(max(MIN_W, int(win.get("w", 1440))), max(640, int(win.get("h", 900))))
         if win.get("x", -1) >= 0 and win.get("y", -1) >= 0:
             self.move(int(win["x"]), int(win["y"]))
         if win.get("max"):
@@ -68,9 +71,15 @@ class MainWindow(Gtk.ApplicationWindow):
         main = Gtk.Box(spacing=16, margin=16)
         self.root.add_named(main, "main")
         main.pack_start(self._sidebar(), False, False, 0)
+        # header across the full width (its small Quick settings button at the far right), then the page and the
+        # Quick settings column side by side: the column starts level with the page content (Walter, 2026-11-26)
+        right = vbox(spacing=14)
+        main.pack_start(right, True, True, 0)
+        right.pack_start(self._header(), False, False, 0)
+        body = Gtk.Box(spacing=16)
+        right.pack_start(body, True, True, 0)
         center = vbox(spacing=14)
-        main.pack_start(center, True, True, 0)
-        center.pack_start(self._header(), False, False, 0)
+        body.pack_start(center, True, True, 0)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, vexpand=True, hhomogeneous=False,
                                vhomogeneous=False)          # each tab sizes itself (fits 1024×640)
         self.home = HomePage(app)
@@ -89,7 +98,7 @@ class MainWindow(Gtk.ApplicationWindow):
         sp.pack_start(self.status_panel, True, True, 0)
         center.pack_start(sp, False, False, 0)
         self.qs_col = self._quick_settings()
-        main.pack_start(self.qs_col, False, False, 0)
+        body.pack_start(self.qs_col, False, False, 0)
 
         # toast (bottom centre, one at a time, announced to screen readers)
         self.toast_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_UP, valign=Gtk.Align.END,
@@ -136,7 +145,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def _sidebar(self):
         side = vbox(spacing=4)
         styled(side, "k-panel", "k-side")
-        side.set_size_request(280, -1)
+        side.set_size_request(250, -1)          # with Quick settings, every tab fits 960 px (half of 1920)
         head = Gtk.Box(spacing=10, margin_bottom=10)
         head.pack_start(logo_image(24), False, False, 0)
         head.pack_start(label("Kluis", "k-h2"), True, True, 0)
@@ -203,6 +212,10 @@ class MainWindow(Gtk.ApplicationWindow):
             self.timeline.pack_start(hbox(dot, v, spacing=10), False, False, 0)
         self.timeline.show_all()
 
+    def refresh_search(self):
+        if self.search_pop.get_visible() and len(self.search.get_text().strip()) >= 2:
+            self._search_changed(self.search)
+
     def _search_changed(self, entry):
         q = entry.get_text().strip().lower()
         clear(self.search_list)
@@ -211,11 +224,17 @@ class MainWindow(Gtk.ApplicationWindow):
             return
         hits = self.app.search(q)[:12]
         if not hits:
-            self.search_list.pack_start(label(_("No matches in synced folders or folders you opened"), "k-muted",
+            reading = self.browser.loaded_once and self.browser.stats.busy
+            self.search_list.pack_start(label(_("No matches yet") if reading else
+                                              _("No matches in synced folders or folders you opened"), "k-muted",
                                               "k-s12"), False, False, 0)
         for remote, name in hits:
             self.search_list.pack_start(button(name, lambda r=remote: self._open_hit(r), "k-flat",
                                                tooltip=remote), False, False, 0)
+        b = self.browser
+        if b.loaded_once and b.stats.busy:
+            self.search_list.pack_start(label(_("Still reading the subfolders of “{f}”…").format(
+                f=b.crumb_text().split(" › ")[-1]), "k-muted", "k-s12"), False, False, 0)
         self.search_list.show_all()
         self.search_pop.popup()
 
@@ -237,10 +256,11 @@ class MainWindow(Gtk.ApplicationWindow):
                                name=_("Sync now"))
         self.pause_btn = button(_("⏸ Pause"), lambda: self.app.set_paused(not self.app.settings.paused),
                                 name=_("Pause"))
-        self.qs_header_btn = self._qs_button()
-        self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
-        self.qs_header_btn.set_no_show_all(True)
-        row.pack_end(self.qs_header_btn, False, False, 0)
+        self.qs_header_btn = self._qs_button()      # the only Quick settings toggle: a small icon, always there
+        self.qs_btn = self.qs_header_btn
+        self.account_btn = AccountButton(self.app)
+        row.pack_end(self.qs_header_btn, False, False, 0)     # far right: where the Quick settings column was
+        row.pack_end(self.account_btn, False, False, 0)
         row.pack_end(self.pause_btn, False, False, 0)
         row.pack_end(self.sync_btn, False, False, 0)
         return row
@@ -267,11 +287,10 @@ class MainWindow(Gtk.ApplicationWindow):
         styled(col, "k-panel", "k-qs")
         col.set_size_request(100, -1)
         col.set_hexpand(False)
-        self.qs_btn = self._qs_button()
-        col.pack_start(self.qs_btn, False, False, 0)
         allb = Gtk.MenuButton()
-        allb.add(vbox(label("⚙", "k-h2", xalign=0.5), label(_("All settings…"), "k-s12", xalign=0.5, wrap=True,
-                                                             max_chars=12), spacing=0))
+        all_lbl = label(_("All settings…"), "k-s12", xalign=0.5, wrap=True, max_chars=12)
+        all_lbl.set_line_wrap_mode(Pango.WrapMode.WORD)
+        allb.add(vbox(label("⚙", "k-h2", xalign=0.5), all_lbl, spacing=0))
         a11y(allb, _("All settings…"))
         self.all_menu = popover_menu(allb, [
             (_("+ Add folder"), self.app.add_folder_dialog, False, "Ctrl+N"),
@@ -297,7 +316,10 @@ class MainWindow(Gtk.ApplicationWindow):
             st = label("", "k-qs-state", xalign=0.5)
             st.set_line_wrap(True)
             st.set_max_width_chars(12)
-            b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=12), st, spacing=2))
+            name = label(title, xalign=0.5, wrap=True, max_chars=12)
+            name.set_line_wrap_mode(Pango.WrapMode.WORD)    # "Notifications", never "Notificatio-ns"
+            st.set_line_wrap_mode(Pango.WrapMode.WORD)
+            b.add(vbox(name, st, spacing=2))
             b.connect("clicked", lambda _b, k=key: self.app.quick_toggle(k))
             styled(b, "k-qs-toggle")
             a11y(b, title)
@@ -309,9 +331,13 @@ class MainWindow(Gtk.ApplicationWindow):
     def set_qs_collapsed(self, collapsed, save=True):
         self.app.settings.qs_collapsed = collapsed
         self.qs_col.set_visible(not collapsed)
-        self.qs_header_btn.set_visible(collapsed)
-        for b in (self.qs_btn, self.qs_header_btn):
-            a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
+        b = self.qs_header_btn
+        a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
+        b.set_tooltip_text(_("Show quick settings") if collapsed else _("Hide quick settings"))
+        kids = b.get_child().get_children()
+        if len(kids) > 1:
+            kids[1].set_from_icon_name("kluis-chevron-down-symbolic" if collapsed else "kluis-chevron-up-symbolic",
+                                       Gtk.IconSize.BUTTON)
         if save:
             self.app.settings.save()
 
@@ -356,6 +382,25 @@ class MainWindow(Gtk.ApplicationWindow):
         self.stack.set_visible_child_name("browse")
         self.browser.go(path)
 
+    def account_changed(self):
+        """Another Proton account is active: Browse, Shared with me and Photos showed the previous one's Drive.
+        Forget it; the visible tab loads again now, the others when they are next opened (decisions D30)."""
+        b = self.browser
+        b.path = "/my-files"
+        b.nodes = []
+        b.stats.clear()
+        b.loaded_once = False
+        self.shared.loaded = False
+        self.shared.items = []
+        self.app.shared_cache = []
+        self.photos.loaded = False
+        self.photos.album = ""
+        self.photos._local = None
+        self.folders.rebuild()
+        page = self.stack.get_visible_child()
+        if self.root.get_visible_child_name() == "main" and hasattr(page, "on_shown"):
+            page.on_shown()
+
     def _page_changed(self, *_a):
         key = self.stack.get_visible_child_name()
         self.tab_title.set_text(dict(TABS).get(key, ""))
@@ -365,6 +410,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.app.save_soon()
         if key == "activity":
             self.app.manager.mark_read()
+        self.status_panel.set_tab(key)
         page = self.stack.get_visible_child()
         if hasattr(page, "on_shown"):
             page.on_shown()

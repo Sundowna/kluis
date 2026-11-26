@@ -55,6 +55,9 @@ def collect(settings, cli_version: str) -> str:
         f.pop("ignore", None)
     cfg["cli_path"] = "<path>" if cfg.get("cli_path") else ""
     cfg["root_dir"] = "<path>"
+    cfg["account"] = "<email>" if cfg.get("account") else ""
+    cfg["accounts"] = [{"signed_out": bool(a.get("signed_out")), "own_cache": bool(a.get("cache")),
+                        "folders": len((a.get("data") or {}).get("folders") or [])} for a in cfg.get("accounts", [])]
     cfg["home_city"] = "<set>" if cfg.get("home_city") else ""
     ph = cfg.get("photos", {})
     for k in ("download_dir", "upload_dir"):
