@@ -15,13 +15,13 @@ class ActivityPage(Gtk.Box):
     def __init__(self, app):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.app = app
-        bar = Gtk.Box(spacing=8)
-        bar.pack_start(label(_("Recent activity"), "k-h3"), False, False, 0)
         self.filter = combo([("all", _("Everything")), ("problems", _("Problems only"))], "all",
                             lambda _v: self.rebuild(), _("Show"))
-        bar.pack_end(button(_("Clear"), self._clear), False, False, 0)
-        bar.pack_end(button(_("Open log folder"), app.open_logs), False, False, 0)
-        bar.pack_end(self.filter, False, False, 0)
+        from .common import wrapbar
+        bar = Gtk.Box(spacing=8)
+        bar.pack_start(label(_("Recent activity"), "k-h3", ellipsize="end"), True, True, 0)
+        bar.pack_end(wrapbar(self.filter, button(_("Open log folder"), app.open_logs), button(_("Clear"), self._clear),
+                             per_line=1), False, False, 0)
         self.pack_start(bar, False, False, 0)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         a11y(self.list, _("Activity"))

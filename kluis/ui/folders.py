@@ -72,6 +72,8 @@ class FolderCard(Gtk.Box):
         styled(self, "k-card")
         self.app = app
         self.fid = folder.id
+        self.dead = False
+        self.connect("destroy", lambda *_a: setattr(self, "dead", True))   # late callbacks (size) are ignored
         a11y(self, folder.name)
         top = Gtk.Box(spacing=12)
         self.switch = switch(folder.enabled, self._toggled, _("Sync {n}").format(n=folder.name))
@@ -142,7 +144,7 @@ class FolderCard(Gtk.Box):
 
     def refresh(self):
         f = self.app.settings.folder(self.fid)
-        if not f:
+        if not f or self.dead:
             return
         st = self.app.manager.status.get(self.fid)
         set_class(self, "k-off", not f.enabled)

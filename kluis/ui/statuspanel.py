@@ -59,13 +59,13 @@ class Graph(Gtk.DrawingArea):
 
 class StatusPanel(Gtk.Box):
     def __init__(self, app):
-        super().__init__(spacing=24)
+        super().__init__(spacing=16)
         self.app = app
         left = vbox(spacing=6)
         self.head = label("", "k-h3", ellipsize="end", max_chars=34)
         a11y(self.head, _("Sync state"))
         left.pack_start(self.head, False, False, 0)
-        grid = Gtk.Grid(column_spacing=28, row_spacing=6, column_homogeneous=True)
+        grid = Gtk.Grid(column_spacing=16, row_spacing=6, column_homogeneous=True)
         self.cells = {}
 
         def cell(key, title, col, row, bar=False):
@@ -76,7 +76,7 @@ class StatusPanel(Gtk.Box):
             pb = None
             if bar:
                 pb = Gtk.ProgressBar()
-                pb.set_size_request(120, -1)
+                pb.set_size_request(72, -1)
                 box.pack_start(pb, False, False, 2)
             grid.attach(box, col, row, 1, 1)
             self.cells[key] = (box, t, v, pb)
@@ -89,7 +89,7 @@ class StatusPanel(Gtk.Box):
         self.pack_start(left, False, False, 0)
         right = vbox(spacing=4)
         top = Gtk.Box(spacing=12)
-        top.pack_start(label(_("Current transfer (KB/s)"), "k-muted", "k-s12"), False, False, 0)
+        top.pack_start(label(_("Current transfer (KB/s)"), "k-muted", "k-s12", ellipsize="end"), True, True, 0)
         self.rates = label("", "k-num", "k-s12")
         top.pack_end(self.rates, False, False, 0)
         right.pack_start(top, False, False, 0)
