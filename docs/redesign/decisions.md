@@ -56,3 +56,47 @@ no recognisable country (e.g. a custom WireGuard profile), the chip says "VPN on
 
 **D14 · Browse download target.** As §3.4 says, files go to `~/Downloads` (the folder chooser from 0.3.1 is
 gone). Existing names are never overwritten: the CLI's `rename` strategy adds a suffix.
+
+**D15 · Files Proton reports without a SHA-1.** Invariant 3 needs a SHA-1 to compare. Files Proton lists
+without one (older uploads from other apps) are confirmed by size after an upload; the first time such a
+file meets a local file of the same name, Kluis keeps both copies rather than guessing they are equal.
+
+**D16 · Scrubber ring mapping.** The review asked for "the month in the middle of the viewport". That conflicts
+with F9 step 8 (heading at the top → ring on that dot) and leaves the first months unreachable. The ring follows
+the month at the **top edge**, interpolated inside the month; over the last viewport-height it eases to the last
+dot; and the gallery has one viewport of room after the last month, so every month can reach the top. The result
+is monotonic, never jumps more than one dot, starts on dot 0 and ends exactly on the last dot (unit-tested on 30
+random libraries, and in F9).
+
+**D17 · Search (Ctrl+F).** The CLI has no search, and crawling the whole drive would be slow and noisy. Search
+looks through file names Kluis already knows: everything in synced folders (from the sync state) and folders
+opened in Browse. Choosing a hit opens its folder in Browse.
+
+**D18 · Self-test after install.** A package's post-install script runs as root, without the user's keyring
+or Proton session, so it can't run `--selftest`. The app runs the self-test once by itself, in the background,
+the first time it starts with a new Kluis or CLI version (and only when signed in). On FAIL, syncing pauses with
+one notification, as §8 D asks.
+
+**D19 · How the flows are split.** Steps that need a real relaunch or a fresh login session are separate
+runs on the saved state: F3b (relaunch resumes the step), F14b (relaunch after a kill: no `.kluis-part`,
+nothing lost), F17b (autostart with Start hidden). The 5-minute sign-in timeout uses a mock clock
+(`KLUIS_SIGNIN_TIMEOUT`). Native file choosers are answered through a test-only queue (`KLUIS_TEST=1`).
+
+**D20 · Changes during a running sync.** A local edit or a manual request while that folder is syncing used to
+be ignored until the next periodic check (up to 60 min). Now it always triggers one more run right after,
+so "local edits sync ~10 s after you save" holds even mid-sync. Found by the flows.
+
+**D21 · Mint versions in CI.** There are no Linux Mint images for CI runners. Mint 22 and Mint 21.3 are based on
+Ubuntu 24.04 and 22.04, so CI installs, starts and removes the `.deb` on those. The real Mint 22.3 install
+is done on Walter's machine. EndeavourOS runs as an Arch container with KDE session variables.
+
+**D22 · Video length badge.** The prototype shows "▶ 0:23". Nothing available gives a reliable duration
+without extra tools, so the badge shows ▶ only (never a made-up time).
+
+**D23 · Photo download folder change during a run.** Changing the folder while photos download now stops that run
+and resets the download records only after it has ended, so no photo is recorded against the old folder.
+Found by F9.
+
+**D24 · Photos "follow deletions" and the mass-deletion guard.** When far more photos than usual (over 50, or
+over 10 %) disappear from Proton Photos in one check, Kluis keeps every local copy and logs a warning instead
+of asking. Photo copies are never synced back, so keeping them is always safe.

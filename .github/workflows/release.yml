@@ -36,6 +36,8 @@ jobs:
       - name: GUI flows F1–F19 (Cinnamon)
         if: matrix.ubuntu == '24.04'
         run: TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-mint X-Cinnamon
+      - name: Photos with 50'000 items (frame time, memory)
+        run: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/perf_photos.py
       - name: Build, install, start and remove the .deb
         run: |
           packaging/build-deb.sh
