@@ -66,7 +66,11 @@ class ActivityPage(Gtk.Box):
         a11y(self.big_state, _("Big items lane"))
         self.big_list = vbox(spacing=4)
         self.big_list.set_margin_start(42)
-        self.big.pack_start(self.big_list, False, False, 0)
+        # a long list scrolls inside the card: the window must still fit a 640 px high screen (F23/F25)
+        sw = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                max_content_height=132)
+        sw.add(self.big_list)
+        self.big.pack_start(sw, False, False, 0)
         self.big_hint = label("", "k-muted", "k-s12", wrap=True)
         self.big.pack_start(self.big_hint, False, False, 0)
         self._big_sig = None
