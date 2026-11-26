@@ -36,6 +36,12 @@ GUARD_FILES = 50        # §7.8: more than 50 files …
 GUARD_SHARE = 0.10      # … or more than 10 % of the folder in one run asks first
 
 
+def _win_case(name: str) -> str:
+    """The key Windows (NTFS) compares names by: each character upper-cased on its own. Unlike casefold(),
+    "ß" stays "ß", so "straße.txt" and "strasse.txt" are two files, as they are on Windows."""
+    return "".join(u if len(u := c.upper()) == 1 else c for c in name)
+
+
 class Cancelled(Exception):
     pass
 
@@ -366,12 +372,13 @@ class SyncEngine:
         groups = defaultdict(list)
         for rel in remote:
             if not self._under(rel, dropped):
-                groups[rel.casefold()].append(rel)
+                groups[_win_case(rel)].append(rel)
         for key in sorted(groups, key=lambda k: k.count("/")):
             rels = [r for r in groups[key] if not self._under(r, dropped)]
             if len(rels) < 2:
                 continue
-            keep = next((r for r in sorted(rels) if r in state), None) or                 next((r for r in sorted(rels) if r in local), None) or sorted(rels)[0]
+            keep = next((r for r in sorted(rels) if r in state), None) or \
+                next((r for r in sorted(rels) if r in local), None) or sorted(rels)[0]
             for r in sorted(rels):
                 if r != keep:
                     dropped.append(r)
@@ -383,10 +390,10 @@ class SyncEngine:
                 self._told.add((f.id, rel))
                 log.warning("[%s] not synced: %s (%s)", f.name, rel, why)
                 self._emit(f, "log", level="warning", text=f"Left out {rel}: {why}. It stays in Proton Drive.")
-        spelling = {r.casefold(): r for r in state}
-        spelling.update({r.casefold(): r for r in remote})
-        moves = {rel: spelling[rel.casefold()] for rel in local
-                 if rel not in remote and rel not in state and rel.casefold() in spelling}
+        spelling = {_win_case(r): r for r in state}
+        spelling.update({_win_case(r): r for r in remote})
+        moves = {rel: spelling[_win_case(rel)] for rel in local
+                 if rel not in remote and rel not in state and _win_case(rel) in spelling}
         if moves:
             fitted = {}
             for rel, li in local.items():
