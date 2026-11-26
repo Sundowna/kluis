@@ -195,11 +195,23 @@ class FileVault(Vault):
         with open(self.slot, "w", encoding="utf-8") as fh:
             fh.write(rec["secret"])
 
+    @staticmethod
+    def _remove(path):
+        """Windows refuses to delete a file another thread or process has open for a moment: try again."""
+        import time
+        for _i in range(50):
+            try:
+                os.remove(path)
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError:
+                time.sleep(0.05)
+            except OSError:
+                return
+
     def clear_live(self):
-        try:
-            os.remove(self.slot)
-        except OSError:
-            pass
+        self._remove(self.slot)
 
     def save(self, email, rec):
         with open(self._p(email), "w", encoding="utf-8") as fh:
@@ -214,10 +226,7 @@ class FileVault(Vault):
             return None
 
     def forget(self, email):
-        try:
-            os.remove(self._p(email))
-        except OSError:
-            pass
+        self._remove(self._p(email))
 
 
 class SecretVault(Vault):

@@ -1,6 +1,8 @@
-"""Windows: run every GUI flow in light + dark at 1440x900 and 1024x640, JOBS at a time (default 3).
+"""Windows: run every GUI flow in light + dark at 1440x900 and 1024x640, one after the other.
 
 The Windows counterpart of run_all.sh (no Xvfb: the flows run on the desktop of the machine or CI runner).
+All runs share that one desktop, so they run one at a time by default (JOBS=n to overlap them anyway):
+windows that overlap take each other's keyboard focus and appear in each other's screenshots.
 Usage: python tests/gui/run_windows.py OUTDIR [FLOWS...]
 """
 import os
@@ -35,7 +37,7 @@ def main():
     flows = sys.argv[2:] or ALL
     os.makedirs(out, exist_ok=True)
     jobs = [(f, theme, size, out) for f in flows for theme in ("dark", "light") for size in ("1440x900", "1024x640")]
-    with ThreadPoolExecutor(int(os.environ.get("JOBS", "3"))) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("JOBS", "1"))) as ex:
         results = list(ex.map(one, jobs))
     with open(os.path.join(out, "results.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(results) + "\n")

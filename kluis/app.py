@@ -788,6 +788,7 @@ class KluisApp(Gtk.Application):
             return
         was_paused = self.settings.paused
         self.manager.set_paused(True)
+        self.manager.unwatch()            # Windows can't move a folder while a handle inside it is open
         j = rootmove.start(src, dest)
         dlg = Gtk.MessageDialog(transient_for=parent, modal=True, text=_("Moving your Proton Drive folder…"))
         dlg.get_style_context().add_class("kluis")
@@ -810,12 +811,13 @@ class KluisApp(Gtk.Application):
                            (_("Undo"), lambda: self.move_root(os.path.dirname(src) if os.path.basename(src) ==
                                                               os.path.basename(dest) else src, parent, done)))
             else:
+                self.manager.rewatch()
                 self.toast(_("Move paused · Kluis finishes it the next time you start it"))
             if not was_paused:
                 self.manager.set_paused(False)
             done and done()
         run_bg(lambda: rootmove.run(j, progress, lambda: cancel["v"]), finished,
-               lambda e: (dlg.destroy(), self.toast(_("Move stopped: {e}").format(e=e)),
+               lambda e: (dlg.destroy(), self.manager.rewatch(), self.toast(_("Move stopped: {e}").format(e=e)),
                           not was_paused and self.manager.set_paused(False)))
 
     def _finish_root_move(self, src, dest):

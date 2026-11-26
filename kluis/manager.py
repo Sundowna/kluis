@@ -622,11 +622,17 @@ class SyncManager:
             pass
 
     # ---------- watching local folders ----------
-    def rewatch(self):
+    def unwatch(self):
+        """Stop watching (Windows: no handle stays open in a synced folder, e.g. while it is being moved)."""
         for mons in self._monitors.values():
             for m in mons:
                 m.cancel()
         self._monitors.clear()
+
+    def rewatch(self):
+        self.unwatch()
+        if os.name == "nt":
+            return self._rewatch_windows()
         budget = MAX_WATCHED_DIRS
         for f in self.settings.folders:
             if not (f.enabled and f.watch and f.mode in ("two-way", "backup") and os.path.isdir(f.local)):
@@ -645,6 +651,20 @@ class SyncManager:
                 budget -= 1
             self._monitors[f.id] = mons
 
+    def _rewatch_windows(self):
+        """One handle per synced folder (kluis/winwatch.py): subfolders stay free to rename and move."""
+        from .winwatch import TreeWatcher
+        for f in self.settings.folders:
+            if not (f.enabled and f.watch and f.mode in ("two-way", "backup") and os.path.isdir(f.local)):
+                continue
+            try:
+                w = TreeWatcher(f.local, lambda rel, action, fid=f.id: GLib.idle_add(
+                    lambda: (self._local_changed(fid, rel), False)[1]))
+            except OSError as e:
+                log.warning("can't watch %s: %s", f.local, e)
+                continue
+            self._monitors[f.id] = [w]
+
     def watching(self) -> int:
         return sum(1 for f in self.settings.folders if f.enabled and f.watch and not f.hold
                    and f.mode in ("two-way", "backup") and f.id in self._monitors)
@@ -653,13 +673,21 @@ class SyncManager:
         if event in (Gio.FileMonitorEvent.ATTRIBUTE_CHANGED, Gio.FileMonitorEvent.PRE_UNMOUNT):
             return
         path = file.get_path() or ""
-        if f"/{PART_DIR}/" in path or path.endswith("/" + PART_DIR):
+        if event == Gio.FileMonitorEvent.CREATED and not self._is_part(path) and                 time.time() >= self._quiet_until.get(fid, 0) and                 file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, None) == Gio.FileType.DIRECTORY:
+            GLib.timeout_add_seconds(1, lambda: (self.rewatch(), False)[1])
+        self._local_changed(fid, path)
+
+    @staticmethod
+    def _is_part(path: str) -> bool:
+        p = "/" + path.replace("\\", "/").strip("/") + "/"
+        return f"/{PART_DIR}/" in p
+
+    def _local_changed(self, fid, path):
+        """Something changed in a synced folder: sync it DEBOUNCE_S seconds after the last change."""
+        if self._is_part(path):
             return
         if time.time() < self._quiet_until.get(fid, 0):
             return                          # our own writes right after a run
-        if event == Gio.FileMonitorEvent.CREATED and file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
-                                                                           None) == Gio.FileType.DIRECTORY:
-            GLib.timeout_add_seconds(1, lambda: (self.rewatch(), False)[1])
         if fid in self._debounce:
             GLib.source_remove(self._debounce[fid])
 

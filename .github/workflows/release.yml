@@ -127,13 +127,21 @@ jobs:
           python tests/test_photos.py
           python tests/test_safety.py
           python tests/test_units.py
+      - name: Screen of 1920x1080 (the flows use windows of 1440x900)
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
       - name: GUI flows F1–F24 (on the runner's Windows desktop)
         run: python tests/gui/run_windows.py dist/flows-windows
       - name: Build the installer
+        if: ${{ !cancelled() }}         # also when a GUI flow failed: every result in one run
         run: |
           [ -x "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || choco install innosetup -y --no-progress
           packaging/windows/build.sh
       - name: Install, start, start again, uninstall
+        if: ${{ !cancelled() }}         # also when a GUI flow failed: every result in one run
         run: python tests/windows/test_install.py
       - uses: actions/upload-artifact@v4
         if: always()
