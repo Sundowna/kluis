@@ -10,6 +10,8 @@
   - Click an account to switch. When your desktop keyring keeps that account's session, it takes one click; otherwise Proton's browser sign-in opens for that account, with "Use … instead" to go back.
   - **Sign out** hands over to your next account. ✕ removes an account from Kluis; its files stay on this computer and in Proton Drive.
 - Each account keeps **its own folders, photo settings and sync history**. Only the active account syncs, and two accounts can't sync the same folder.
+- **Browse: Computers is easy to find.** *My files*, *Computers* and *Shared with me* are now buttons with icons at the top of Browse. Computers lists each computer Proton's desktop app syncs (for example a Windows PC); click one to see its folders. If *My files* is empty but a computer has folders, Browse says so.
+- The ↻ Reload button in Browse now looks like a button.
 
 ### Notes
 - Nothing changes for one account: your folders and history stay where they were.

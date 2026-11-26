@@ -27,4 +27,10 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-010 Settings → *Other accounts* lists the kept accounts with *Switch*, and *Add…* for another one — `tests/gui/flows.py: F21`
 - F-011 After adding or switching accounts, Browse, Shared with me and Photos show the active account's Proton Drive, never the previous account's — `tests/gui/flows.py: F21`
 
+## Browse
+
+- F-012 When *My files* is empty but Proton's desktop app syncs folders from a computer, Browse says "Folders synced from your computers are under Computers: …" with *Open Computers* — `tests/gui/flows.py: F22`
+- F-014 Browse shows its sections as buttons with icons (*My files*, *Computers*, *Shared with me*), the current one highlighted; *↻ Reload* has a normal button border — `tests/gui/flows.py: F22`
+- F-013 Computers (`/devices`) list each computer as a folder; opening one shows the folders it syncs — `tests/gui/flows.py: F22`, `tests/test_units.py: Proton accounts`
+
 ## Removed

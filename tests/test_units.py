@@ -222,6 +222,10 @@ check(accounts.Vault().available is False and accounts.Vault().load("x") is None
 from kluis.state import StateStore  # noqa: E402
 StateStore(accounts.state_path(lindi))
 check(os.path.exists(accounts.state_path(lindi)), "F-006 the second account's sync history opens in its own new folder")
+from kluis.cli import RemoteNode  # noqa: E402
+dev = RemoteNode.from_json({"uid": "u", "type": "Windows", "rootFolderUid": "r", "name": {"ok": True, "value": "WalterXPS"}})
+check(dev.is_folder and dev.name == "WalterXPS", "F-013 a computer under /devices is a folder named after it")
+
 diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
       "F-006 Copy diagnostics names no account email and no other account's folders")

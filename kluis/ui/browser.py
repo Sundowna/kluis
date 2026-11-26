@@ -11,9 +11,11 @@ from gi.repository import Gdk, GLib, GObject, Gtk, Pango
 from ..cli import CliError, rjoin
 from ..errors import OFFLINE, classify
 from ..i18n import _, ngettext
-from .common import a11y, button, clear, human_size, iso_date, label, open_path, run_bg, styled, vbox
+from .common import a11y, button, clear, human_size, iso_date, label, open_path, run_bg, set_class, styled, vbox
 from .dialogs import ask_text, choose_files, confirm
 
+SECTION_ICONS = {"/my-files": "kluis-folder-symbolic", "/devices": "kluis-computer-symbolic",
+                 "/shared-with-me": "kluis-shared-symbolic"}      # Trash: on the web (Browse's actions don't apply)
 ROOT_NAMES = {"/my-files": _("My files"), "/devices": _("Computers"), "/shared-with-me": _("Shared with me"),
               "/trash": _("Trash")}
 COLS = [("files", _("Files"), 80), ("size", _("Size"), 90), ("date", _("Modified"), 110)]
@@ -94,6 +96,16 @@ class BrowserPage(Gtk.Box):
         self.loaded_once = False
         self.nodes = []
         self.stats = FolderStats(app.cli, self._stats_ready)
+        # Proton Drive's sections, always visible (Walter, 2026-11-26: "Computers" was easy to miss in a ▾ menu)
+        self.sections = {}
+        row = Gtk.Box(spacing=6)
+        a11y(row, _("Sections"))
+        for root, icon in SECTION_ICONS.items():
+            b = button(ROOT_NAMES[root], lambda r=root: self.go(r), icon=icon,
+                       name=_("Section: {s}").format(s=ROOT_NAMES[root]))
+            row.pack_start(b, False, False, 0)
+            self.sections[root] = b
+        self.pack_start(row, False, False, 0)
         self.crumbs = Gtk.Box(spacing=2)
         a11y(self.crumbs, _("Breadcrumbs"))
         self.pack_start(self.crumbs, False, False, 0)
@@ -103,7 +115,7 @@ class BrowserPage(Gtk.Box):
         self.dl_btn = button(_("↓ Download"), self._download_selected)
         self.rn_btn = button(_("Rename"), self._rename_selected)
         self.tr_btn = button(_("Move to trash"), self._trash_selected, "k-danger")
-        self.refresh_btn = button("↻", self.load, "k-flat", tooltip=_("Reload this folder"), name=_("Reload"))
+        self.refresh_btn = button("↻", self.load, tooltip=_("Reload this folder"), name=_("Reload"))
         from .common import wrapbar
         self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.rn_btn, self.tr_btn, self.refresh_btn),
                         False, False, 0)
@@ -167,7 +179,10 @@ class BrowserPage(Gtk.Box):
         self.msg = label("", "k-muted", xalign=0.5, wrap=True)
         self.retry = button(_("Retry"), self.load)
         self.retry.set_halign(Gtk.Align.CENTER)
-        msgbox = vbox(self.msg, self.retry, spacing=12, valign=Gtk.Align.CENTER)
+        self.to_devices = button(_("Open Computers"), lambda: self.go("/devices"), "suggested-action")
+        self.to_devices.set_halign(Gtk.Align.CENTER)
+        self.to_devices.set_no_show_all(True)
+        msgbox = vbox(self.msg, self.retry, self.to_devices, spacing=12, valign=Gtk.Align.CENTER)
         self.stack.add_named(msgbox, "msg")
         self.pack_start(self.stack, True, True, 0)
         self.pack_start(label(_("Drag files onto this list to upload · click a folder to open it · trashed items can "
@@ -233,13 +248,9 @@ class BrowserPage(Gtk.Box):
             b = button(ROOT_NAMES.get(target, p), lambda t=target: self.go(t), "k-flat",
                        "k-bold" if i == len(parts) - 1 else "")
             self.crumbs.pack_start(b, False, False, 0)
-        roots = Gtk.MenuButton(image=Gtk.Image.new_from_icon_name("kluis-chevron-down-symbolic", Gtk.IconSize.BUTTON))
-        styled(roots, "k-flat")
-        a11y(roots, _("Sections"))
-        from .common import popover_menu
-        roots.set_popover(popover_menu(roots, [(name, lambda p=p: self.go(p)) for p, name in ROOT_NAMES.items()
-                                               if p != "/trash"]))
-        self.crumbs.pack_start(roots, False, False, 0)
+        here = "/" + parts[0] if parts else ""
+        for root, b in self.sections.items():
+            set_class(b, "k-pressed", root == here)
         self.crumbs.show_all()
 
     def crumb_text(self) -> str:
@@ -268,6 +279,9 @@ class BrowserPage(Gtk.Box):
             if not self.nodes:
                 self.msg.set_text(_("This folder is empty. Drag files here to upload them."))
                 self.retry.hide()
+                self.to_devices.hide()
+                if path == "/my-files":
+                    self._check_devices()
                 self.stack.set_visible_child_name("msg")
                 return
             self.stack.set_visible_child_name("list")
@@ -279,8 +293,21 @@ class BrowserPage(Gtk.Box):
             reason = _("offline") if classify(e) == OFFLINE else str(e)
             self.msg.set_text(_("Couldn't load this folder: {r}").format(r=reason))
             self.retry.show()
+            self.to_devices.hide()
             self.stack.set_visible_child_name("msg")
         run_bg(lambda: self.app.cli.list(path), done, fail)
+
+    def _check_devices(self):
+        """My files is empty: folders synced from a computer by Proton's desktop app are under Computers
+        (/devices). Say so, instead of looking like an empty Drive."""
+        def done(devices):
+            if self.path != "/my-files" or self.nodes or not devices:
+                return
+            names = ", ".join(d.name for d in devices[:3]) + ("…" if len(devices) > 3 else "")
+            self.msg.set_text(_("My files is empty. Folders synced from your computers are under Computers: "
+                                "{names}.").format(names=names))
+            self.to_devices.show()
+        run_bg(lambda: self.app.cli.list("/devices"), done, lambda _e: None)
 
     def _fill(self, keep_sel=False):
         sel = {r[0].name for r in self.store if r[1]} if keep_sel else set()

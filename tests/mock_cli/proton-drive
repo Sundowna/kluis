@@ -190,6 +190,14 @@ def main():
             print(json.dumps([{"path": "/my-files"}, {"path": "/devices"}, {"path": "/shared-with-me"},
                               {"path": "/trash"}]))
             return
+        if path.strip("/") == "devices":       # computers, as the real CLI prints them (printDevices)
+            d = os.path.join(ROOT, "devices")
+            names = sorted(os.listdir(d)) if os.path.isdir(d) else []
+            print(json.dumps([{"uid": "dev-" + hashlib.md5(n.encode()).hexdigest()[:10], "type": "Windows",
+                               "rootFolderUid": "root-" + hashlib.md5(n.encode()).hexdigest()[:10],
+                               "creationTime": "2025-12-04T06:47:54.000Z", "hasDeprecatedName": False,
+                               "name": {"ok": True, "value": n}} for n in names if os.path.isdir(os.path.join(d, n))]))
+            return
         if path.strip("/") == "trash":
             out = []
             for uid, e in index.items():

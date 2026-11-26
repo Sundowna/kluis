@@ -101,7 +101,8 @@ class RemoteNode:
             by = by.get("value") if by.get("ok", True) else ""
         return cls(
             name=name or d.get("path") or d.get("uid", "?"),
-            type=d.get("type", "folder" if "path" in d else "file"),
+            # a computer under /devices ("type": "Windows", "Linux", …) opens like a folder: /devices/<name>/…
+            type="folder" if "rootFolderUid" in d else d.get("type", "folder" if "path" in d else "file"),
             uid=d.get("uid", ""),
             size=rev.get("claimedSize", d.get("totalStorageSize")),
             revision=rev.get("uid", ""),

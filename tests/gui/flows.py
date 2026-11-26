@@ -1,4 +1,4 @@
-"""End-to-end flows F1–F21 (HANDOVER §12; F21 = Proton accounts, FEATURES.md F-001…F-009), against the mock CLI.
+"""End-to-end flows F1–F22 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
 
 Run one: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/flows.py F4 dark 1440x900 OUT
 All:     tests/gui/run_all.sh OUT
@@ -1440,6 +1440,43 @@ def f21(d, env, app):
     d.expect(saved.account == ME and not acc.others(saved), "saved for the next launch")
 
 
+
+# ------------------------------------------------------------------ F22
+def setup_f22(env):
+    env.cloud_write("devices/WalterXPS/Documents/plan.txt", "p")
+    env.cloud_write("devices/WalterXPS/Desktop/note.txt", "n")
+
+
+def f22(d, env, app):
+    """F-012…F-014 (FEATURES.md): section buttons; My files empty but a computer syncs folders → Browse says so."""
+    yield main_ready(app)
+    b = app.window.browser
+    d.press("<Primary>3")
+    yield until(lambda: d.has_text("Folders synced from your computers are under Computers: WalterXPS"), 20,
+                "F-012 empty My files points to Computers")
+    d.expect(d.find("Open Computers") is not None and d.get("Open Computers").is_visible(), "Open Computers button")
+    d.shot("empty My files, computers")
+    d.click("Open Computers")
+    yield until(lambda: b.path == "/devices" and browse_names(app) == ["WalterXPS"], 20, "Computers lists WalterXPS")
+    d.expect(b.nodes[0].is_folder, "F-013 a computer opens like a folder")
+    pressed = lambda n: "k-pressed" in d.get(f"Section: {n}").get_style_context().list_classes()  # noqa: E731
+    d.expect(pressed("Computers") and not pressed("My files"), "F-014 the Computers section button is highlighted")
+    d.expect("k-flat" not in d.get("Reload").get_style_context().list_classes(), "F-014 ↻ has a normal border")
+    b.go("/devices/WalterXPS")
+    yield until(lambda: browse_names(app) == ["Desktop", "Documents"], 20, "F-013 the computer's synced folders")
+    d.shot("WalterXPS folders")
+    d.click("Section: My files")
+    yield until(lambda: b.path == "/my-files" and d.has_text("My files is empty"), 20, "F-014 back via the section row")
+    d.click("Section: Shared with me")
+    yield until(lambda: b.path == "/shared-with-me" and pressed("Shared with me"), 20, "F-014 Shared with me section")
+    d.click("Section: My files")
+    yield until(lambda: b.path == "/my-files", 20, "My files again")
+    env.cloud_write("my-files/Own/x.txt", "x")
+    b.go("/my-files")
+    yield until(lambda: browse_names(app) == ["Own"], 20, "My files with content: no Computers hint")
+    d.expect(not d.get("Open Computers", visible=False).is_visible(), "hint hidden when My files has items")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1449,6 +1486,7 @@ FLOWS = {
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
+    "F22": (f22, setup_f22, {}),
 }
 
 
