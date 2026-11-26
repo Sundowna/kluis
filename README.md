@@ -10,6 +10,8 @@ Not affiliated with Proton AG.
 | Folders (light) | Browse Proton Drive | Photos |
 |---|---|---|
 | ![](docs/screens/folders-light.png) | ![](docs/screens/browse-dark.png) | ![](docs/screens/photos-dark.png) |
+| **Shared with me** | **Add a folder** | **Purple accent** |
+| ![](docs/screens/shared-dark.png) | ![](docs/screens/add-folder-light.png) | ![](docs/screens/purple-light.png) |
 
 ## Install (about 1 minute)
 
