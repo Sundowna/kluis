@@ -35,7 +35,8 @@ class Onboarding(Gtk.Box):
         card.set_size_request(640, -1)
         card.set_margin_top(24)
         card.set_margin_bottom(24)
-        head = hbox(Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.DIALOG),
+        from .window import logo_image
+        head = hbox(logo_image(48),
                     vbox(label(_("Welcome to Kluis"), "k-h0"),
                          label(_("Proton Drive on Linux, through Proton’s official CLI"), "k-muted"), spacing=2),
                     spacing=14)

@@ -52,8 +52,6 @@
 .kluis .k-timeline-dot.k-info { background-color: @k_muted; }
 .kluis .k-tl-line { min-width: 2px; background-color: alpha(@k_line, 0.8); }
 .kluis .k-divider { min-height: 1px; background-image: linear-gradient(to right, alpha(@k_line, 0), @k_line, alpha(@k_line, 0)); }
-.kluis .k-qs button { min-height: 56px; padding: 6px 4px; }
-.kluis .k-qs button label { font-size: 12px; }
 .kluis .k-qs-state { font-size: 11px; color: @k_muted; }
 .kluis .k-toast { box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08); }
 .kluis .k-toast label { color: @k_bg; }
@@ -82,3 +80,12 @@
 .kluis modelbutton:hover { background-color: @k_surface; }
 .kluis .k-banner { background-color: alpha(@k_error, 0.14); border: 1px solid @k_error; border-radius: 10px; padding: 10px 14px; }
 .kluis .k-banner.k-warn { background-color: alpha(@k_warn, 0.14); border-color: @k_warn; }
+/* button label colours win over the generic label colour */
+.kluis button.suggested-action label, .kluis button.k-primary label { color: @k_on_accent; }
+.kluis button.k-link label { color: @k_accent; }
+.kluis button.k-danger label, .kluis button.destructive-action label { color: @k_error; }
+.kluis button.destructive-action { background-color: alpha(@k_error, 0.14); border-color: @k_error; }
+.kluis .k-qs-toggle { min-height: 56px; padding: 6px 4px; }
+.kluis .k-qs-toggle label { font-size: 12px; }
+.kluis .k-qs-head { min-height: 36px; padding: 0 8px; }
+.kluis .k-nav button.k-current label { font-weight: 700; }

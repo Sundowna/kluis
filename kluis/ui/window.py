@@ -24,6 +24,16 @@ TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")),
 TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
 
 
+def logo_image(size):
+    """The safe logo from Kluis's own data (not a possibly older system icon)."""
+    from gi.repository import GdkPixbuf
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "icons", "dev.kluis.Kluis.svg")
+    try:
+        return Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(path, size, size))
+    except Exception:  # noqa: BLE001
+        return Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.LARGE_TOOLBAR)
+
+
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Kluis")
@@ -126,7 +136,7 @@ class MainWindow(Gtk.ApplicationWindow):
         styled(side, "k-panel", "k-side")
         side.set_size_request(280, -1)
         head = Gtk.Box(spacing=10, margin_bottom=10)
-        head.pack_start(Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
+        head.pack_start(logo_image(24), False, False, 0)
         head.pack_start(label("Kluis", "k-h2"), True, True, 0)
         gear = Gtk.Button.new_from_icon_name("emblem-system-symbolic", Gtk.IconSize.BUTTON)
         styled(gear, "k-flat")
@@ -166,7 +176,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self.timeline = vbox(spacing=8)
         a11y(self.timeline, _("Today’s timeline"))
         side.pack_start(self.timeline, False, False, 0)
-        side.pack_start(button(_("All activity"), lambda: self.show_tab("activity"), "k-link"), False, False, 4)
+        allact = button(_("All activity"), lambda: self.show_tab("activity"), "k-link")
+        allact.set_halign(Gtk.Align.START)
+        side.pack_start(allact, False, False, 4)
         return side
 
     def refresh_timeline(self):
@@ -231,7 +243,7 @@ class MainWindow(Gtk.ApplicationWindow):
         box = hbox(Gtk.Image.new_from_icon_name("preferences-system-symbolic", Gtk.IconSize.BUTTON),
                    Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON), spacing=2)
         b.add(box)
-        b.set_size_request(56, 36)
+        styled(b, "k-qs-head")
         b.connect("clicked", lambda *_: self.set_qs_collapsed(not self.app.settings.qs_collapsed))
         a11y(b, _("Collapse quick settings"))
         return b
@@ -277,6 +289,7 @@ class MainWindow(Gtk.ApplicationWindow):
             st = label("", "k-qs-state", xalign=0.5)
             b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=10), st, spacing=2))
             b.connect("clicked", lambda _b, k=key: self.app.quick_toggle(k))
+            styled(b, "k-qs-toggle")
             a11y(b, title)
             b.kluis_state = st
             col.pack_start(b, False, False, 0)
@@ -289,7 +302,6 @@ class MainWindow(Gtk.ApplicationWindow):
         self.qs_header_btn.set_visible(collapsed)
         for b in (self.qs_btn, self.qs_header_btn):
             a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
-            set_class(b, "k-pressed", not collapsed)
         if save:
             self.app.settings.save()
 

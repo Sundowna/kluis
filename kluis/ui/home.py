@@ -30,7 +30,6 @@ class WorldMap(Gtk.DrawingArea):
 
     def set_state(self, you, vpn, syncing, show_you=True):
         self.you, self.vpn, self.syncing, self.show_you = you, vpn, syncing, show_you
-        self.set_tooltip_text(self.caption())
         if syncing and animations_enabled() and not self._anim:
             self._anim = GLib.timeout_add(50, self._tick)
         self.queue_draw()
@@ -70,10 +69,10 @@ class WorldMap(Gtk.DrawingArea):
                     cr.arc(ox + c * cell + cell / 2, y, r, 0, 2 * math.pi)
                     cr.new_sub_path()
         cr.fill()
-        cx, cy, *_ = self._proj(w, h, geo.CLOUD[1], geo.CLOUD[2])
+        cx, cy, *_rest = self._proj(w, h, geo.CLOUD[1], geo.CLOUD[2])
         accent = th.color("accent")
         if self.show_you and self.you:
-            yx, yy, *_ = self._proj(w, h, self.you[1], self.you[2])
+            yx, yy, *_rest = self._proj(w, h, self.you[1], self.you[2])
             # arc
             mx, my = (yx + cx) / 2, min(yy, cy) - max(40, abs(yx - cx) * 0.25)
             cr.set_source_rgba(*accent, 0.9)
