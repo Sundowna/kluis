@@ -123,7 +123,7 @@ class StatusPanel(Gtk.Box):
         a11y(self.line, _("Sync state"))
         self.line_box.pack_start(self.line, True, True, 0)
         self.mini = Graph(app)
-        self.mini.set_size_request(120, 22)
+        self.mini.set_size_request(90, 22)
         self.mini.set_hexpand(False)
         self.mini.set_valign(Gtk.Align.CENTER)
         self.line_box.pack_start(self.mini, False, False, 0)
@@ -173,8 +173,8 @@ class StatusPanel(Gtk.Box):
         parts = [f"<b>{e(self.head.get_text())}</b>"]
         for key in ("enc", "prog", "today"):
             _box, t, v, _pb = self.cells[key]
-            parts.append(f"<span alpha='75%'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
-        self.line.set_markup("     ".join(parts))
+            parts.append(f"<span alpha='75%' size='small'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
+        self.line.set_markup("   ".join(parts))
         self.line_rates.set_text(self.rates.get_text())
 
     def refresh(self, st):
