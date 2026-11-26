@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 
-from gi.repository import Gtk, Pango
+from gi.repository import GLib, Gtk
 
 from ..i18n import _
 from ..status import axis_max, duration_text, eta_text, human_bytes
@@ -118,6 +118,19 @@ class StatusPanel(Gtk.Box):
         self.toggle.connect("clicked", lambda *_: self._flip())
         self.toggle.set_no_show_all(True)
         self.pack_end(self.toggle, False, False, 0)
+        self.line_box = Gtk.Box(spacing=12, valign=Gtk.Align.CENTER)
+        self.line = label("", "k-s13", xalign=0.5, ellipsize="end")
+        a11y(self.line, _("Sync state"))
+        self.line_box.pack_start(self.line, True, True, 0)
+        self.mini = Graph(app)
+        self.mini.set_size_request(120, 22)
+        self.mini.set_hexpand(False)
+        self.mini.set_valign(Gtk.Align.CENTER)
+        self.line_box.pack_start(self.mini, False, False, 0)
+        self.line_rates = label("", "k-num", "k-s12")
+        self.line_box.pack_start(self.line_rates, False, False, 0)
+        self.line_box.set_no_show_all(True)
+        self.pack_start(self.line_box, True, True, 0)
         # §6: the CLI has no quota command, so "Space used" is hidden (never faked)
         self.cells["space"][0].set_no_show_all(True)
         self.cells["space"][0].hide()
@@ -137,47 +150,14 @@ class StatusPanel(Gtk.Box):
         self.set_compact(not self.compact)
 
     def set_compact(self, on):
+        """One line: the same facts as one centred text (it shortens with … only on a narrow window), a slim
+        graph and the rates. The full card is left exactly as it is."""
         self.compact = on
-        H, V = Gtk.Orientation.HORIZONTAL, Gtk.Orientation.VERTICAL
-        self.left.set_orientation(H if on else V)
-        mid = Gtk.Align.CENTER if on else Gtk.Align.FILL     # one line: everything on the same middle line
-        for wdg in (self.left, self.head, self.grid, self.right, self.top, self.rates):
-            wdg.set_valign(mid)
-        self.left.set_spacing(12 if on else 6)
-        self.head.set_max_width_chars(26 if on else 34)
-        # one line: the hidden "Space used" cell goes last, so it leaves no gap (it must fit 1024 px wide)
-        places = ({"enc": (0, 0), "prog": (1, 0), "today": (2, 0), "space": (3, 0)} if on else
-                  {"enc": (0, 0), "space": (1, 0), "prog": (0, 1), "today": (1, 1)})
-        for key, (col, row) in places.items():
-            box = self.cells[key][0]
-            self.grid.child_set_property(box, "left-attach", col)
-            self.grid.child_set_property(box, "top-attach", row)
-            box.set_orientation(H if on else V)
-            box.set_valign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
-            box.set_spacing(4 if on else 2)
-            # one line on a narrow window: labels may shorten with "…" instead of widening the window
-            for lb in self.cells[key][1:3]:
-                lb.set_ellipsize(Pango.EllipsizeMode.END)
-                lb.set_width_chars(4 if on else -1)
-            pb = self.cells[key][3]
-            if pb is not None:
-                pb.set_valign(Gtk.Align.CENTER)
-                pb.set_size_request(36 if on else 72, -1)
-        self.grid.set_column_homogeneous(not on)
-        self.grid.set_column_spacing(10 if on else 16)
-        self.graph_title.set_visible(not on)
-        self.set_spacing(10 if on else 16)
-        self.right.set_spacing(8 if on else 4)
-        self.right.set_orientation(H if on else V)
-        self.right.reorder_child(self.graph, 0 if on else 1)
-        # one line: the slim graph keeps a fixed width and the free room goes to the text, centred in the line
-        self.graph.set_size_request(140 if on else -1, 24 if on else 72)
-        self.graph.set_hexpand(not on)
-        self.child_set_property(self.left, "expand", on)
-        self.child_set_property(self.right, "expand", not on)
-        self.grid.set_halign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
-        self.grid.set_hexpand(on)
-        self.graph.set_valign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
+        self.left.set_visible(not on)
+        self.right.set_visible(not on)
+        self.line_box.set_visible(on)
+        if on:
+            self.line_box.show_all()
         self.toggle_img.set_from_icon_name("kluis-chevron-up-symbolic" if on else "kluis-chevron-down-symbolic",
                                            Gtk.IconSize.BUTTON)
         name = _("Show the full status panel") if on else _("Make the status panel one line")
@@ -186,7 +166,16 @@ class StatusPanel(Gtk.Box):
         parent = self.get_parent()
         if parent is not None:
             set_class(parent, "k-panel-compact", on)
-        self.graph.queue_draw()
+        self._fill_line()
+
+    def _fill_line(self):
+        e = GLib.markup_escape_text
+        parts = [f"<b>{e(self.head.get_text())}</b>"]
+        for key in ("enc", "prog", "today"):
+            _box, t, v, _pb = self.cells[key]
+            parts.append(f"<span alpha='75%'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
+        self.line.set_markup("     ".join(parts))
+        self.line_rates.set_text(self.rates.get_text())
 
     def refresh(self, st):
         m = self.app.manager
@@ -218,9 +207,12 @@ class StatusPanel(Gtk.Box):
                 pb.set_fraction(0)
         self.cells["today"][2].set_text(f"↑ {human_bytes(m.today.get('up', 0))} · ↓ {human_bytes(m.today.get('down', 0))}")
         self.refresh_rate()
+        if self.compact:
+            self._fill_line()
 
     def refresh_rate(self):
         up, down = self.app.manager.samples[-1] if self.app.manager.samples else (0, 0)
         self.rates.set_text(f"↓ {down / 1000:.0f}  ↑ {up / 1000:.0f}")
-        self.graph.queue_draw()
+        self.line_rates.set_text(self.rates.get_text())
+        (self.mini if self.compact else self.graph).queue_draw()
 

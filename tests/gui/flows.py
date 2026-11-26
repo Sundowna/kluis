@@ -1479,16 +1479,17 @@ def f22(d, env, app):
     def row_y(w):
         return w.translate_coordinates(app.window, 0, 0)[1] + w.get_allocated_height() // 2
 
-    cells = [sp.head, sp.cells["enc"][2], sp.cells["prog"][2], sp.cells["today"][2], sp.graph, sp.rates]
+    parts = [sp.line, sp.mini, sp.line_rates]
     d.expect(sp.compact and sp.get_allocated_height() < full_h * 0.6,
              f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
-    d.expect(all(w.get_mapped() for w in cells), "F-016 status, Encryption, Last run, Total today, graph, rates all shown")
-    ys = [row_y(w) for w in cells]
+    text = sp.line.get_text()
+    d.expect(all(w.get_mapped() for w in parts) and all(k in text for k in ("Encryption", "End to end", "Total today"))
+             and ("Last run" in text or "Uploading" in text or "Downloading" in text),
+             f"F-016 status, Encryption, Last run, Total today, graph and rates all in the line ({text})")
+    ys = [row_y(w) for w in parts]
     d.expect(max(ys) - min(ys) <= 4, f"F-016 side by side, vertically centred on one line ({ys})")
     if env.size[0] >= 1440:
-        cut = [w.get_text() for w in [sp.head] + [c for k in ("enc", "prog", "today") for c in sp.cells[k][1:3]]
-               if w.get_layout().is_ellipsized()]
-        d.expect(not cut, f"F-016 with room to spare nothing is shortened with … ({cut})")
+        d.expect(not sp.line.get_layout().is_ellipsized(), "F-016 with room to spare nothing is shortened with …")
     d.shot("compact status line")
     d.click(sp.toggle)
     yield 0.6
