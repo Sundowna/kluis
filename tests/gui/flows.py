@@ -901,6 +901,13 @@ def f13(d, env, app):
     d.click(app.window.qs_header_btn)
     yield 0.5
     d.expect(col.get_visible() and header_x() == x_before, "expanding again: the header buttons still don't move")
+    yield 0.3
+    win = app.window
+    d.expect(app.window.qs_header_btn.get_allocated_width() < 90,
+             f"F-018 Quick settings is a small icon button ({app.window.qs_header_btn.get_allocated_width()} px)")
+    col_y = col.translate_coordinates(win, 0, 0)[1]
+    page_y = win.stack.translate_coordinates(win, 0, 0)[1]
+    d.expect(abs(col_y - page_y) <= 2, f"F-018 the Quick settings column starts level with the page ({col_y}/{page_y})")
 
 
 # ------------------------------------------------------------------ F14
@@ -1477,7 +1484,7 @@ def f22(d, env, app):
              f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
     d.expect(all(w.get_mapped() for w in cells), "F-016 status, Encryption, Last run, Total today, graph, rates all shown")
     ys = [row_y(w) for w in cells]
-    d.expect(max(ys) - min(ys) <= 12, f"F-016 side by side on one line ({ys})")
+    d.expect(max(ys) - min(ys) <= 4, f"F-016 side by side, vertically centred on one line ({ys})")
     d.shot("compact status line")
     d.click(sp.toggle)
     yield 0.6
@@ -1492,6 +1499,13 @@ def f22(d, env, app):
     d.press("<Primary>4")
     yield 0.8
     d.expect(sp.compact and sp.toggle.get_visible(), "F-016 Photos: one line too")
+    d.press("<Primary>6")
+    yield 0.6
+    acts = [d.get(n, root=app.window.activity) for n in ("Show", "Open log folder", "Clear")]
+    mids = [row_y(a) for a in acts]
+    xs = [a.translate_coordinates(app.window, 0, 0)[0] for a in acts]
+    d.expect(max(mids) - min(mids) <= 4 and xs == sorted(xs), f"F-019 Activity buttons side by side ({mids}, {xs})")
+    d.shot("activity buttons")
     d.press("<Primary>3")
     yield 0.4
 

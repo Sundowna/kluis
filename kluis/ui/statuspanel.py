@@ -140,6 +140,9 @@ class StatusPanel(Gtk.Box):
         self.compact = on
         H, V = Gtk.Orientation.HORIZONTAL, Gtk.Orientation.VERTICAL
         self.left.set_orientation(H if on else V)
+        mid = Gtk.Align.CENTER if on else Gtk.Align.FILL     # one line: everything on the same middle line
+        for wdg in (self.left, self.head, self.grid, self.right, self.top, self.rates):
+            wdg.set_valign(mid)
         self.left.set_spacing(12 if on else 6)
         self.head.set_max_width_chars(26 if on else 34)
         # one line: the hidden "Space used" cell goes last, so it leaves no gap (it must fit 1024 px wide)
@@ -150,6 +153,7 @@ class StatusPanel(Gtk.Box):
             self.grid.child_set_property(box, "left-attach", col)
             self.grid.child_set_property(box, "top-attach", row)
             box.set_orientation(H if on else V)
+            box.set_valign(Gtk.Align.CENTER if on else Gtk.Align.FILL)
             box.set_spacing(4 if on else 2)
             # one line on a narrow window: labels may shorten with "…" instead of widening the window
             for lb in self.cells[key][1:3]:

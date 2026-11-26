@@ -69,9 +69,15 @@ class MainWindow(Gtk.ApplicationWindow):
         main = Gtk.Box(spacing=16, margin=16)
         self.root.add_named(main, "main")
         main.pack_start(self._sidebar(), False, False, 0)
+        # header across the full width (its small Quick settings button at the far right), then the page and the
+        # Quick settings column side by side: the column starts level with the page content (Walter, 2026-11-26)
+        right = vbox(spacing=14)
+        main.pack_start(right, True, True, 0)
+        right.pack_start(self._header(), False, False, 0)
+        body = Gtk.Box(spacing=16)
+        right.pack_start(body, True, True, 0)
         center = vbox(spacing=14)
-        main.pack_start(center, True, True, 0)
-        center.pack_start(self._header(), False, False, 0)
+        body.pack_start(center, True, True, 0)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, vexpand=True, hhomogeneous=False,
                                vhomogeneous=False)          # each tab sizes itself (fits 1024×640)
         self.home = HomePage(app)
@@ -90,7 +96,7 @@ class MainWindow(Gtk.ApplicationWindow):
         sp.pack_start(self.status_panel, True, True, 0)
         center.pack_start(sp, False, False, 0)
         self.qs_col = self._quick_settings()
-        main.pack_start(self.qs_col, False, False, 0)
+        body.pack_start(self.qs_col, False, False, 0)
 
         # toast (bottom centre, one at a time, announced to screen readers)
         self.toast_rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_UP, valign=Gtk.Align.END,
@@ -216,7 +222,9 @@ class MainWindow(Gtk.ApplicationWindow):
             return
         hits = self.app.search(q)[:12]
         if not hits:
-            self.search_list.pack_start(label(_("No matches in synced folders or folders you opened"), "k-muted",
+            reading = self.browser.loaded_once and self.browser.stats.busy
+            self.search_list.pack_start(label(_("No matches yet") if reading else
+                                              _("No matches in synced folders or folders you opened"), "k-muted",
                                               "k-s12"), False, False, 0)
         for remote, name in hits:
             self.search_list.pack_start(button(name, lambda r=remote: self._open_hit(r), "k-flat",
@@ -246,9 +254,8 @@ class MainWindow(Gtk.ApplicationWindow):
                                name=_("Sync now"))
         self.pause_btn = button(_("⏸ Pause"), lambda: self.app.set_paused(not self.app.settings.paused),
                                 name=_("Pause"))
-        self.qs_header_btn = self._qs_button()
-        self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
-        self.qs_header_btn.set_no_show_all(True)
+        self.qs_header_btn = self._qs_button()      # the only Quick settings toggle: a small icon, always there
+        self.qs_btn = self.qs_header_btn
         self.account_btn = AccountButton(self.app)
         row.pack_end(self.qs_header_btn, False, False, 0)     # far right: where the Quick settings column was
         row.pack_end(self.account_btn, False, False, 0)
@@ -278,8 +285,6 @@ class MainWindow(Gtk.ApplicationWindow):
         styled(col, "k-panel", "k-qs")
         col.set_size_request(100, -1)
         col.set_hexpand(False)
-        self.qs_btn = self._qs_button()
-        col.pack_start(self.qs_btn, False, False, 0)
         allb = Gtk.MenuButton()
         allb.add(vbox(label("⚙", "k-h2", xalign=0.5), label(_("All settings…"), "k-s12", xalign=0.5, wrap=True,
                                                              max_chars=12), spacing=0))
@@ -318,16 +323,15 @@ class MainWindow(Gtk.ApplicationWindow):
         return col
 
     def set_qs_collapsed(self, collapsed, save=True):
-        if collapsed:
-            # the header button takes exactly the room the column frees (its width + the 16 px gap, minus the
-            # header's 8 px gap), so Sync now, Pause and the account button don't move (Walter, 2026-11-26)
-            w = self.qs_col.get_allocated_width()
-            self.qs_header_btn.set_size_request((w if w > 1 else 132) + 8, -1)
         self.app.settings.qs_collapsed = collapsed
         self.qs_col.set_visible(not collapsed)
-        self.qs_header_btn.set_visible(collapsed)
-        for b in (self.qs_btn, self.qs_header_btn):
-            a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
+        b = self.qs_header_btn
+        a11y(b, _("Expand quick settings") if collapsed else _("Collapse quick settings"))
+        b.set_tooltip_text(_("Show quick settings") if collapsed else _("Hide quick settings"))
+        kids = b.get_child().get_children()
+        if len(kids) > 1:
+            kids[1].set_from_icon_name("kluis-chevron-down-symbolic" if collapsed else "kluis-chevron-up-symbolic",
+                                       Gtk.IconSize.BUTTON)
         if save:
             self.app.settings.save()
 

@@ -38,5 +38,7 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 
 - F-016 On Browse and Photos the bottom status panel is one line (status, Encryption, Last run, Total today, a slim graph and ↓/↑ side by side); its chevron opens the full card, which that tab then keeps — `tests/gui/flows.py: F22`
 - F-015 Collapsing or expanding Quick settings doesn't move *Sync now*, *Pause* or the account button — `tests/gui/flows.py: F13`
+- F-018 Quick settings opens and closes with a small icon button at the far right of the header; its column starts level with the page content — `tests/gui/flows.py: F13`
+- F-019 Activity: *Show*, *Open log folder* and *Clear* sit side by side in one row — `tests/gui/flows.py: F22`
 
 ## Removed

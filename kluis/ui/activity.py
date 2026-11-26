@@ -17,11 +17,11 @@ class ActivityPage(Gtk.Box):
         self.app = app
         self.filter = combo([("all", _("Everything")), ("problems", _("Problems only"))], "all",
                             lambda _v: self.rebuild(), _("Show"))
-        from .common import wrapbar
         bar = Gtk.Box(spacing=8)
         bar.pack_start(label(_("Recent activity"), "k-h3", ellipsize="end"), True, True, 0)
-        bar.pack_end(wrapbar(self.filter, button(_("Open log folder"), app.open_logs), button(_("Clear"), self._clear),
-                             per_line=1), False, False, 0)
+        for wdg in (button(_("Clear"), self._clear), button(_("Open log folder"), app.open_logs), self.filter):
+            wdg.set_valign(Gtk.Align.CENTER)                # side by side (Walter, 2026-11-26)
+            bar.pack_end(wdg, False, False, 0)
         self.pack_start(bar, False, False, 0)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         a11y(self.list, _("Activity"))

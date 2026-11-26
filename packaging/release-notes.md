@@ -14,7 +14,8 @@
 - The ↻ Reload button in Browse now looks like a button.
 - **Search finds files in subfolders** of the folder open in Browse, not only in that folder.
 - **More room on Browse and Photos:** the status panel at the bottom becomes one line there, with everything side by side; its chevron opens the full card.
-- The buttons at the top stay in place when you collapse or expand Quick settings.
+- **Tidier layout:** Quick settings opens and closes with a small icon at the top right, and its column starts level with the page. The buttons at the top never move.
+- Activity's buttons sit side by side; the Photos Download card has no empty space under its options.
 - If Kluis is closed or force-quit during a download, the download stops too.
 
 ### Notes
