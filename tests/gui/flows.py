@@ -53,6 +53,15 @@ def set_cfg(env, **kw):
     json.dump(cfg, open(p, "w"))
 
 
+def autostart_entry():
+    """What starts Kluis at sign-in: the .desktop file on Linux, the registry Run value on Windows ("" = none)."""
+    if os.name == "nt":
+        from kluis.system import autostart_windows
+        return autostart_windows() or ""
+    p = os.path.join(os.environ["XDG_CONFIG_HOME"], "autostart", "kluis.desktop")
+    return open(p).read() if os.path.exists(p) else ""
+
+
 def answer(*items):
     from kluis.ui import dialogs
     dialogs.TEST_ANSWERS.extend(items)
@@ -131,7 +140,7 @@ def write_manifest(env, path, sha=None, version="0.9.0"):
     json.dump({"Releases": [{"Version": version, "CategoryName": "Stable",
                              "Files": [{"Platform": platform_key(), "Url": serve(path),
                                         "Sha512CheckSum": sha}]}]}, open(mf, "w"))
-    os.environ["KLUIS_TEST_MANIFEST"] = "file://" + mf
+    os.environ["KLUIS_TEST_MANIFEST"] = harness.file_uri(mf)
 
 
 def f1(d, env, app):
@@ -199,8 +208,10 @@ def f2(d, env, app):
     yield until(lambda: d.has_text("didn't match"), 20, "mismatch message")
     d.expect(d.has_text("The download didn't match Proton's checksum, so it was deleted. Try again."),
              "mismatch wording")
-    d.expect(not os.path.exists(os.path.join(env.home, ".local", "bin", ".proton-drive.download")) and
-             not os.path.exists(os.path.join(env.home, ".local", "bin", "proton-drive")), "file deleted")
+    from kluis.cli import DOWNLOAD_NAME
+    from kluis.paths import BIN_DIR, CLI_NAME
+    d.expect(not os.path.exists(os.path.join(BIN_DIR, DOWNLOAD_NAME)) and
+             not os.path.exists(os.path.join(BIN_DIR, CLI_NAME)), "file deleted")
     d.expect(not d.get("Next").is_sensitive(), "Next stays disabled")
     d.shot("checksum mismatch")
     write_manifest(env, os.path.join(env.tmp, "release", "proton-drive"))
@@ -817,8 +828,7 @@ def f12(d, env, app):
     s2 = kc.Settings.load()
     d.expect(s2.autostart and s2.start_minimized and s2.interval_minutes == 30 and s2.theme == "light"
              and s2.notifications == "problems" and s2.accent == "purple", "every control persists")
-    d.expect(os.path.exists(os.path.join(os.environ["XDG_CONFIG_HOME"], "autostart", "kluis.desktop")),
-             "autostart .desktop written")
+    d.expect(autostart_entry(), "starts at sign-in (.desktop file on Linux, Run key on Windows)")
     d.shot("light theme applied")
     # root move + Undo (the folder chooser answer is the new parent)
     new_parent = os.path.join(env.tmp, "data-disk")
@@ -1065,7 +1075,7 @@ def setup_f16(env):
     json.dump([{"tag_name": f"v{newer}", "prerelease": False,
                 "html_url": f"https://github.com/Sundowna/kluis/releases/tag/v{newer}"},
                {"tag_name": f"v{beta}", "prerelease": True, "html_url": "u"}], open(rel, "w"))
-    os.environ["KLUIS_TEST_RELEASES"] = "file://" + rel
+    os.environ["KLUIS_TEST_RELEASES"] = harness.file_uri(rel)
     set_cfg(env, app_last_check=0, cli_last_check=time.time())
 
 
@@ -1116,8 +1126,7 @@ def f17b(d, env, app):
     yield until(lambda: app.window is not None, 20, "app up")
     yield 1
     d.expect(not app.window.get_visible() or not app.tray.available, "only the panel icon")
-    d.expect("--hidden" in open(os.path.join(os.environ["XDG_CONFIG_HOME"], "autostart", "kluis.desktop")).read(),
-             "autostart uses --hidden")
+    d.expect("--hidden" in autostart_entry(), "autostart uses --hidden")
     app.present_window()
     yield 0.3
     d.shot("from panel")
@@ -1582,6 +1591,52 @@ def f23(d, env, app):
     d.shot("960 px wide")
 
 
+# ------------------------------------------------------------------ F24
+def setup_f24(env):
+    set_cfg(env, folders=folders_cfg(env, "Documents"), notifications="all")
+
+
+def f24(d, env, app):
+    """F-023 the panel / notification-area icon: same menu everywhere; on Windows the icon, its clicks and
+    notifications are Windows' own. F-025 starting at sign-in follows the setting."""
+    yield main_ready(app)
+    yield idle(app)
+    tray = app.tray
+    labels = [i.get_label() for i in tray.menu.get_children() if i.get_label()]
+    d.expect(labels[1:] == ["Sync now", "Pause syncing", "Open Kluis", "Proton Drive on the web", "Quit Kluis"],
+             f"F-023 the icon's menu ({labels})")
+    if os.name == "nt":
+        d.expect(tray.kind == "windows" and tray.icon.added and tray.icon.hicon,
+                 "F-023 Kluis's icon is in the Windows notification area")
+        items = tray._windows_menu()
+        d.expect([i[0] for i in items if i] == [i.get_label() for i in tray.menu.get_children() if i.get_label()]
+                 and items[0][1] is None, "F-023 the Windows menu has the same entries; the status line is greyed out")
+        app.window.hide()
+        from kluis import wintray
+        tray.icon.u.SendMessageW(tray.icon.hwnd, wintray.WM_TRAY, 0, wintray.NIN_SELECT)     # a click on the icon
+        yield until(lambda: app.window.get_visible(), 10, "F-023 a click on the icon opens Kluis")
+        pause = next(i for i, it in enumerate(items, 1) if it and it[0] == "Pause syncing")
+        tray.icon.menu_actions = {i: it[1] for i, it in enumerate(items, 1) if it}
+        tray.icon.run_menu_item(pause)
+        yield until(lambda: app.settings.paused, 10, "F-023 Pause syncing from the icon's menu")
+        app.set_paused(False)
+        app.window.hide()
+        tray.icon.u.SendMessageW(tray.icon.hwnd, wintray.WM_TRAY, 0, wintray.NIN_BALLOONUSERCLICK)
+        yield until(lambda: app.window.get_visible(), 10, "F-023 a click on a notification opens Kluis")
+        d.expect(tray.balloon("Kluis test", "A notification from the tray icon"),
+                 "F-023 Windows accepts Kluis's notification")
+    n = len(app.sent_notifications)
+    app.notify("Conflict in Documents", "Kept both copies", force=True)
+    d.expect(len(app.sent_notifications) == n + 1, "F-023 a notification goes out")
+    app.set_setting("autostart", True)
+    d.expect(autostart_entry() and "kluis" in autostart_entry().lower(), "F-025 Start at sign-in on: Kluis starts")
+    app.set_setting("start_minimized", True)
+    d.expect("--hidden" in autostart_entry(), "F-025 Start hidden: only the icon")
+    app.set_setting("autostart", False)
+    d.expect(not autostart_entry(), "F-025 Start at sign-in off: nothing starts Kluis")
+    d.shot("tray")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1591,7 +1646,7 @@ FLOWS = {
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
-    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}),
+    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}),
 }
 
 

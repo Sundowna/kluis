@@ -448,7 +448,8 @@ class SettingsDialog:
         self.home = self._home_combo()
         rows = [
             (_("Start at login"), None, self.autostart),
-            (_("Start hidden"), _("Only the panel icon shows at login."), self.hidden),
+            (_("Start hidden"), _("Only the Kluis icon in the notification area shows at sign-in.") if os.name == "nt"
+             else _("Only the panel icon shows at login."), self.hidden),
             (_("Check Proton Drive"), _("Local changes are watched instantly."), self.interval),
             (_("Theme"), None, self.theme),
             (_("Accent colour"), _("Purple matches other Proton apps."), self.accent),
@@ -485,6 +486,7 @@ class SettingsDialog:
         # 4. Account
         email = app.settings.account or app.manager.email or _("Signed in")
         group(_("Account"), [(email if app.manager.logged_in else _("Not signed in"),
+                              _("Session kept in Windows Credential Manager") if os.name == "nt" else
                               _("Session kept in your keyring"),
                               button(_("Sign out…"), self._sign_out, "k-danger"))])
         from .. import accounts as acc

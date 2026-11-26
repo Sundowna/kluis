@@ -17,7 +17,7 @@ from ..config import PHOTOS_ID
 from ..i18n import _, ngettext
 from ..photos import captured_dt
 from ..thumbs import Thumbnailer
-from .common import (a11y, button, combo, hbox, label, open_path, open_uri, run_bg, short_path, styled,
+from .common import (a11y, button, combo, hbox, label, open_path, open_uri, run_bg, short_path, special_dir, styled,
                      switch, vbox, wrap_check, wrapbar)
 from .dialogs import choose_local_folder
 from .theme import animations_enabled
@@ -574,7 +574,7 @@ class PhotosPage(Gtk.Box):
         self.up_path.kluis_label.set_text(short_path(ps.upload_dir) if ps.upload_dir else _("No folder chosen yet"))
 
     def _default_download_dir(self):
-        pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or os.path.expanduser("~/Pictures")
+        pics = special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or os.path.expanduser("~/Pictures")
         return os.path.join(pics, "Proton Photos")
 
     def _open_dir(self, path):
@@ -592,7 +592,7 @@ class PhotosPage(Gtk.Box):
         else:
             if on and not ps.upload_dir:
                 p = choose_local_folder(self.get_toplevel(), _("Add photos from which folder?"),
-                                        GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES))
+                                        special_dir(GLib.UserDirectory.DIRECTORY_PICTURES))
                 if not p:
                     self.up.switch.set_active(False)
                     return

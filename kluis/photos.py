@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Callable
 
 from .cli import CliError, PhotoItem, ProtonDriveCli
+from .system import is_inside
 from .config import PhotoSettings
 from .config import PART_DIR
 from .engine import GUARD_FILES, GUARD_SHARE, Cancelled, SyncResult, move_to_trash, sha1_file
@@ -274,12 +275,11 @@ class PhotoSync:
     def _upload(self, ps: PhotoSettings, res: SyncResult):
         self._emit("phase", text="Looking for new photos to add…")
         done = self.store.photos_uploaded()
-        skip_root = os.path.realpath(ps.download_dir) + os.sep if ps.download else None
+        skip_root = ps.download_dir if ps.download and ps.download_dir else None
         todo = []
         for dirpath, dirnames, filenames in os.walk(ps.upload_dir):
             self._check()
-            real = os.path.realpath(dirpath) + os.sep
-            if skip_root and real.startswith(skip_root):
+            if skip_root and is_inside(dirpath, skip_root):
                 dirnames[:] = []
                 continue  # never re-upload the downloaded copies
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]

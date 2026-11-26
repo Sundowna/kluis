@@ -24,7 +24,6 @@ from kluis.state import StateStore  # noqa: E402
 
 CLOUD = os.path.join(TMP, "cloud", "my-files")
 HOME = os.path.join(TMP, "home")
-TRASH_FILES = os.path.join(os.environ["XDG_DATA_HOME"], "Trash", "files")
 cli = ProtonDriveCli(harness.MOCK)
 store = StateStore(os.path.join(TMP, "state.sqlite"))
 eng = SyncEngine(cli, store)
@@ -50,7 +49,7 @@ os.remove(f"{CLOUD}/One/f1.txt")
 eng.sync(f1)
 check(any(os.path.basename(e["orig"]) == "f0.txt" for e in mock_trash().values()),
       "local delete → item is in the Proton Drive trash (restorable)")
-check(os.path.exists(os.path.join(TRASH_FILES, "f1.txt")), "remote delete → file is in the freedesktop Trash")
+check(harness.in_trash(f"{f1.local}/f1.txt"), "F-027 remote delete → file is in the Trash (Linux) / Recycle Bin (Windows)")
 uid = next(u for u, e in mock_trash().items() if e["orig"].endswith("f0.txt"))
 found = cli.trashed([uid])
 check(found is not None and found[0].name == "f0.txt", "trashed item is found by uid, addressed by its unique name")
@@ -285,11 +284,12 @@ ok, probs = capabilities.self_test(harness.MOCK)
 os.environ.pop("MOCK_INCOMPATIBLE")
 check(not ok and any("restore" in p for p in probs), "a CLI without a needed command fails")
 from kluis import cliupdate  # noqa: E402
-from kluis.cli import ChecksumMismatch, download_cli, platform_key  # noqa: E402
+from kluis.cli import DOWNLOAD_NAME, ChecksumMismatch, download_cli, platform_key  # noqa: E402
+from kluis.paths import CLI_NAME  # noqa: E402
 bindir = os.path.join(TMP, "bin")
 os.makedirs(bindir)
-shutil.copy(harness.MOCK, os.path.join(bindir, "proton-drive"))
-old_sha = hashlib.sha1(open(os.path.join(bindir, "proton-drive"), "rb").read()).hexdigest()
+shutil.copy(harness.MOCK, os.path.join(bindir, CLI_NAME))
+old_sha = hashlib.sha1(open(os.path.join(bindir, CLI_NAME), "rb").read()).hexdigest()
 newbin = os.path.join(TMP, "new-proton-drive")
 shutil.copy(harness.MOCK, newbin)
 
@@ -298,9 +298,9 @@ def manifest(path, sha=None, version="0.9.1"):
     sha = sha or hashlib.sha512(open(path, "rb").read()).hexdigest()
     mf = os.path.join(TMP, "version.json")
     json.dump({"Releases": [{"Version": version, "CategoryName": "Stable",
-                             "Files": [{"Platform": platform_key(), "Url": "file://" + path, "Sha512CheckSum": sha}]}]},
+                             "Files": [{"Platform": platform_key(), "Url": harness.file_uri(path), "Sha512CheckSum": sha}]}]},
               open(mf, "w"))
-    os.environ["KLUIS_TEST_MANIFEST"] = "file://" + mf
+    os.environ["KLUIS_TEST_MANIFEST"] = harness.file_uri(mf)
 
 
 manifest(newbin, sha="ab" * 64)
@@ -309,15 +309,15 @@ try:
     raised = False
 except ChecksumMismatch:
     raised = True
-check(raised and not os.path.exists(os.path.join(bindir, ".proton-drive.download")),
+check(raised and not os.path.exists(os.path.join(bindir, DOWNLOAD_NAME)),
       "checksum mismatch: download deleted, nothing switched")
 open(newbin, "w").write(open(harness.MOCK).read().replace(
     'print(text)\n        return', 'print(text.replace("filesystem restore path...", ""))\n        return'))
 manifest(newbin)
 st = Settings()
-c2 = ProtonDriveCli(os.path.join(bindir, "proton-drive"))
+c2 = ProtonDriveCli(os.path.join(bindir, CLI_NAME))
 r = cliupdate.check_and_update(st, c2, signed_in=True, force=True, dest_dir=bindir)
-now_sha = hashlib.sha1(open(os.path.join(bindir, "proton-drive"), "rb").read()).hexdigest()
+now_sha = hashlib.sha1(open(os.path.join(bindir, CLI_NAME), "rb").read()).hexdigest()
 check(r.status == "incompatible" and now_sha == old_sha and "Proton changed its Drive tool" in r.message,
       "incompatible new CLI: previous binary kept, one notice")
 r = cliupdate.check_and_update(st, c2, signed_in=True, force=False, dest_dir=bindir)
@@ -345,7 +345,7 @@ real_connect = socket.socket.connect
 
 
 def spy(self, addr):
-    if self.family != socket.AF_UNIX:
+    if self.family != getattr(socket, "AF_UNIX", None):      # (Windows has no AF_UNIX attribute)
         connects.append(addr)
     return real_connect(self, addr)
 

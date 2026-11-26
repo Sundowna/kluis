@@ -4,8 +4,9 @@ What Kluis does, one line per feature. Each line names the tests that prove it.
 Sessions: read this before changing anything; never delete a line without the user's OK.
 
 Run the tests: `python3 tests/test_units.py` (and the other `tests/test_*.py`), and the GUI flows with
-`tests/gui/run_all.sh /tmp/flows` (Xvfb, light/dark × 1440x900/1024x640). CI runs all of them on Mint (Cinnamon)
-and Arch (KDE) for every push and pull request.
+`tests/gui/run_all.sh /tmp/flows` (Xvfb, light/dark × 1440x900/1024x640); on Windows `python tests/gui/run_windows.py OUT`
+and, after building the installer, `python tests/windows/test_install.py`. CI runs all of them on Mint (Cinnamon),
+Arch (KDE) and Windows for every push and pull request.
 
 ## Before this ledger
 
@@ -41,5 +42,21 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-018 Quick settings opens and closes with a small icon button at the far right of the header; its column starts level with the page content — `tests/gui/flows.py: F13`
 - F-019 Activity: *Show*, *Open log folder* and *Clear* sit side by side in one row — `tests/gui/flows.py: F22`
 - F-020 Every tab fits 960 px wide (half of a 1920 px screen), so Mint and KDE can snap Kluis to a side of the screen — `tests/gui/flows.py: F23`
+
+## Windows (Kluis 1.2)
+
+Same window, tabs and behaviour as on Linux; these lines are what Windows does differently.
+
+- F-021 A file or folder in Proton Drive whose name Windows can't store (`: ? " < > | \ *`, a trailing dot or space, CON, NUL…) or that differs from a neighbour only in upper/lower case is left out: never downloaded under another name, never moved to a trash, untouched in Proton Drive; Activity says once which and why, and the rest of the folder syncs — `tests/test_engine.py: names Windows can't store`, `tests/test_units.py: Windows`
+- F-022 Windows letter case: notes.txt on this computer and Notes.txt in Proton Drive are one file (no duplicate, no conflict); folder checks (already syncing, inside, drive root) ignore case — `tests/test_engine.py: names Windows can't store`, `tests/test_units.py: Windows`
+- F-023 Kluis's icon sits in the Windows notification area with the same menu as on Linux (status, Sync now, Pause, Open Kluis, Proton Drive on the web, Quit); a click opens Kluis; notifications come from the icon and a click on one opens Kluis — `tests/gui/flows.py: F24`
+- F-024 Switching Proton accounts keeps each account's session in Windows Credential Manager (the CLI's own item `ch.proton.drive/drive-sdk-cli/auth-session`, copied byte for byte) — `tests/test_units.py: Windows`
+- F-025 *Start at sign-in* adds Kluis to Windows' startup apps (registry Run key, `--hidden` with *Start hidden*); off removes it — `tests/gui/flows.py: F24`, `tests/gui/flows.py: F17`
+- F-026 No console window flashes up when Kluis runs Proton's CLI or another program — `tests/test_lint.py`
+- F-027 A file deleted in Proton Drive goes to the Recycle Bin on Windows (the Trash on Linux); on a drive without a Recycle Bin (USB stick, network share) Kluis leaves the file in place and says so — `tests/test_safety.py: 1`, `tests/test_engine.py: names Windows can't store`
+- F-028 One Kluis at a time: starting Kluis again brings the running one to the front — `tests/test_units.py: Windows`, `tests/windows/test_install.py`
+- F-029 When Kluis ends in any way (Quit, crash, force quit), a running Proton CLI process ends too, on Windows as on Linux — `tests/test_units.py: CLI processes end with Kluis`
+- F-030 `Kluis-Setup-<version>.exe` installs Kluis for the current user (no administrator rights) with a Start menu entry; uninstalling removes the program and its startup entry and keeps settings and files — `tests/windows/test_install.py`
+- F-031 *System* theme follows Windows' app mode (light/dark), also when it changes while Kluis runs — untested (CI runners have one fixed mode)
 
 ## Removed

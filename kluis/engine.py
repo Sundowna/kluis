@@ -27,6 +27,8 @@ from .cli import CliError, ProtonDriveCli, RemoteNode, TransferSummary, rjoin
 from .config import PART_DIR, FolderPair
 from .errors import DISK_FULL, HoldError, classify
 from .state import Entry, StateStore
+from .system import IS_WINDOWS, windows_name_problem
+from .system import move_to_trash as _system_trash
 
 log = logging.getLogger("kluis.engine")
 BATCH = 40  # paths per CLI call
@@ -110,13 +112,8 @@ def conflict_name(rel: str) -> str:
 
 
 def move_to_trash(path: str):
-    """Freedesktop trash via Gio (what Nemo uses), so it shows up in the Trash folder."""
-    try:
-        from gi.repository import Gio
-        Gio.File.new_for_path(path).trash(None)
-    except ImportError:
-        import subprocess
-        subprocess.run(["gio", "trash", path], check=True)
+    """Freedesktop Trash via Gio on Linux (what Nemo uses), the Recycle Bin on Windows (kluis/system.py)."""
+    _system_trash(path)
 
 
 class SyncEngine:
@@ -126,6 +123,8 @@ class SyncEngine:
         self.store = store
         self.on_event = on_event or (lambda *a, **k: None)
         self._cancel = False
+        self.windows = IS_WINDOWS          # names Windows can't store (fit_windows_names); tests switch it on
+        self._told: set = set()            # (folder id, rel) of skipped names already logged this session
 
     # ---------------- public ----------------
     def cancel(self):
@@ -157,6 +156,8 @@ class SyncEngine:
             if f.mode != "backup":
                 self._emit(f, "phase", text="Looking for changes in Proton Drive…")
                 remote = self.scan_remote(f)
+                if self.windows:
+                    remote, local = self.fit_windows_names(f, local, remote, state)
             plan = self.make_plan(f, local, remote, state)
             log.info("[%s] plan: %s", f.name, plan.describe())
             if dry_run:
@@ -298,6 +299,8 @@ class SyncEngine:
                         rel = posixpath.join(rel_dir, de.name) if rel_dir else de.name
                         if self._ignored(f, rel):
                             continue
+                        if IS_WINDOWS and getattr(de, "is_junction", lambda: False)():
+                            continue        # a Windows junction points elsewhere (like a symlink): not followed
                         try:
                             st = de.stat(follow_symlinks=False)
                         except OSError:
@@ -339,6 +342,60 @@ class SyncEngine:
                     self._emit(f, "phase", text=f"Looking in Proton Drive… {done} folders")
                     queue.append((rel, self.cli.list(rjoin(f.remote, rel))))
         return out
+
+    # ---------------- Windows names ----------------
+    def fit_windows_names(self, f: FolderPair, local: dict, remote: dict, state: dict):
+        """Proton Drive (like Linux) allows names Windows can't store, and names that differ only in upper and
+        lower case ("Notes.txt" next to "notes.txt"), which are the same file on Windows. Such items are left
+        out of the sync: never downloaded under another name, never moved to a trash, nothing changed in
+        Proton Drive; the Activity log says why. Of a pair that differs only in case, the one Kluis already
+        syncs (or the one on this computer) stays in the sync.
+
+        Local names Windows reports in another case than Proton Drive ("notes.txt" on disk, "Notes.txt" in
+        Proton) are the same item: they take Proton Drive's spelling, so the sync doesn't see two files.
+        Returns (remote, local) to plan with."""
+        dropped: list[str] = []
+        skipped: list[tuple[str, str]] = []
+        for rel in sorted(remote):
+            if self._under(rel, dropped):
+                continue
+            why = windows_name_problem(posixpath.basename(rel))
+            if why:
+                dropped.append(rel)
+                skipped.append((rel, why))
+        groups = defaultdict(list)
+        for rel in remote:
+            if not self._under(rel, dropped):
+                groups[rel.casefold()].append(rel)
+        for key in sorted(groups, key=lambda k: k.count("/")):
+            rels = [r for r in groups[key] if not self._under(r, dropped)]
+            if len(rels) < 2:
+                continue
+            keep = next((r for r in sorted(rels) if r in state), None) or                 next((r for r in sorted(rels) if r in local), None) or sorted(rels)[0]
+            for r in sorted(rels):
+                if r != keep:
+                    dropped.append(r)
+                    skipped.append((r, f"its name differs from {posixpath.basename(keep)} only in upper and "
+                                       "lower case, and Windows can't keep both in one folder"))
+        remote = {r: n for r, n in remote.items() if not self._under(r, dropped)}
+        for rel, why in skipped:
+            if (f.id, rel) not in self._told:
+                self._told.add((f.id, rel))
+                log.warning("[%s] not synced: %s (%s)", f.name, rel, why)
+                self._emit(f, "log", level="warning", text=f"Left out {rel}: {why}. It stays in Proton Drive.")
+        spelling = {r.casefold(): r for r in state}
+        spelling.update({r.casefold(): r for r in remote})
+        moves = {rel: spelling[rel.casefold()] for rel in local
+                 if rel not in remote and rel not in state and rel.casefold() in spelling}
+        if moves:
+            fitted = {}
+            for rel, li in local.items():
+                new = moves.get(rel, rel)
+                if new in local and new != rel or new in fitted:
+                    new = rel        # a case-sensitive folder holds both spellings: keep each as it is
+                fitted[new] = li
+            local = fitted
+        return remote, local
 
     # ---------------- planning ----------------
     def _local_sha1(self, f: FolderPair, rel: str, li: LocalItem) -> str:
@@ -522,7 +579,11 @@ class SyncEngine:
             self._check()
             src = os.path.join(f.local, rel)
             new_rel = conflict_name(rel)
-            os.rename(src, os.path.join(f.local, new_rel))
+            try:
+                os.rename(src, os.path.join(f.local, new_rel))
+            except PermissionError as e:       # Windows: another program has the file open
+                res.errors.append(f"{rel} is in use by another program; Kluis tries again next time ({e})")
+                continue
             li = local.pop(rel)
             local[new_rel] = li
             self.store.delete(fid, rel)
@@ -682,12 +743,17 @@ class SyncEngine:
             now = None
         changed = now is not None and (before is None or before.is_dir or now.st_size != before.size
                                        or now.st_mtime_ns != before.mtime)
-        if changed:
-            # edited on this computer while we downloaded: keep both copies (invariant 2)
-            os.rename(target, os.path.join(f.local, conflict_name(rel)))
-            res.conflicts += 1
-            self._emit(f, "log", level="warning", text=f"Conflict in {rel}: kept both copies")
-        os.replace(staged, target)
+        try:
+            if changed:
+                # edited on this computer while we downloaded: keep both copies (invariant 2)
+                os.rename(target, os.path.join(f.local, conflict_name(rel)))
+                res.conflicts += 1
+                self._emit(f, "log", level="warning", text=f"Conflict in {rel}: kept both copies")
+            os.replace(staged, target)
+        except PermissionError as e:           # Windows: another program has the file open
+            os.unlink(staged)
+            res.errors.append(f"{rel} is in use by another program; Kluis tries again next time ({e})")
+            return
         st = os.stat(target)
         li = LocalItem(False, st.st_size, st.st_mtime_ns)
         self.store.store_sha1(target, li.size, li.mtime, sha)

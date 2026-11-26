@@ -1,4 +1,5 @@
 """End-to-end engine scenarios against the mock CLI. Run: python3 tests/test_engine.py"""
+import json
 import os
 import shutil
 import sys
@@ -15,11 +16,13 @@ os.environ["XDG_DATA_HOME"] = os.path.join(TMP, "data")
 os.environ["XDG_STATE_HOME"] = os.path.join(TMP, "state")
 os.environ["MOCK_ROOT"] = os.path.join(TMP, "cloud")
 sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, HERE)
 
 from kluis.cli import ProtonDriveCli  # noqa: E402
 from kluis.config import FolderPair  # noqa: E402
 from kluis.engine import SyncEngine  # noqa: E402
 from kluis.state import StateStore  # noqa: E402
+from harness import in_trash as harness_in_trash  # noqa: E402
 
 CLI = os.path.join(HERE, "mock_cli", "proton-drive")
 CLOUD = os.path.join(TMP, "cloud", "my-files")
@@ -145,6 +148,55 @@ eng.sync(fm)
 check(read(f"{M}/plan.md") == "p2", "mirror picks up remote edits")
 check(not os.path.exists(f"{CLOUD}/Team/local-extra.md"), "mirror never uploads")
 check(eng.sync(fm).message == "Up to date", "mirror stable")
+
+print("names Windows can't store (F-021, F-022)")
+# On Linux the mock cloud can hold every name Proton Drive allows, so the whole Windows rule runs end to end
+# (eng.windows = True is what a Windows Kluis does). On Windows the mock cloud is an NTFS folder: the
+# case-insensitive part runs there for real.
+eng.windows = True
+W = os.path.join(TMP, "home", "Mixed")
+os.makedirs(W, exist_ok=True)
+odd = ["a:b.txt", "ends with dot.", "CON.txt", "what?.md", "bad|dir/inner.txt"]
+if os.name != "nt":
+    for n in odd:
+        write(f"{CLOUD}/Mixed/{n}", "odd")
+    write(f"{CLOUD}/Mixed/Plan.md", "upper")
+    write(f"{CLOUD}/Mixed/plan.md", "lower")
+write(f"{CLOUD}/Mixed/ok.txt", "fine")
+fw = FolderPair(local=W, remote="/my-files/Mixed", mode="two-way")
+logged = []
+eng.on_event = lambda fid, kind, **d: logged.append(d.get("text", "")) if kind == "log" else None
+r = eng.sync(fw)
+check(r.status == "ok" and read(f"{W}/ok.txt") == "fine", f"F-021 a folder with odd names still syncs ({r.message})")
+if os.name != "nt":
+    check(sorted(os.listdir(W)) == ["Plan.md", "ok.txt"],
+          f"F-021 names Windows can't store are left out; of Plan.md/plan.md one is synced ({sorted(os.listdir(W))})")
+    check(all(os.path.exists(f"{CLOUD}/Mixed/{n}") for n in odd + ["plan.md", "Plan.md"]),
+          "F-021 left-out items stay untouched in Proton Drive")
+    check(sum("Left out" in t for t in logged) == len(odd) + 1 and any("upper and lower case" in t for t in logged),
+          "F-021 Activity says which items were left out and why")
+    logged.clear()
+    r = eng.sync(fw)
+    check(r.message == "Up to date" and not logged, "F-021 the next sync is quiet: nothing to do, said once")
+    trashed = json.load(open(os.path.join(TMP, "cloud", ".trash", "index.json"))) \
+        if os.path.exists(os.path.join(TMP, "cloud", ".trash", "index.json")) else {}
+    check(not any("Mixed" in e.get("orig", "") for e in trashed.values()), "F-021 nothing of it went to a trash")
+else:
+    write(f"{W}/notes.txt", "same text")
+    write(f"{CLOUD}/Mixed/Notes.txt", "same text")
+    write(f"{W}/sub/Deep.txt", "deep")
+    write(f"{CLOUD}/Mixed/SUB/Deep.txt", "deep")
+    r = eng.sync(fw)
+    names = sorted(os.listdir(f"{CLOUD}/Mixed"))
+    check(r.conflicts == 0 and names == ["Notes.txt", "SUB", "ok.txt"],
+          f"F-022 notes.txt here and Notes.txt in Proton Drive are one file, not two ({names}, {r.message})")
+    check(eng.sync(fw).message == "Up to date", "F-022 stable afterwards")
+    os.remove(f"{CLOUD}/Mixed/Notes.txt")
+    r = eng.sync(fw, allow_trash=1)          # 1 of 3 files is more than the guard's 10 %
+    check(not os.path.exists(f"{W}/notes.txt") and harness_in_trash(f"{W}/notes.txt"),
+          "F-022 deleting it in Proton Drive moves the local copy (other spelling) to the Recycle Bin")
+eng.windows = os.name == "nt"
+eng.on_event = lambda *a, **k: None
 
 print("cancel / logged out")
 cli.logout()

@@ -1,4 +1,4 @@
-# Kluis: a Proton Drive desktop app for Linux Mint and EndeavourOS
+# Kluis: a Proton Drive desktop app for Linux Mint, EndeavourOS and Windows
 
 *Kluis* (Afrikaans for *safe* or *vault*) is an **unofficial** desktop client for Proton Drive.
 It does no encryption or networking itself. Every file operation goes through **Proton's official
@@ -29,7 +29,16 @@ sudo pacman -U kluis-latest-any.pkg.tar.zst
 pacman pulls in everything Kluis needs. To update later, run the same two lines again; to remove:
 `sudo pacman -R kluis`. A `PKGBUILD` is in `packaging/arch/` if you prefer `makepkg -si`.
 
-**From source (either system):**
+**Windows 10 / 11:** download
+[`Kluis-Setup-latest.exe`](https://github.com/Sundowna/kluis/releases/latest/download/Kluis-Setup-latest.exe)
+and run it. It installs for your user only (no administrator rights) and adds Kluis to the Start menu. Windows may
+say "Windows protected your PC" because Kluis isn't signed by a company: click **More info → Run anyway**. Remove it
+in Settings → Apps; your settings stay in `%LOCALAPPDATA%\Kluis`.
+
+Proton also has its own official **Proton Drive app for Windows**. You can use both, but let each folder be synced by
+only one of them.
+
+**From source (Linux):**
 
 ```bash
 git clone https://github.com/Sundowna/kluis && cd kluis && ./install.sh
@@ -129,6 +138,9 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 | `~/.local/state/kluis/` | `kluis.log`, activity log |
 | `~/.local/bin/proton-drive` | the official CLI (if Kluis downloaded it) |
 
+On Windows the same files are in `%LOCALAPPDATA%\Kluis\` (`config`, `data`, `state`, `bin\proton-drive.exe`), kept
+sessions are in Credential Manager ("dev.kluis.Kluis/account/…"), and deleted files go to the Recycle Bin.
+
 ## Known limits (honest list)
 
 - **Remote checks list every folder.** The CLI has no change feed, so each check runs one `list`
@@ -142,6 +154,10 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 - **One account syncs at a time.** Proton's CLI holds one session per Linux user, so the other accounts' folders
   wait until you switch to them. Switching needs a desktop keyring (GNOME Keyring or KWallet's Secret Service);
   without one, every switch is a browser sign-in.
+- **Windows: some Proton Drive names can't exist on Windows** (`a:b.txt`, `notes.`, `CON.txt`, or `Notes.txt` next
+  to `notes.txt`). Kluis leaves such items out, never deletes them, and says so in Activity; rename them on the web
+  (or on Linux/Mac) to sync them. On drives without a Recycle Bin (USB sticks, network shares) Kluis never deletes
+  local files for a deletion in Proton Drive; it leaves them and says so.
 - **No storage figure.** The CLI has no quota command, so Kluis shows no "space used" (never a guess).
 - When Proton ships its own Linux app, compare the two. Kluis's settings never touch Proton's.
 
@@ -153,10 +169,12 @@ python3 tests/test_photos.py        # Proton Photos scenarios
 python3 tests/test_safety.py        # one test per safety rule (HANDOVER §7)
 python3 tests/test_units.py         # status text, ring mapping, migration, contrast …
 python3 tests/test_lint.py          # static checks + every module imports
-tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F21 under Xvfb, light/dark × 1440x900/1024x640
+tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F24 under Xvfb, light/dark × 1440x900/1024x640
+python tests/gui/run_windows.py out # the same flows on Windows (MSYS2 UCRT64 Python with GTK 3)
 KLUIS_DEBUG=1 python3 -m kluis      # run from the source folder with debug logs
 python3 -m kluis --selftest         # real account, own test folder only
 packaging/build-deb.sh              # build dist/kluis_<version>_all.deb
+packaging/windows/build.sh          # build dist/Kluis-Setup-<version>.exe (MSYS2 UCRT64 + Inno Setup)
 ```
 
 The 1.0 redesign's handover, decisions and feature inventory are in `docs/redesign/`.
@@ -165,7 +183,7 @@ The 1.0 redesign's handover, decisions and feature inventory are in `docs/redesi
 (taken from `ProtonDriveApps/sdk/cli`). It is used for tests only.
 
 Releases: bump `VERSION` in `kluis/__init__.py` and `pkgver` in `packaging/arch/PKGBUILD`, then push to `main`.
-GitHub Actions builds the `.deb` (Ubuntu) and the pacman package (in an Arch Linux container), installs and starts
-each, and publishes release `vX.Y.Z` once both pass.
+GitHub Actions builds the `.deb` (Ubuntu), the pacman package (in an Arch Linux container) and the Windows installer
+(MSYS2 GTK 3 + PyInstaller + Inno Setup), installs and starts each, and publishes release `vX.Y.Z` once all pass.
 
 License: GPL-3.0.

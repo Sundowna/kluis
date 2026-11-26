@@ -230,7 +230,7 @@ class SelfTest:
 
 def _log(level, text, detail=""):
     ensure_dirs()
-    with open(ACTIVITY_FILE, "a") as fh:
+    with open(ACTIVITY_FILE, "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"ts": time.time(), "level": level, "folder": "", "text": text, "detail": detail},
                             ensure_ascii=False) + "\n")
 
@@ -261,6 +261,8 @@ def main(argv=None) -> int:
     _log("error", "Self-test FAILED — syncing stays paused", detail)
     settings.paused = True
     settings.save()
+    if os.name == "nt":              # the running Kluis shows it in Activity; no notify-send on Windows
+        return 1
     try:
         import subprocess
         subprocess.run(["notify-send", "-a", "Kluis", "Kluis self-test failed",

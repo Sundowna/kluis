@@ -24,6 +24,7 @@ from .manager import SyncManager  # noqa: E402
 from .state import StateStore  # noqa: E402
 from .paths import AUTOSTART_DIR, LOG_FILE, STATE_DIR, ensure_dirs  # noqa: E402
 from .status import Snapshot, compute, estimate_eta  # noqa: E402
+from .system import IS_WINDOWS  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
 log = logging.getLogger("kluis")
@@ -36,7 +37,8 @@ def setup_logging():
     root = logging.getLogger("kluis")
     if any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
         return
-    h = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3)
+    h = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3,
+                                             encoding="utf-8")
     h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root.setLevel(logging.INFO)
     root.addHandler(h)
@@ -47,7 +49,9 @@ def setup_logging():
 
 class KluisApp(Gtk.Application):
     def __init__(self, hidden=False):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        # Windows has no session bus for GApplication's "one Kluis at a time": kluis/winsingle.py does it there
+        flags = Gio.ApplicationFlags.NON_UNIQUE if IS_WINDOWS else Gio.ApplicationFlags.FLAGS_NONE
+        super().__init__(application_id=APP_ID, flags=flags)
         self.start_hidden = hidden
         self.window = None
         self.tray = None
@@ -148,6 +152,8 @@ class KluisApp(Gtk.Application):
                 self.settings.told_background = True
                 self.settings.save()
                 self.notify(_("Kluis keeps syncing in the background"),
+                            _("Click the Kluis icon in the notification area to open it again, or choose Quit "
+                              "from its menu.") if IS_WINDOWS else
                             _("Click the panel icon to open it again, or choose Quit from its menu."), force=True)
             return True
         self.quit_app()
@@ -413,7 +419,7 @@ class KluisApp(Gtk.Application):
             self.theme.apply(value)
         elif key == "accent":
             self.theme.apply(s.theme, value)
-        elif key == "autostart":
+        elif key in ("autostart", "start_minimized"):      # Start hidden changes the entry's --hidden too
             self._write_autostart()
         elif key == "skip_thumbnails":
             self.cli.skip_thumbnails = value
@@ -888,6 +894,13 @@ class KluisApp(Gtk.Application):
         return hits
 
     def _write_autostart(self):
+        if IS_WINDOWS:
+            from .system import set_autostart_windows
+            try:
+                set_autostart_windows(self.settings.autostart, self.settings.start_minimized)
+            except OSError as e:
+                log.warning("could not change starting at sign-in: %s", e)
+            return
         path = AUTOSTART_DIR / "kluis.desktop"
         if self.settings.autostart:
             AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
@@ -906,7 +919,7 @@ class KluisApp(Gtk.Application):
     def about(self):
         d = Gtk.AboutDialog(transient_for=self.window, modal=True, program_name=APP_NAME, version=VERSION,
                             logo_icon_name=APP_ID,
-                            comments=_("Unofficial Proton Drive client for Linux Mint and EndeavourOS. Every transfer "
+                            comments=_("Unofficial Proton Drive client for Linux Mint, EndeavourOS and Windows. Every transfer "
                                        "goes through Proton’s official CLI, so files stay end-to-end encrypted. "
                                        "Not affiliated with Proton AG.\n\n“Kluis” is Afrikaans for a safe."),
                             license_type=Gtk.License.GPL_3_0,
@@ -1045,6 +1058,10 @@ class KluisApp(Gtk.Application):
         n.set_icon(Gio.ThemedIcon.new(APP_ID))
         n.set_default_action("app.show")
         self.sent_notifications.append((title, body))
+        if IS_WINDOWS:          # GLib has no Windows notifications: the tray icon shows them (click opens Kluis)
+            if self.tray:
+                self.tray.balloon(title, body)
+            return
         self.send_notification(None, n)
 
     sent_notifications: list = []
@@ -1059,6 +1076,12 @@ def run(argv):
         return 0
     hidden = "--hidden" in argv
     argv = [a for a in argv if a != "--hidden"]
+    if IS_WINDOWS:
+        from . import winsingle
+        if winsingle.already_running():       # a second start brings the running Kluis to the front
+            return 0
     app = KluisApp(hidden=hidden)
+    if IS_WINDOWS:
+        winsingle.listen(lambda: GLib.idle_add(lambda: (app.activate(), False)[1]))
     return app.run(argv)
 

@@ -226,7 +226,85 @@ from kluis.cli import RemoteNode  # noqa: E402
 dev = RemoteNode.from_json({"uid": "u", "type": "Windows", "rootFolderUid": "r", "name": {"ok": True, "value": "WalterXPS"}})
 check(dev.is_folder and dev.name == "WalterXPS", "F-013 a computer under /devices is a folder named after it")
 
-print("CLI processes end with Kluis")
+print("Windows: names, paths, keyring (F-021, F-022, F-024)")
+from kluis.system import is_inside, is_system_root, windows_name_problem  # noqa: E402
+for bad in ("a:b.txt", "what?.md", 'say "hi".txt', "x<y", "pipe|d", "back\\slash", "ends.", "ends ", "CON",
+            "con.txt", "LPT1.log", "nul", "tab\tname"):
+    check(windows_name_problem(bad), f"F-021 {bad!r} can't exist on Windows")
+for good in ("notes.txt", "Ünïcødé ✓.md", ".hidden", "CONSOLE.txt", "a.b.c", "COM10"):
+    check(windows_name_problem(good) is None, f"F-021 {good!r} is fine on Windows")
+check(is_inside(os.path.join(TMP, "a", "b"), os.path.join(TMP, "a")) and
+      not is_inside(os.path.join(TMP, "ab"), os.path.join(TMP, "a")), "inside a folder, not just a longer name")
+check(is_system_root(os.path.abspath(os.sep)), "the root of the system disk is refused as a synced folder")
+if os.name == "nt":
+    check(is_inside(os.path.join(TMP, "A", "b").upper(), os.path.join(TMP, "a").lower()),
+          "F-022 Windows paths compare without regard to case")
+    check(validate_local(s, "C:\\") is not None and validate_local(s, d.upper()) == "Already syncing",
+          "F-022 a drive root is refused; the same folder in other letters is already syncing")
+from kluis.cli import RemoteNode  # noqa: E402
+from kluis.engine import LocalItem, SyncEngine  # noqa: E402
+from kluis.state import Entry  # noqa: E402
+from kluis.config import FolderPair  # noqa: E402
+
+
+def _rn(name, folder=False):
+    return RemoteNode(name=name, type="folder" if folder else "file", sha1="0" * 40)
+
+
+_eng = SyncEngine(None, None)
+_remote = {"A.txt": _rn("A.txt"), "a.txt": _rn("a.txt"), "x:y": _rn("x:y"), "dir.": _rn("dir.", True),
+           "dir./k": _rn("k"), "Docs": _rn("Docs", True), "docs": _rn("docs", True), "docs/z": _rn("z"),
+           "Docs/q": _rn("q"), "ok": _rn("ok")}
+_state = {"a.txt": Entry("a.txt", False)}
+_local = {"A.TXT": LocalItem(False, 1, 1), "DOCS": LocalItem(True), "DOCS/Q": LocalItem(False, 1, 1),
+          "mine.txt": LocalItem(False, 1, 1)}
+_r, _l = _eng.fit_windows_names(FolderPair(local=TMP, remote="/my-files/x"), _local, _remote, _state)
+check(sorted(_r) == ["Docs", "Docs/q", "a.txt", "ok"],
+      f"F-021 of names that differ only in case, the synced one stays; bad names leave with their contents ({sorted(_r)})")
+check(sorted(_l) == ["Docs", "Docs/q", "a.txt", "mine.txt"],
+      f"F-022 local names in other letters take Proton Drive's spelling ({sorted(_l)})")
+_l2 = {"a.txt": LocalItem(False, 1, 1), "A.txt": LocalItem(False, 2, 2)}
+_r2, _l2 = _eng.fit_windows_names(FolderPair(local=TMP, remote="/my-files/x"), _l2, {"A.txt": _rn("A.txt")}, {})
+check(len(_l2) == 2, "F-022 a case-sensitive Windows folder holding both spellings loses neither")
+
+if os.name == "nt":
+    from kluis.accounts import WinCredVault  # noqa: E402
+    _v = WinCredVault(live_target=f"dev.kluis.Kluis.test/{os.getpid()}/live",
+                      prefix=f"dev.kluis.Kluis.test/{os.getpid()}/acc/")
+    try:
+        _blob = bytes(range(256)) * 9                     # binary, 2304 bytes: close to Windows' 2560 limit
+        _v._write(_v.live_target, _blob, "auth-session", 2)
+        _live = _v.read_live()
+        _v.save("Lindi@x.ch", _live)
+        _v.clear_live()
+        check(_v.read_live() is None, "F-024 Credential Manager: the CLI's slot can be emptied")
+        _v.write_live(_v.load("lindi@x.ch"))
+        _back = _v._read(_v.live_target)
+        check(_back["blob"] == _blob and _back["user"] == "auth-session",
+              "F-024 a kept session goes back into the CLI's slot byte for byte, with its user name")
+        _v.forget("lindi@x.ch")
+        check(_v.load("lindi@x.ch") is None, "F-024 removing an account deletes its kept session")
+    finally:
+        _v.clear_live()
+        _v.forget("lindi@x.ch")
+
+if os.name == "nt":
+    print("Windows: one Kluis at a time (F-028)")
+    import subprocess as _sp  # noqa: E402
+    import time as _t  # noqa: E402
+    os.environ["KLUIS_TEST_INSTANCE"] = f"units-{os.getpid()}"
+    from kluis import winsingle  # noqa: E402
+    check(not winsingle.already_running(), "F-028 the first Kluis runs")
+    _shown = []
+    winsingle.listen(lambda: _shown.append(1))
+    _second = _sp.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {harness.REPO!r}); "
+                       "from kluis import winsingle; print(winsingle.already_running())"],
+                      capture_output=True, text=True, env=dict(os.environ), timeout=60)
+    _t.sleep(0.5)
+    check(_second.stdout.strip() == "True" and _shown == [1],
+          f"F-028 a second start hands over: the running Kluis shows its window ({_second.stdout!r}, {_shown})")
+
+print("CLI processes end with Kluis (F-029)")
 import subprocess  # noqa: E402
 import time as _time  # noqa: E402
 
@@ -249,13 +327,10 @@ _time.sleep(2)
 
 
 def _alive(pid):
-    try:
-        return "Z" not in open(f"/proc/{pid}/status").read().split("State:")[1].split()[0]
-    except OSError:
-        return False
+    return harness.pid_alive(pid)        # /proc on Linux, OpenProcess on Windows
 
 
-check(not _alive(_child), "a force-quit Kluis leaves no CLI process running (no orphan downloads)")
+check(not _alive(_child), "F-029 a force-quit Kluis leaves no CLI process running (no orphan downloads)")
 
 diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,

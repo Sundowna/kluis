@@ -376,7 +376,7 @@ class SyncManager:
         if level in ("warning", "error"):
             self.unread += 1
         try:
-            with open(ACTIVITY_FILE, "a") as fh:
+            with open(ACTIVITY_FILE, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(a.__dict__, ensure_ascii=False) + "\n")
         except OSError:
             pass
@@ -398,7 +398,7 @@ class SyncManager:
         self.activity.clear()
         self.activity.extend(entries)
         try:
-            with open(ACTIVITY_FILE, "w") as fh:
+            with open(ACTIVITY_FILE, "w", encoding="utf-8") as fh:
                 for a in reversed(entries):
                     fh.write(json.dumps(a.__dict__, ensure_ascii=False) + "\n")
         except OSError:
@@ -600,7 +600,7 @@ class SyncManager:
     def _load_today(self) -> dict:
         day = time.strftime("%Y-%m-%d")
         try:
-            d = json.loads(self._today_file().read_text())
+            d = json.loads(self._today_file().read_text(encoding="utf-8"))
             if d.get("day") == day:
                 return d
         except (OSError, ValueError):
@@ -616,7 +616,7 @@ class SyncManager:
     def _save_today(self):
         try:
             tmp = self._today_file().with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.today))
+            tmp.write_text(json.dumps(self.today), encoding="utf-8")
             os.replace(tmp, self._today_file())
         except OSError:
             pass
@@ -672,7 +672,7 @@ class SyncManager:
     # ---------- persistence ----------
     def _load_activity(self):
         try:
-            lines = ACTIVITY_FILE.read_text().splitlines()[-500:]
+            lines = ACTIVITY_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-500:]
         except OSError:
             return
         for line in lines:

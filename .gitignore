@@ -3,3 +3,6 @@
 /dist/
 __pycache__/
 dist/
+build/
+packaging/windows/kluis.ico
+packaging/windows/version.txt

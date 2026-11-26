@@ -12,7 +12,7 @@ from ..i18n import _
 from .common import a11y, button, hbox, label, set_class, styled, vbox
 from .theme import animations_enabled
 
-MAP = json.load(open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "worldmap.json")))
+MAP = json.load(open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "worldmap.json"), encoding="utf-8"))
 
 
 class WorldMap(Gtk.DrawingArea):

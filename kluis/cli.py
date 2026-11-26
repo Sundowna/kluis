@@ -26,27 +26,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .paths import BIN_DIR
+from .paths import BIN_DIR, CLI_NAME
+from .system import IS_WINDOWS, bind_to_kluis, cli_popen_kwargs, command_for
 
 log = logging.getLogger("kluis.cli")
 
+DOWNLOAD_NAME = ".proton-drive.download" + (".exe" if IS_WINDOWS else "")   # Windows runs only .exe files
 VERSION_JSON_URL = "https://proton.me/download/drive/cli/version.json"
 DOWNLOAD_PAGE_URL = "https://proton.me/download/drive/cli/index.html"
 NOT_LOGGED_IN_MARKERS = ("need to login", "need to log in", "not logged in", "login first")
 
 # A PROTON_DRIVE_CACHE_DIR the user set themselves stays the first account's cache.
 _USER_CACHE_DIR = os.environ.get("PROTON_DRIVE_CACHE_DIR", "")
-
-def _die_with_kluis():
-    """Child side of every CLI process: if Kluis ends for any reason (Quit, crash, force quit), the kernel
-    stops the CLI too. Found on a test laptop: a force-quit Kluis left a CLI download of 4 GB running."""
-    try:
-        import ctypes
-        import signal
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)    # PR_SET_PDEATHSIG
-    except Exception:  # noqa: BLE001  (not Linux/glibc: nothing to do)
-        pass
-
 
 # The CLI keeps a local sqlite cache and an events lock: run one process at a time.
 _CLI_LOCK = threading.RLock()
@@ -217,12 +208,9 @@ def find_cli(configured: str | None = None) -> str | None:
     which = shutil.which("proton-drive")
     if which:
         candidates.append(which)
-    candidates += [
-        str(BIN_DIR / "proton-drive"),
-        str(Path.home() / "Downloads" / "proton-drive"),
-        "/usr/local/bin/proton-drive",
-        "/opt/proton-drive/proton-drive",
-    ]
+    candidates += [str(BIN_DIR / CLI_NAME), str(Path.home() / "Downloads" / CLI_NAME)]
+    if not IS_WINDOWS:
+        candidates += ["/usr/local/bin/proton-drive", "/opt/proton-drive/proton-drive"]
     for c in candidates:
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
@@ -230,10 +218,14 @@ def find_cli(configured: str | None = None) -> str | None:
 
 
 def platform_key() -> str:
+    """The "Platform" of Proton's version.json: linux/x64, linux/x64-musl, windows/x64, windows/arm64, …"""
     machine = platform.machine().lower()
     arch = "arm64" if machine in ("aarch64", "arm64") else "x64"
+    if IS_WINDOWS:
+        return f"windows/{arch}"
     try:
-        musl = "musl" in subprocess.run(["ldd", "--version"], capture_output=True, text=True).stdout.lower()
+        musl = "musl" in subprocess.run(["ldd", "--version"], capture_output=True, text=True,
+                                        stdin=subprocess.DEVNULL).stdout.lower()
     except Exception:
         musl = False
     return f"linux/{arch}{'-musl' if musl else ''}"
@@ -287,7 +279,7 @@ def download_cli(progress: Callable[[int, int], None] | None = None, dest_dir: P
         raise CliError("Could not find an official Proton Drive CLI build for this computer.")
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    tmp = dest_dir / ".proton-drive.download"
+    tmp = dest_dir / DOWNLOAD_NAME
     h = hashlib.sha512()
     req = urllib.request.Request(rel["url"], headers={"User-Agent": "kluis"})
     try:
@@ -316,8 +308,20 @@ def download_cli(progress: Callable[[int, int], None] | None = None, dest_dir: P
             tmp.unlink(missing_ok=True)
             raise IncompatibleCli("Proton changed its Drive tool. Kluis needs an update for it.",
                                   stderr="; ".join(problems))
-    dest = dest_dir / "proton-drive"
-    os.replace(tmp, dest)
+    dest = dest_dir / CLI_NAME
+    try:
+        os.replace(tmp, dest)
+    except PermissionError:
+        if not IS_WINDOWS:
+            raise
+        # Windows can't overwrite a program that is running, but it can rename it out of the way
+        old = dest_dir / (CLI_NAME + ".old")
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            old = dest_dir / f"{CLI_NAME}.{os.getpid()}.old"
+        os.replace(dest, old)
+        os.replace(tmp, dest)
     return str(dest)
 
 
@@ -366,13 +370,15 @@ class ProtonDriveCli:
     def run(self, args: list[str], json_out: bool = True, timeout: float | None = None,
             ok_codes: Iterable[int] = (0,)):
         self._require()
-        cmd = [self.path, *args] + (["--json"] if json_out else [])
+        cmd = [*command_for(self.path), *args] + (["--json"] if json_out else [])
         log.debug("run %s", cmd)
         env = self.env()
         with _CLI_LOCK:
             self._cancelled = False
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=env, preexec_fn=_die_with_kluis)
+                                    stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                                    env=env, **cli_popen_kwargs())
+            bind_to_kluis(proc)
             self._current = proc
             try:
                 out, err = proc.communicate(timeout=timeout)
@@ -420,9 +426,10 @@ class ProtonDriveCli:
     def login(self, on_url: Callable[[str], None]) -> None:
         """Starts browser sign-in. Blocks until finished. The CLI opens the browser itself."""
         self._require()
-        proc = subprocess.Popen([self.path, "auth", "login", "--json"], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env(),
-                                preexec_fn=_die_with_kluis)
+        proc = subprocess.Popen([*command_for(self.path), "auth", "login", "--json"], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                errors="replace", env=self.env(), **cli_popen_kwargs())
+        bind_to_kluis(proc)
         self._current = proc
         try:
             for line in proc.stdout:

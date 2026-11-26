@@ -1,25 +1,28 @@
-## Kluis 1.1.0: more than one Proton account
+## Kluis 1.2.0: Kluis for Windows
 
 **Install**
-- Linux Mint / Ubuntu: download `kluis_1.1.0_all.deb` and double-click it.
+- Windows 10 / 11: download `Kluis-Setup-1.2.0.exe` and run it. It installs for your user only, no administrator
+  rights. If Windows says "Windows protected your PC", click **More info → Run anyway** (Kluis isn't signed by a company).
+- Linux Mint / Ubuntu: download `kluis_1.2.0_all.deb` and double-click it.
 - EndeavourOS / Arch: `curl -LO https://github.com/Sundowna/kluis/releases/latest/download/kluis-latest-any.pkg.tar.zst && sudo pacman -U kluis-latest-any.pkg.tar.zst`
 
 ### New
-- **Switch between Proton accounts**, like on proton.me. The account button at the top right opens a menu with your account, **Sign out**, and **Other accounts**.
-  - **Add another Proton account** from the ⋮ menu (or Settings → Other accounts → Add…). Proton's own browser sign-in opens; Kluis never sees your password.
-  - Click an account to switch. When your desktop keyring keeps that account's session, it takes one click; otherwise Proton's browser sign-in opens for that account, with "Use … instead" to go back.
-  - **Sign out** hands over to your next account. ✕ removes an account from Kluis; its files stay on this computer and in Proton Drive.
-- Each account keeps **its own folders, photo settings and sync history**. Only the active account syncs, and two accounts can't sync the same folder.
-- **Browse: Computers is easy to find.** *My files*, *Computers* and *Shared with me* are now buttons with icons at the top of Browse. Computers lists each computer Proton's desktop app syncs (for example a Windows PC); click one to see its folders. If *My files* is empty but a computer has folders, Browse says so.
-- The ↻ Reload button in Browse now looks like a button.
-- **Search finds files in subfolders** of the folder open in Browse, not only in that folder.
-- **More room on Browse and Photos:** the status panel at the bottom becomes one line there, with everything side by side; its chevron opens the full card.
-- **Tidier layout:** Quick settings opens and closes with a small icon at the top right, and its column starts level with the page. The buttons at the top never move.
-- Activity's buttons sit side by side; the Photos Download card has no empty space under its options.
-- If Kluis is closed or force-quit during a download, the download stops too.
+- **Kluis runs on Windows 10 and 11**, with the same window, tabs, light and dark theme, folder sync, Photos,
+  Browse, Shared with me and Proton accounts as on Linux.
+  - Kluis's icon sits in the notification area (bottom right) with the same menu; notifications come from it.
+  - *Start at sign-in* adds Kluis to Windows' startup apps. *System* theme follows Windows' light/dark app mode.
+  - Proton sessions for switching accounts are kept in Windows Credential Manager.
+  - A file deleted in Proton Drive goes to the Recycle Bin. On a drive without a Recycle Bin (USB stick, network
+    share) Kluis leaves the file where it is and tells you.
+  - Starting Kluis a second time brings the open Kluis to the front.
+  - Proton Drive names that can't exist on Windows (`a:b.txt`, `notes.`, `CON.txt`, or `Notes.txt` next to
+    `notes.txt`) are left out and never deleted; Activity says which ones.
+- Proton also has its own official Proton Drive app for Windows. You can use both, but let each folder be synced by
+  only one of them.
+
+### Fixed (all systems)
+- Turning *Start hidden* on or off now updates the start-at-login entry right away, not only at the next start.
 
 ### Notes
-- Nothing changes for one account: your folders and history stay where they were.
-- New dependency on Mint/Ubuntu: `gir1.2-secret-1` (installed automatically with the .deb). On Arch it's part of `libsecret`.
-- Copy diagnostics names no account emails.
+- Nothing changes on Linux: same folders, settings and history.
 - Not affiliated with Proton AG.

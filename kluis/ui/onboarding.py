@@ -39,7 +39,8 @@ class Onboarding(Gtk.Box):
         from .window import logo_image
         head = hbox(logo_image(48),
                     vbox(label(_("Welcome to Kluis"), "k-h0"),
-                         label(_("Proton Drive on Linux, through Proton’s official CLI"), "k-muted"), spacing=2),
+                         label(_("Proton Drive on Windows, through Proton’s official CLI") if os.name == "nt" else
+                               _("Proton Drive on Linux, through Proton’s official CLI"), "k-muted"), spacing=2),
                     spacing=14)
         card.pack_start(head, False, False, 0)
         self.bars = Gtk.Box(spacing=8, homogeneous=True)
@@ -218,6 +219,8 @@ class Onboarding(Gtk.Box):
             title = _("Sign in to Proton")
         self.body.pack_start(label(title, "k-h1", wrap=True, max_chars=50), False, False, 0)
         self.body.pack_start(label(_("Your browser opens Proton’s own sign-in page. Kluis never sees your password; "
+                                     "the session is kept in Windows Credential Manager.") if os.name == "nt" else
+                                   _("Your browser opens Proton’s own sign-in page. Kluis never sees your password; "
                                      "the session is kept in your system keyring."), "k-muted", wrap=True,
                                    max_chars=70), False, False, 0)
         self.sign_btn = button(_("Open Proton sign-in"), self._sign_in, "suggested-action", "k-big")

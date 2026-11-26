@@ -34,6 +34,42 @@ def setup(prefix="kluis-test-"):
     return tmp
 
 
+def file_uri(path):
+    """file:///… for a local path (also C:\… on Windows)."""
+    import pathlib
+    return pathlib.Path(os.path.abspath(path)).as_uri()
+
+
+def in_trash(path):
+    """Is the file that was at `path` now in the system trash? Linux: the freedesktop Trash under
+    XDG_DATA_HOME (the tests' own); Windows: the Recycle Bin of that drive ($I files name the original path)."""
+    if os.name != "nt":
+        return os.path.exists(os.path.join(os.environ["XDG_DATA_HOME"], "Trash", "files", os.path.basename(path)))
+    import glob
+    import struct
+    want = os.path.normcase(os.path.abspath(path))
+    drive = os.path.splitdrive(want)[0] or "C:"
+    for info in glob.glob(os.path.join(drive + "\\", "$Recycle.Bin", "*", "$I*")):
+        try:
+            data = open(info, "rb").read()
+        except OSError:
+            continue
+        version = struct.unpack_from("<q", data, 0)[0]
+        if version == 2:
+            n = struct.unpack_from("<i", data, 24)[0]
+            orig = data[28:28 + 2 * n].decode("utf-16-le").rstrip(chr(0))
+        else:
+            orig = data[24:24 + 520].decode("utf-16-le").split(chr(0))[0]
+        if os.path.normcase(orig) == want:
+            return True
+    return False
+
+
+def pid_alive(pid):
+    from kluis.system import pid_alive as alive
+    return alive(pid)
+
+
 def flag(tmp, name, on=True):
     p = os.path.join(tmp, "cloud", "." + name)
     if on:

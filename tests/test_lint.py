@@ -44,7 +44,7 @@ def direct_body_nodes(fn):
 
 
 for path in glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True):
-    tree = ast.parse(open(path).read(), path)
+    tree = ast.parse(open(path, encoding="utf-8").read(), path)
     for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -57,19 +57,33 @@ for path in glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True)
 
 mods = [os.path.relpath(p, REPO)[:-3].replace(os.sep, ".") for p in
         glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True)]
+WINDOWS_ONLY = {"kluis.wintray", "kluis.winsingle"}      # Win32 API modules: imported only on Windows
 for m in sorted(mods):
-    if m.endswith("__main__"):
+    if m.endswith("__main__") or (m in WINDOWS_ONLY and os.name != "nt"):
         continue
     try:
         importlib.import_module(m)
     except Exception as e:  # noqa: BLE001
         problems.append(f"import {m}: {type(e).__name__}: {e}")
 
+# F-026 Windows: every program Kluis starts gets popen_kwargs()/cli_popen_kwargs() (no console window flashing up),
+# except Linux-only tools that Windows never reaches
+LINUX_TOOLS = ("ldd", "notify-send", "gio", "xdg-open")
+for path in glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True):
+    src = open(path, encoding="utf-8").read()
+    for node in ast.walk(ast.parse(src, path)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
+                isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess" and \
+                node.func.attr in ("run", "Popen", "call", "check_call", "check_output"):
+            seg = ast.get_source_segment(src, node) or ""
+            if "popen_kwargs()" not in seg and not any(f'["{t}"' in seg for t in LINUX_TOOLS):
+                problems.append(f"{os.path.relpath(path, REPO)}:{node.lineno} starts a program without popen_kwargs()")
+
 # every Kluis icon the UI names ships with Kluis (desktop themes like Mint-Y lack many symbolic icons)
 import re  # noqa: E402
 icon_dir = os.path.join(REPO, "kluis", "data", "icons")
 for path in glob.glob(os.path.join(REPO, "kluis", "ui", "*.py")):
-    for name in set(re.findall(r'"(kluis-[a-z-]+-symbolic)"', open(path).read())):
+    for name in set(re.findall(r'"(kluis-[a-z-]+-symbolic)"', open(path, encoding="utf-8").read())):
         if not os.path.exists(os.path.join(icon_dir, name + ".svg")):
             problems.append(f"{os.path.relpath(path, REPO)} uses icon {name}, but {name}.svg is not in kluis/data/icons")
 
@@ -85,12 +99,14 @@ except Exception as e:  # noqa: BLE001
 
 # Switching Proton accounts keeps each account's session in the keyring: the libsecret typelib
 # (gir1.2-secret-1 on Mint; part of libsecret on Arch). Without it Kluis falls back to a browser sign-in.
-try:
-    import gi
-    gi.require_version("Secret", "1")
-    from gi.repository import Secret  # noqa: F401
-except Exception as e:  # noqa: BLE001
-    problems.append(f"libsecret typelib missing (install gir1.2-secret-1 / libsecret): {e}")
+# (Windows keeps sessions in the Credential Manager instead: kluis/accounts.py WinCredVault)
+if os.name != "nt":
+    try:
+        import gi
+        gi.require_version("Secret", "1")
+        from gi.repository import Secret  # noqa: F401
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"libsecret typelib missing (install gir1.2-secret-1 / libsecret): {e}")
 
 # Cairo drawing (map, gallery, graph) needs the gi ↔ pycairo bridge: python-cairo / python3-gi-cairo
 try:

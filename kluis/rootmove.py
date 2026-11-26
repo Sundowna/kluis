@@ -13,6 +13,7 @@ import shutil
 from typing import Callable
 
 from .paths import CONFIG_DIR
+from .system import is_inside, path_key
 
 JOURNAL = CONFIG_DIR / "move-journal.json"
 STAGE = ".kluis-part-move"
@@ -26,7 +27,7 @@ def _write_journal(j: dict, path=None):
     path = str(path or JOURNAL)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w") as fh:
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(j, fh)
         fh.flush()
         os.fsync(fh.fileno())
@@ -35,7 +36,7 @@ def _write_journal(j: dict, path=None):
 
 def _read_journal(path=None) -> dict | None:
     try:
-        with open(str(path or JOURNAL)) as fh:
+        with open(str(path or JOURNAL), encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return None
@@ -43,9 +44,9 @@ def _read_journal(path=None) -> dict | None:
 
 def check_target(src: str, dest: str) -> str | None:
     s, d = os.path.realpath(src), os.path.realpath(dest)
-    if s == d:
+    if path_key(s) == path_key(d):
         return "That's already your Proton Drive folder"
-    if d.startswith(s + "/"):
+    if is_inside(d, s):
         return "The new place can't be inside the current folder"
     if os.path.exists(d) and not os.path.isdir(d):
         return "That isn't a folder"
@@ -164,8 +165,8 @@ def pending(journal=None) -> dict | None:
 def remap(path: str, src: str, dest: str) -> str:
     """Where a synced folder ends up after the move."""
     rs, rp = os.path.realpath(src), os.path.realpath(path)
-    if rp == rs:
+    if path_key(rp) == path_key(rs):
         return os.path.realpath(dest)
-    if rp.startswith(rs + "/"):
+    if is_inside(rp, rs):
         return os.path.join(os.path.realpath(dest), rp[len(rs) + 1:])
     return path

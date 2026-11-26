@@ -19,8 +19,11 @@ URLQ = re.compile(r"(https?://[^\s?]+)\?\S+")
 
 
 def _distro() -> str:
+    if os.name == "nt":
+        from .system import os_name
+        return os_name()
     try:
-        d = dict(line.rstrip().split("=", 1) for line in open("/etc/os-release") if "=" in line)
+        d = dict(line.rstrip().split("=", 1) for line in open("/etc/os-release", encoding="utf-8") if "=" in line)
         return d.get("PRETTY_NAME", "").strip('"')
     except OSError:
         return platform.platform()
@@ -32,7 +35,7 @@ def redact(text: str, allowed_roots: list[str]) -> str:
     text = URLQ.sub(lambda m: m.group(1) + "?<redacted>", text)
     text = LONG_SECRET.sub("<redacted>", text)
     home = os.path.expanduser("~")
-    roots = sorted({os.path.realpath(r) for r in allowed_roots if r}, key=len, reverse=True)
+    roots = sorted({x for r in allowed_roots if r for x in (r, os.path.realpath(r))}, key=len, reverse=True)
 
     def path_sub(m):
         p = m.group(0)
@@ -40,13 +43,25 @@ def redact(text: str, allowed_roots: list[str]) -> str:
             if p == r or p.startswith(r + "/"):
                 return p.replace(home, "~", 1)
         return "<path>"
+
+    def win_path_sub(m):          # Windows: C:\Users\<name>\… would show the user's account name
+        p = m.group(0)
+        key = os.path.normcase(p.replace("/", "\\"))
+        for r in roots:
+            rk = os.path.normcase(r.replace("/", "\\")).rstrip("\\")
+            if key == rk or key.startswith(rk + "\\"):
+                hk = os.path.normcase(home.replace("/", "\\"))
+                return "~" + p[len(home):] if key.startswith(hk + "\\") else p
+        return "<path>"
+    text = re.sub(r"(?<![\w~])[A-Za-z]:[\\/][^\s\"':,;()\[\]{}<>|?*]*", win_path_sub, text)
+    text = re.sub(r"\\\\[^\s\"':,;()\[\]{}<>|?*]+", "<path>", text)          # \\server\share\…
     return re.sub(r"(?<![\w~])/(?:[^\s\"':,;()\[\]{}]+)", path_sub, text)
 
 
 def collect(settings, cli_version: str) -> str:
     roots = [f.local for f in settings.folders]
     try:
-        lines = open(LOG_FILE, errors="replace").read().splitlines()[-200:]
+        lines = open(LOG_FILE, encoding="utf-8", errors="replace").read().splitlines()[-200:]
     except OSError:
         lines = []
     cfg = asdict(settings)

@@ -1,10 +1,11 @@
 name: Release
-# Every push and pull request: all test suites + the GUI flows F1–F23 (light/dark, 1440x900 and 1024x640)
-# on Mint-like Ubuntu (Cinnamon session variables) and on Arch (KDE session variables), then both packages
-# are built, installed, started and uninstalled. A push to main with a new VERSION publishes vX.Y.Z once.
+# Every push and pull request: all test suites + the GUI flows F1–F24 (light/dark, 1440x900 and 1024x640)
+# on Mint-like Ubuntu (Cinnamon session variables), on Arch (KDE session variables) and on Windows; then the
+# .deb, the pacman package and the Windows installer are built, installed, started and uninstalled.
+# A push to main with a new VERSION publishes vX.Y.Z once.
 on:
   push:
-    branches: [main, redesign-1.0]
+    branches: [main, redesign-1.0, feature/windows]
   pull_request:
   workflow_dispatch:
 
@@ -100,15 +101,59 @@ jobs:
           name: arch
           path: dist/
 
+  windows:
+    name: Windows 10/11 installer
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      PYTHONUTF8: "1"
+      TZ: Europe/Zurich
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-python-gobject mingw-w64-ucrt-x86_64-python-cairo
+            mingw-w64-ucrt-x86_64-librsvg mingw-w64-ucrt-x86_64-adwaita-icon-theme mingw-w64-ucrt-x86_64-pyinstaller
+      - name: Unit, engine, photo and safety tests
+        run: |
+          python --version
+          python tests/test_lint.py
+          python tests/test_engine.py
+          python tests/test_photos.py
+          python tests/test_safety.py
+          python tests/test_units.py
+      - name: GUI flows F1–F24 (on the runner's Windows desktop)
+        run: python tests/gui/run_windows.py dist/flows-windows
+      - name: Build the installer
+        run: |
+          [ -x "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || choco install innosetup -y --no-progress
+          packaging/windows/build.sh
+      - name: Install, start, start again, uninstall
+        run: python tests/windows/test_install.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows
+          path: |
+            dist/Kluis-Setup-*.exe
+            dist/flows-windows/
+            dist/*.png
+            dist/*.log
+
   release:
-    needs: [deb, arch]
+    needs: [deb, arch, windows]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: "{deb-24.04,arch}"
+          pattern: "{deb-24.04,arch,windows}"
           path: dist
           merge-multiple: true
       - name: Publish release (only if this version is new)
@@ -123,5 +168,6 @@ jobs:
           cd dist
           cp kluis_*_all.deb kluis_latest_all.deb
           cp kluis-*-any.pkg.tar.zst kluis-latest-any.pkg.tar.zst
-          gh release create "$V" kluis_*.deb kluis-*.pkg.tar.zst --target "$GITHUB_SHA" \
+          cp Kluis-Setup-*.exe Kluis-Setup-latest.exe
+          gh release create "$V" kluis_*.deb kluis-*.pkg.tar.zst Kluis-Setup-*.exe --target "$GITHUB_SHA" \
             --title "Kluis ${V#v}" --notes-file ../packaging/release-notes.md

@@ -21,6 +21,7 @@ import gi
 from gi.repository import GdkPixbuf, Gio, GLib
 
 from .engine import sha1_file
+from .system import popen_kwargs
 
 log = logging.getLogger("kluis.thumbs")
 TILE = 128
@@ -105,7 +106,7 @@ class PreviewMaker:
                        "-vf", f"scale={PREVIEW_PX}:-1", out]
             else:
                 return None
-            subprocess.run(cmd, capture_output=True, timeout=60)
+            subprocess.run(cmd, capture_output=True, timeout=60, stdin=subprocess.DEVNULL, **popen_kwargs())
             if os.path.getsize(out) > 0:
                 return GdkPixbuf.Pixbuf.new_from_file(out)
         except (OSError, subprocess.SubprocessError, GLib.Error) as e:

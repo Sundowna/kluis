@@ -62,6 +62,8 @@ CAPITALS = {
 }
 SECURE_CORE_ENTRIES = {"CH", "IS", "SE"}
 ZONE_TAB = "/usr/share/zoneinfo/zone1970.tab"
+# Windows has no tz database: Kluis ships IANA's zone1970.tab (public domain) for it
+BUNDLED_ZONE_TAB = os.path.join(os.path.dirname(__file__), "data", "zone1970.tab")
 
 
 def country_from_connection(name: str) -> str | None:
@@ -87,11 +89,13 @@ def _dms(s: str) -> float:
     return sign * (deg + mins / 60 + secs / 3600)
 
 
-def zone_cities(path: str = ZONE_TAB) -> dict[str, tuple[str, float, float]]:
-    """tz name → (city, lat, lon), from the system's zone1970.tab."""
+def zone_cities(path: str | None = None) -> dict[str, tuple[str, float, float]]:
+    """tz name → (city, lat, lon), from the system's zone1970.tab (or Kluis's own copy)."""
     out = {}
+    if path is None:
+        path = ZONE_TAB if os.path.exists(ZONE_TAB) else BUNDLED_ZONE_TAB
     try:
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("#") or not line.strip():
                     continue
@@ -104,7 +108,7 @@ def zone_cities(path: str = ZONE_TAB) -> dict[str, tuple[str, float, float]]:
                     continue
                 city = tz.split("/")[-1].replace("_", " ")
                 out[tz] = (city, _dms(m.group(1)), _dms(m.group(2)))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pass
     return out
 
@@ -113,6 +117,9 @@ def system_timezone() -> str:
     tz = os.environ.get("TZ", "").lstrip(":")
     if tz and "/" in tz:
         return tz
+    if os.name == "nt":
+        from .system import windows_timezone
+        return windows_timezone()
     try:
         link = os.readlink("/etc/localtime")
         if "zoneinfo/" in link:

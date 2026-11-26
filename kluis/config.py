@@ -13,6 +13,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 
 from .paths import CONFIG_DIR, CONFIG_FILE, ensure_dirs
+from .system import is_inside, is_strictly_inside, is_system_root, path_key
 
 log = logging.getLogger("kluis.config")
 
@@ -51,7 +52,7 @@ class FolderPair:
 
     @property
     def name(self) -> str:
-        return os.path.basename(self.local.rstrip("/")) or self.local
+        return os.path.basename(self.local.rstrip("/\\")) or self.local
 
     @property
     def is_share(self) -> bool:
@@ -160,7 +161,7 @@ class Settings:
         path = str(path or CONFIG_FILE)
         data = json.dumps(asdict(self), indent=2, ensure_ascii=False)
         tmp = path + ".tmp"
-        with open(tmp, "w") as fh:
+        with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
@@ -176,12 +177,10 @@ class Settings:
 
     def overlaps(self, local: str, exclude_id: str = "") -> FolderPair | None:
         """Nested or identical local folders would sync twice; refuse them (also across accounts)."""
-        a = os.path.realpath(local).rstrip("/") + "/"
         for f in self.folders:
             if f.id == exclude_id:
                 continue
-            b = os.path.realpath(f.local).rstrip("/") + "/"
-            if a.startswith(b) or b.startswith(a):
+            if is_inside(local, f.local) or is_inside(f.local, local):
                 return f
         other = self.other_account_overlap(local)
         return other[1] if other else None
@@ -189,17 +188,15 @@ class Settings:
     def other_account_overlap(self, local: str) -> tuple[str, FolderPair] | None:
         """(email, folder) when another Proton account in Kluis already syncs this folder or one around it."""
         from .accounts import stashed_folders
-        a = os.path.realpath(local).rstrip("/") + "/"
         for email, f in stashed_folders(self):
-            b = os.path.realpath(f.local).rstrip("/") + "/"
-            if a.startswith(b) or b.startswith(a):
+            if is_inside(local, f.local) or is_inside(f.local, local):
                 return email, f
         return None
 
 
 def _read_json(path) -> dict | None:
     try:
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             d = json.load(fh)
         return d if isinstance(d, dict) else None
     except (OSError, ValueError):
@@ -233,13 +230,13 @@ def validate_local(settings: Settings, path: str, exclude_id: str = "") -> str |
     if not path:
         return "Choose a folder on this computer."
     real = os.path.realpath(path)
-    home = os.path.realpath(os.path.expanduser("~"))
-    if real == "/":
+    home = os.path.expanduser("~")
+    if is_system_root(real):
         return "Pick a folder inside your home folder, not the whole computer"
-    if real == home:
+    if path_key(real) == path_key(home):
         return "Pick a folder inside your home folder, not the whole home folder"
-    cfg = os.path.realpath(str(CONFIG_DIR))
-    if real == cfg or real.startswith(cfg + "/") or cfg.startswith(real + "/"):
+    cfg = str(CONFIG_DIR)
+    if is_inside(real, cfg) or is_inside(cfg, real):
         return "That folder holds Kluis's own settings"
     if not os.path.isdir(real):
         return "That folder doesn't exist"
@@ -248,9 +245,9 @@ def validate_local(settings: Settings, path: str, exclude_id: str = "") -> str |
         return f"Your other Proton account {acc[0]} already syncs {acc[1].name}"
     other = settings.overlaps(real, exclude_id)
     if other:
-        if os.path.realpath(other.local) == real:
+        if path_key(other.local) == path_key(real):
             return "Already syncing"
-        if real.startswith(os.path.realpath(other.local) + "/"):
+        if is_strictly_inside(real, other.local):
             return f"It's inside {other.name}, which is already syncing"
         return f"It contains {other.name}, which is already syncing"
     return None

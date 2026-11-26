@@ -186,13 +186,13 @@ class FileVault(Vault):
 
     def read_live(self):
         try:
-            with open(self.slot) as fh:
+            with open(self.slot, encoding="utf-8") as fh:
                 return {"secret": fh.read()}
         except OSError:
             return None
 
     def write_live(self, rec):
-        with open(self.slot, "w") as fh:
+        with open(self.slot, "w", encoding="utf-8") as fh:
             fh.write(rec["secret"])
 
     def clear_live(self):
@@ -202,13 +202,13 @@ class FileVault(Vault):
             pass
 
     def save(self, email, rec):
-        with open(self._p(email), "w") as fh:
+        with open(self._p(email), "w", encoding="utf-8") as fh:
             json.dump(rec, fh)
         os.chmod(self._p(email), 0o600)
 
     def load(self, email):
         try:
-            with open(self._p(email)) as fh:
+            with open(self._p(email), encoding="utf-8") as fh:
                 return json.load(fh)
         except (OSError, ValueError):
             return None
@@ -285,9 +285,133 @@ class SecretVault(Vault):
         self.S.password_clear_sync(self.stash_schema, {"kluis-account": email.lower()}, None)
 
 
+CLI_WIN_TARGET = CLI_SERVICE + "/auth-session"   # Bun.secrets on Windows: TargetName = service + "/" + name
+STASH_WIN_PREFIX = "dev.kluis.Kluis/account/"
+
+
+class WinCredVault(Vault):
+    """Windows Credential Manager. Proton's CLI (Bun.secrets) keeps its session as a generic credential
+    named ``ch.proton.drive/drive-sdk-cli/auth-session``. Like on Linux, Kluis copies that credential as it
+    is (bytes, user name, persistence) and never reads what's inside. Each kept copy is a generic
+    credential ``dev.kluis.Kluis/account/<email>``, visible in Control Panel → Credential Manager.
+    Tests point the CLI's slot elsewhere with KLUIS_TEST_WIN_TARGET."""
+    available = True
+
+    def __init__(self, live_target: str = CLI_WIN_TARGET, prefix: str = STASH_WIN_PREFIX):
+        import ctypes
+        from ctypes import wintypes
+        self.ct, self.wt = ctypes, wintypes
+        self.live_target, self.prefix = live_target, prefix
+
+        class CREDENTIALW(ctypes.Structure):
+            _fields_ = [("Flags", wintypes.DWORD), ("Type", wintypes.DWORD), ("TargetName", wintypes.LPWSTR),
+                        ("Comment", wintypes.LPWSTR), ("LastWritten", wintypes.FILETIME),
+                        ("CredentialBlobSize", wintypes.DWORD), ("CredentialBlob", ctypes.POINTER(ctypes.c_ubyte)),
+                        ("Persist", wintypes.DWORD), ("AttributeCount", wintypes.DWORD),
+                        ("Attributes", ctypes.c_void_p), ("TargetAlias", wintypes.LPWSTR),
+                        ("UserName", wintypes.LPWSTR)]
+        self.CRED = CREDENTIALW
+        adv = ctypes.WinDLL("advapi32", use_last_error=True)
+        self.read_ = adv.CredReadW
+        self.read_.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                               ctypes.POINTER(ctypes.POINTER(CREDENTIALW))]
+        self.write_ = adv.CredWriteW
+        self.write_.argtypes = [ctypes.POINTER(CREDENTIALW), wintypes.DWORD]
+        self.delete_ = adv.CredDeleteW
+        self.delete_.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
+        self.free_ = adv.CredFree
+        self.free_.argtypes = [ctypes.c_void_p]
+
+    GENERIC = 1
+    NOT_FOUND = 1168
+
+    def _read(self, target: str) -> dict | None:
+        ct = self.ct
+        p = ct.POINTER(self.CRED)()
+        if not self.read_(target, self.GENERIC, 0, ct.byref(p)):
+            err = ct.get_last_error()
+            if err == self.NOT_FOUND:
+                return None
+            raise OSError(err, f"Credential Manager could not read {target}")
+        try:
+            c = p.contents
+            blob = ct.string_at(c.CredentialBlob, c.CredentialBlobSize) if c.CredentialBlobSize else b""
+            return {"blob": blob, "user": c.UserName or "", "persist": int(c.Persist), "comment": c.Comment or ""}
+        finally:
+            self.free_(p)
+
+    def _write(self, target: str, blob: bytes, user: str, persist: int, comment: str = ""):
+        ct = self.ct
+        buf = (ct.c_ubyte * max(len(blob), 1)).from_buffer_copy(blob or b"\0")
+        c = self.CRED()
+        c.Type = self.GENERIC
+        c.TargetName = target
+        c.Comment = comment or None
+        c.CredentialBlobSize = len(blob)
+        c.CredentialBlob = ct.cast(buf, ct.POINTER(ct.c_ubyte))
+        c.Persist = persist or 2                     # CRED_PERSIST_LOCAL_MACHINE
+        c.UserName = user or None
+        if not self.write_(ct.byref(c), 0):
+            raise OSError(ct.get_last_error(), "Credential Manager refused the session")
+
+    def _delete(self, target: str):
+        if not self.delete_(target, self.GENERIC, 0):
+            err = self.ct.get_last_error()
+            if err != self.NOT_FOUND:
+                raise OSError(err, f"Credential Manager could not delete {target}")
+
+    def read_live(self):
+        c = self._read(self.live_target)
+        if c is None or not c["blob"]:
+            return None
+        import base64
+        return {"secret": base64.b64encode(c["blob"]).decode(), "user": c["user"], "persist": c["persist"],
+                "target": self.live_target}
+
+    def write_live(self, rec):
+        import base64
+        if rec.get("target") not in (None, self.live_target):
+            raise OSError("saved session belongs to another kind of keyring")
+        blob = base64.b64decode(rec.get("secret") or "")
+        if not blob:
+            raise OSError("saved session is empty")
+        self._write(self.live_target, blob, rec.get("user") or "", int(rec.get("persist") or 2))
+
+    def clear_live(self):
+        self._delete(self.live_target)
+
+    def save(self, email, rec):
+        import base64
+        # the session's own bytes as the blob (Credential Manager allows 2560 bytes: no base64/JSON around it)
+        meta = json.dumps({"user": rec.get("user") or "", "persist": int(rec.get("persist") or 2),
+                           "target": rec.get("target") or self.live_target})
+        self._write(self.prefix + email.lower(), base64.b64decode(rec.get("secret") or ""), "kluis", 2, meta)
+
+    def load(self, email):
+        import base64
+        c = self._read(self.prefix + email.lower())
+        if c is None or not c["blob"]:
+            return None
+        try:
+            meta = json.loads(c["comment"] or "{}")
+        except ValueError:
+            meta = {}
+        return {"secret": base64.b64encode(c["blob"]).decode(), "user": meta.get("user", ""),
+                "persist": meta.get("persist", 2), "target": meta.get("target", self.live_target)}
+
+    def forget(self, email):
+        self._delete(self.prefix + email.lower())
+
+
 def open_vault() -> Vault:
     if os.environ.get("KLUIS_TEST_VAULT"):
         return FileVault(os.environ["KLUIS_TEST_VAULT"], os.environ.get("KLUIS_TEST_VAULT_SLOT", ""))
+    if os.name == "nt":
+        try:
+            return WinCredVault()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Credential Manager not available, switching accounts needs a browser sign-in: %s", e)
+            return Vault()
     try:
         return SecretVault()
     except Exception as e:  # noqa: BLE001  (no typelib, no Secret Service)

@@ -9,6 +9,8 @@ import json
 import logging
 import subprocess
 
+from .system import bind_to_kluis, cli_popen_kwargs, command_for
+
 log = logging.getLogger("kluis.capabilities")
 
 COMMANDS = [
@@ -28,9 +30,17 @@ FLAGS = {
 
 def _run(binary: str, args: list[str], timeout: int = 60) -> tuple[int, str]:
     try:
-        p = subprocess.run([binary, *args], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           timeout=timeout)
-        return p.returncode, (p.stdout or "") + (p.stderr or "")
+        p = subprocess.Popen([*command_for(binary), *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                             **cli_popen_kwargs())
+        bind_to_kluis(p)
+        try:
+            out, err = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+            raise
+        return p.returncode, (out or "") + (err or "")
     except (OSError, subprocess.TimeoutExpired) as e:
         return 127, str(e)
 

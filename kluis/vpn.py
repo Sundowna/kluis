@@ -40,6 +40,8 @@ def read_state(bus=None) -> VpnState:
     if os.environ.get("KLUIS_TEST_VPN") is not None:          # tests: "" = off, "ProtonVPN CH#23" = on
         name = os.environ["KLUIS_TEST_VPN"]
         return VpnState(bool(name), name, geo.country_from_connection(name) or "")
+    if os.name == "nt":              # no NetworkManager on Windows: the VPN view shows the home location
+        return VpnState()
     try:
         bus = bus or Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
     except GLib.Error:
@@ -62,7 +64,7 @@ class VpnWatcher:
         self._bus = None
         self._sub = 0
         try:
-            if os.environ.get("KLUIS_TEST_VPN") is None:
+            if os.environ.get("KLUIS_TEST_VPN") is None and os.name != "nt":
                 self._bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
                 self._sub = self._bus.signal_subscribe(NM, "org.freedesktop.DBus.Properties", "PropertiesChanged",
                                                        None, None, Gio.DBusSignalFlags.NONE, self._changed)

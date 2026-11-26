@@ -1,6 +1,7 @@
 """Small widget helpers shared by the UI. Every interactive widget gets an accessible name (AT-SPI)."""
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import threading
@@ -163,6 +164,10 @@ def popover_menu(relative_to, items):
 
 def short_path(path: str) -> str:
     home = os.path.expanduser("~")
+    if os.name == "nt":              # Windows: the home folder in any letter case, shown as ~ too
+        if os.path.normcase(path) == os.path.normcase(home) or                 os.path.normcase(path).startswith(os.path.normcase(home) + os.sep):
+            return "~" + path[len(home):]
+        return path
     return "~" + path[len(home):] if path == home or path.startswith(home + "/") else path
 
 
@@ -201,6 +206,13 @@ def open_uri(uri: str):
     if os.environ.get("KLUIS_TEST") == "1":
         OPENED.append(uri)           # tests assert what would open, without launching apps
         return
+    if os.name == "nt":              # Windows: the default browser / Explorer / program, like a double-click
+        from ..system import open_with_system
+        try:
+            open_with_system(Gio.File.new_for_uri(uri).get_path() if uri.startswith("file:") else uri)
+        except OSError as e:
+            logging.getLogger("kluis.ui").warning("could not open %s: %s", uri, e)
+        return
     try:
         Gio.AppInfo.launch_default_for_uri(uri, None)
     except GLib.Error:
@@ -232,8 +244,19 @@ def mode_glyph(mode: str) -> str:
     return {"two-way": "⇄", "backup": "↑", "mirror": "↓"}.get(mode, "•")
 
 
+def special_dir(kind) -> str | None:
+    """Documents, Pictures, … On Windows GLib asks Windows (known folders), which the test suites can't point
+    into their temporary home: there, in test mode, they are the folders of that name in the home folder."""
+    if os.name == "nt" and os.environ.get("KLUIS_TEST") == "1":
+        names = {GLib.UserDirectory.DIRECTORY_DOCUMENTS: "Documents", GLib.UserDirectory.DIRECTORY_PICTURES: "Pictures",
+                 GLib.UserDirectory.DIRECTORY_DESKTOP: "Desktop", GLib.UserDirectory.DIRECTORY_MUSIC: "Music",
+                 GLib.UserDirectory.DIRECTORY_DOWNLOAD: "Downloads", GLib.UserDirectory.DIRECTORY_VIDEOS: "Videos"}
+        return os.path.join(os.path.expanduser("~"), names[kind]) if kind in names else None
+    return GLib.get_user_special_dir(kind)
+
+
 def user_dir(kind) -> str | None:
-    p = GLib.get_user_special_dir(kind)
+    p = special_dir(kind)
     return p if p and os.path.isdir(p) and p != os.path.expanduser("~") else None
 
 

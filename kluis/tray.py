@@ -1,4 +1,5 @@
-"""Panel icon. Linux Mint (Cinnamon/MATE/Xfce) uses XApp.StatusIcon; elsewhere Ayatana AppIndicator."""
+"""Panel icon. Linux Mint (Cinnamon/MATE/Xfce) uses XApp.StatusIcon; elsewhere Ayatana AppIndicator;
+Windows the notification area (kluis/wintray.py), with the same menu."""
 from __future__ import annotations
 
 import logging
@@ -47,6 +48,12 @@ class Tray:
         self._setup()
 
     def _setup(self):
+        if os.name == "nt":
+            if self._try_windows():
+                log.info("panel icon: Windows notification area")
+                return
+            self.icon = None
+            return
         # Cinnamon, MATE and Xfce (Linux Mint) have XApp's own panel applet. KDE Plasma (EndeavourOS
         # default), GNOME with the AppIndicator extension, Budgie etc. use StatusNotifier via Ayatana.
         desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
@@ -58,6 +65,44 @@ class Tray:
                 return
         log.warning("No panel icon library found; closing the window will quit Kluis")
         self.icon = None
+
+    def _try_windows(self) -> bool:
+        try:
+            from .wintray import WinTrayIcon
+            self.icon = WinTrayIcon(self.app.toggle_window, self._windows_menu, self.app.present_window)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Windows notification area icon not available: %s", e)
+            return False
+        self.kind = "windows"
+        self._set_windows_icon("idle", "Kluis")
+        return True
+
+    def _windows_menu(self):
+        """The same entries as the GTK menu, read from it, so labels and greyed-out items always match."""
+        out = []
+        for item in self.menu.get_children():
+            if isinstance(item, Gtk.SeparatorMenuItem):
+                out.append(None)
+            else:
+                out.append((item.get_label(), (lambda it=item: it.activate()) if item.get_sensitive() else None))
+        return out
+
+    def _set_windows_icon(self, state, text):
+        from .wintray import icon_from_svg
+        import ctypes
+        size = ctypes.windll.user32.GetSystemMetrics(49) or 16          # SM_CXSMICON, follows display scaling
+        try:
+            hicon = icon_from_svg(_icon(state), size)
+        except Exception as e:  # noqa: BLE001
+            log.warning("tray icon %s: %s", state, e)
+            hicon = 0
+        self.icon.set_icon(hicon, text)
+
+    def balloon(self, title: str, body: str, problem: bool = False) -> bool:
+        """Windows: a notification from the tray icon. False where Kluis uses Gio notifications instead."""
+        if self.kind != "windows" or not self.icon:
+            return False
+        return self.icon.balloon(title, body, warning=problem)
 
     def _try_xapp(self) -> bool:
         try:
@@ -98,6 +143,8 @@ class Tray:
         try:
             if self.kind == "xapp":
                 self.icon.set_visible(False)
+            elif self.kind == "windows":
+                self.icon.close()
             else:
                 self.icon.set_status(self._mod.IndicatorStatus.PASSIVE)
         except Exception:  # noqa: BLE001 - quitting anyway
@@ -122,5 +169,9 @@ class Tray:
         if self.kind == "xapp":
             self.icon.set_icon_name(_icon(state))
             self.icon.set_tooltip_text(f"Kluis: {text}")
+        elif self.kind == "windows":
+            if (state, text) != getattr(self, "_win_shown", None):
+                self._win_shown = (state, text)
+                self._set_windows_icon(state, f"Kluis: {text}")
         else:
             self.icon.set_icon_full(_icon(state), text)

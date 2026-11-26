@@ -2,6 +2,7 @@
 
 "System" follows the desktop's preference: the freedesktop portal setting
 org.freedesktop.appearance color-scheme (KDE Plasma, GNOME, Cinnamon), else the GTK theme name.
+Windows: Settings → Personalisation → Colours → "Choose your app mode" (checked every few seconds).
 """
 from __future__ import annotations
 
@@ -19,6 +20,17 @@ DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 log = logging.getLogger("kluis.theme")
 
 
+def windows_dark() -> bool:
+    """Windows' app mode: AppsUseLightTheme = 0 means dark."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+    except OSError:
+        return False
+
+
 class Theme:
     def __init__(self):
         self.provider = Gtk.CssProvider()
@@ -29,6 +41,11 @@ class Theme:
         self.dark = True
         self.listeners = []
         self._portal_dark = None
+        self._portal = None
+        if os.name == "nt":
+            self._win_dark = windows_dark()
+            GLib.timeout_add_seconds(3, self._windows_poll)
+            return
         try:
             self._portal = Gio.DBusProxy.new_for_bus_sync(
                 Gio.BusType.SESSION, Gio.DBusProxyFlags.NONE, None, "org.freedesktop.portal.Desktop",
@@ -52,9 +69,19 @@ class Theme:
             if self.choice == "system":
                 self.apply(self.choice)
 
+    def _windows_poll(self):
+        dark = windows_dark()
+        if dark != self._win_dark:
+            self._win_dark = dark
+            if self.choice == "system" and os.environ.get("KLUIS_TEST_THEME") not in ("dark", "light"):
+                self.apply(self.choice)
+        return True
+
     def system_dark(self) -> bool:
         if os.environ.get("KLUIS_TEST_THEME") in ("dark", "light"):
             return os.environ["KLUIS_TEST_THEME"] == "dark"
+        if os.name == "nt":
+            return bool(self._win_dark)
         if self._portal_dark is not None:
             return self._portal_dark
         name = (Gtk.Settings.get_default().get_property("gtk-theme-name") or "").lower()

@@ -35,6 +35,11 @@ class Env:
         self.home = os.path.join(self.tmp, "home")
         os.makedirs(self.home, exist_ok=True)
         os.environ["HOME"] = self.home
+        if os.name == "nt":            # Windows: Python finds the home folder through USERPROFILE
+            os.environ["USERPROFILE"] = self.home
+            # autostart goes to a registry key of this test run, never the real Run key
+            os.environ["KLUIS_TEST_RUN_KEY"] = "Software\\KluisTests\\" + str(os.getpid()) + "\\Run"
+            os.environ["KLUIS_TEST_INSTANCE"] = str(os.getpid())
         os.environ["KLUIS_TEST_THEME"] = theme
         os.environ["KLUIS_TEST_VPN"] = vpn
         os.environ["XDG_CURRENT_DESKTOP"] = desktop
@@ -67,6 +72,13 @@ class Env:
 
     def cleanup(self):
         harness.cleanup(self.tmp)
+        if os.name == "nt":
+            import winreg
+            for key in (os.environ["KLUIS_TEST_RUN_KEY"], os.path.dirname(os.environ["KLUIS_TEST_RUN_KEY"])):
+                try:
+                    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+                except OSError:
+                    pass
 
 
 class Driver:
