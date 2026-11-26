@@ -224,9 +224,30 @@ def platform_key() -> str:
     return f"linux/{arch}{'-musl' if musl else ''}"
 
 
+class ChecksumMismatch(CliError):
+    pass
+
+
+class IncompatibleCli(CliError):
+    pass
+
+
+def _manifest_url() -> str:
+    # Tests point Kluis at a local manifest; only honoured in test mode, never in a normal run.
+    if os.environ.get("KLUIS_TEST") == "1" and os.environ.get("KLUIS_TEST_MANIFEST"):
+        return os.environ["KLUIS_TEST_MANIFEST"]
+    return VERSION_JSON_URL
+
+
+def _official(url: str) -> bool:
+    if os.environ.get("KLUIS_TEST") == "1" and url.startswith(("file://", "http://127.0.0.1")):
+        return True
+    return url.startswith("https://proton.me/")
+
+
 def fetch_latest_release(timeout: int = 15) -> dict | None:
     """Returns {"version", "url", "sha512"} for this machine from Proton's official version.json."""
-    req = urllib.request.Request(VERSION_JSON_URL, headers={"User-Agent": "kluis"})
+    req = urllib.request.Request(_manifest_url(), headers={"User-Agent": "kluis"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         manifest = json.load(r)
     key = platform_key()
@@ -242,34 +263,54 @@ def fetch_latest_release(timeout: int = 15) -> dict | None:
     return None
 
 
-def download_cli(progress: Callable[[float], None] | None = None, dest_dir: Path = BIN_DIR) -> str:
-    """Download the official CLI to ~/.local/bin and verify its SHA-512 against version.json."""
-    rel = fetch_latest_release()
-    if not rel or not rel["url"].startswith("https://proton.me/"):
+def download_cli(progress: Callable[[int, int], None] | None = None, dest_dir: Path = BIN_DIR,
+                 verify: Callable[[str], tuple[bool, list]] | None = None, rel: dict | None = None) -> str:
+    """Download the official CLI, verify its SHA-512 against version.json, optionally run the
+    capability self-test on it, and only then switch to it atomically (os.replace)."""
+    rel = rel or fetch_latest_release()
+    if not rel or not _official(rel["url"]) or not rel.get("sha512"):
         raise CliError("Could not find an official Proton Drive CLI build for this computer.")
+    dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     tmp = dest_dir / ".proton-drive.download"
     h = hashlib.sha512()
     req = urllib.request.Request(rel["url"], headers={"User-Agent": "kluis"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
-        total = int(r.headers.get("Content-Length") or 0)
-        done = 0
-        while True:
-            chunk = r.read(1 << 16)
-            if not chunk:
-                break
-            out.write(chunk)
-            h.update(chunk)
-            done += len(chunk)
-            if progress and total:
-                progress(done / total)
-    if rel["sha512"] and h.hexdigest() != rel["sha512"]:
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                out.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
+    except BaseException:
         tmp.unlink(missing_ok=True)
-        raise CliError("Checksum mismatch: the download was discarded.")
-    dest = dest_dir / "proton-drive"
+        raise
+    if h.hexdigest() != rel["sha512"]:
+        tmp.unlink(missing_ok=True)
+        raise ChecksumMismatch("The download didn't match Proton's checksum, so it was deleted. Try again.")
     os.chmod(tmp, 0o755)
+    if verify:
+        ok, problems = verify(str(tmp))
+        if not ok:
+            tmp.unlink(missing_ok=True)
+            raise IncompatibleCli("Proton changed its Drive tool. Kluis needs an update for it.",
+                                  stderr="; ".join(problems))
+    dest = dest_dir / "proton-drive"
     os.replace(tmp, dest)
     return str(dest)
+
+
+def cli_version_of(text: str) -> str:
+    """'Proton Drive CLI cli-drive@0.9.0+756…' -> '0.9.0'"""
+    import re
+    m = re.search(r"cli-drive@([0-9][0-9A-Za-z.\-]*)", text or "")
+    return m.group(1) if m else ""
 
 
 class ProtonDriveCli:
