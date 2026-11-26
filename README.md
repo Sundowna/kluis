@@ -108,7 +108,8 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
 - **Big files and big folders don't block the rest:** a file of 1 GB or more, or a folder with 1 GB or more to
   transfer (a holiday's photos, a backup), syncs in its own lane next to everything else. In *Activity* you can
   pause a big item, resume it or send it first. Paused items continue by themselves once nothing else has synced
-  for 5 minutes (or 15, 30, 60, or never: Settings).
+  for 5 minutes (or 15, 30, 60, or never: Settings). *Activity › Transfers* shows both lanes, *Lane 1 · Files*
+  and *Lane 2 · Big items*, and lane 1 has its own *Pause*: then only big items sync until you resume it.
 - **Drag a folder onto the window** to start syncing it.
 - **Activity log** and desktop notifications (all, problems only, or off).
 - **Quick settings** column and **Settings:** your Proton Drive folder (move it safely), start at login,

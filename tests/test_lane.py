@@ -175,6 +175,27 @@ check(all(os.path.getsize(f"{D}/Vakantie/IMG_{n}.jpg") == 300 for n in range(5))
 check(not os.path.exists(os.path.join(D, PART_DIR)), "no staging folder is left behind")
 check(eng.sync(fd).message == "Up to date", "and the folder is up to date")
 
+print("files lane paused (lane 1)")
+files_paused = [True]
+eng.files_paused = lambda: files_paused[0]
+write(f"{L}/while-paused.txt", "wait")
+write(f"{L}/big-while-paused.zip", 1500)
+write(f"{CLOUD}/Backups/from-web.txt", "web")
+os.remove(f"{CLOUD}/Backups/notes.txt")
+r = eng.sync(f)
+check(not os.path.exists(f"{CLOUD}/Backups/while-paused.txt") and not os.path.exists(f"{L}/from-web.txt"),
+      f"F-040 with lane 1 paused, small changes wait on both sides ({r.message})")
+check(os.path.exists(f"{L}/notes.txt"), "F-040 and nothing is moved to a trash")
+check(r.deferred == 1 and r.waiting == 3 and "Files lane paused · 3 change(s) wait" in r.message,
+      "F-040 big items still reach lane 2, and the run says what waits")
+run_next()
+check(os.path.exists(f"{CLOUD}/Backups/big-while-paused.zip"), "F-040 lane 2 keeps going")
+files_paused[0] = False
+r = eng.sync(f, allow_trash=1)
+check(os.path.exists(f"{CLOUD}/Backups/while-paused.txt") and os.path.exists(f"{L}/from-web.txt")
+      and not os.path.exists(f"{L}/notes.txt"), f"F-040 resumed: everything that waited syncs ({r.message})")
+eng.files_paused = None
+
 print("side by side (threads, slow mock transfers)")
 lane2 = BigLane(settings, cli.sibling, lambda: store, on_log=lambda *a: logs.append(a))
 eng.defer, eng.held = lane2.add, lane2.held

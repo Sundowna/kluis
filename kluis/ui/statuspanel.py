@@ -9,7 +9,7 @@ import time
 from gi.repository import GLib, Gtk
 
 from ..i18n import _
-from ..status import axis_max, duration_text, eta_text, human_bytes
+from ..status import axis_max, big_lane_text, duration_text, eta_text, human_bytes
 from .common import a11y, label, set_class, styled, vbox
 
 COMPACT_TABS = ("browse", "photos")
@@ -92,10 +92,14 @@ class StatusPanel(Gtk.Box):
                 box.pack_start(pb, False, False, 2)
             grid.attach(box, col, row, 1, 1)
             self.cells[key] = (box, t, v, pb)
+        # the two lanes side by side on the second row: files (lane 1) and big items (lane 2, kluis/lane.py).
+        # §6: the CLI has no quota command, so there is no "Space used" (never faked).
         cell("enc", _("Encryption"), 0, 0)
-        cell("space", _("Space used"), 1, 0, bar=True)
-        cell("prog", _("Last run"), 0, 1, bar=True)
-        cell("today", _("Total today"), 1, 1)
+        cell("today", _("Total today"), 1, 0)
+        cell("prog", _("Files · last run"), 0, 1, bar=True)
+        cell("big", _("Big items"), 1, 1, bar=True)
+        self.cells["big"][2].set_text(_("Idle"))
+        self.cells["big"][3].set_no_show_all(True)
         self.cells["enc"][2].set_text(_("End to end"))
         left.pack_start(grid, False, False, 0)
         self.pack_start(left, False, False, 0)
@@ -133,9 +137,6 @@ class StatusPanel(Gtk.Box):
             wdg.show()                # the box's no_show_all also stops show_all() inside it
         self.line_box.set_no_show_all(True)
         self.pack_start(self.line_box, True, True, 0)
-        # §6: the CLI has no quota command, so "Space used" is hidden (never faked)
-        self.cells["space"][0].set_no_show_all(True)
-        self.cells["space"][0].hide()
 
     # ---------- compact line ----------
     def set_tab(self, key):
@@ -171,16 +172,22 @@ class StatusPanel(Gtk.Box):
     def _fill_line(self):
         e = GLib.markup_escape_text
         parts = [f"<b>{e(self.head.get_text())}</b>"]
-        for key in ("enc", "prog", "today"):
+        for key in ("enc", "prog", "today", "big"):
             _box, t, v, _pb = self.cells[key]
-            parts.append(f"<span alpha='75%' size='small'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
+            if key == "big" and v.get_text() == _("Idle"):
+                continue                    # the line has little room: the big-items lane only when it has work
+            title = t.get_text().replace(_("Files · "), "")
+            title = title[:1].upper() + title[1:]           # "Last run", "Uploading" on the one line
+            parts.append(f"<span alpha='75%' size='small'>{e(title)}</span> <b>{e(v.get_text())}</b>")
         self.line.set_markup("   ".join(parts))
         self.line_rates.set_text(self.rates.get_text())
 
     def refresh(self, st):
         m = self.app.manager
         now = time.time()
-        if st.kind == "paused":
+        if st.kind == "paused" and self.app.settings.files_paused and not self.app.settings.paused:
+            head = _("🔒 Files lane paused • since {t}").format(t=time.strftime("%H:%M", time.localtime(m.state_since)))
+        elif st.kind == "paused":
             head = _("🔒 Paused • paused {t}").format(t=time.strftime("%H:%M", time.localtime(m.state_since)))
         elif st.kind == "syncing":
             head = _("🔒 Syncing • started {t}").format(t=time.strftime("%H:%M", time.localtime(m.run_started or now)))
@@ -190,14 +197,20 @@ class StatusPanel(Gtk.Box):
             head = _("🔒 In sync • for {d}").format(d=duration_text(now - m.state_since))
         self.head.set_text(head)
         self.head.set_tooltip_text(head)
+        s = self.app.settings
         _box, t, v, pb = self.cells["prog"]
-        if st.kind == "syncing":
-            t.set_text(_("Uploading") if m.today.get("up", 0) >= m.today.get("down", 0) else _("Downloading"))
+        if s.files_paused and not s.paused:
+            t.set_text(_("Files · paused"))
+            v.set_text(_("Changes wait until you resume"))
+            pb.set_fraction(0)
+        elif m.busy and not s.paused:
+            t.set_text(_("Files · uploading") if m.today.get("up", 0) >= m.today.get("down", 0)
+                       else _("Files · downloading"))
             eta = eta_text(self.app.eta())
             v.set_text(_("{d} of {n} files").format(d=m.run_done, n=m.run_total) + (f" · {eta}" if eta else ""))
             pb.set_fraction(m.run_done / m.run_total if m.run_total else 0)
         else:
-            t.set_text(_("Last run"))
+            t.set_text(_("Files · last run"))
             if m.run_total:
                 v.set_text(_("{d} of {n} files · done ✓").format(d=m.run_done, n=m.run_total)
                            if m.run_done >= m.run_total else _("{d} of {n} files").format(d=m.run_done, n=m.run_total))
@@ -205,6 +218,17 @@ class StatusPanel(Gtk.Box):
             else:
                 v.set_text(_("Nothing to transfer"))
                 pb.set_fraction(0)
+        _box, t, v, pb = self.cells["big"]
+        it = m.lane.current
+        v.set_text(big_lane_text(s.paused, it.name if it else "", bool(it and it.direction == "up"),
+                                 it.bytes if it else 0, now - it.started if it else 0, len(m.lane.waiting()),
+                                 sum(len(f.held) for f in s.folders)))
+        v.set_tooltip_text(_("Files and folders of 1 GB or more sync in their own lane, next to everything else."))
+        if it is not None and it.is_folder and it.files:
+            pb.set_fraction(it.done_files / len(it.files))
+            pb.show()
+        else:
+            pb.hide()
         self.cells["today"][2].set_text(f"↑ {human_bytes(m.today.get('up', 0))} · ↓ {human_bytes(m.today.get('down', 0))}")
         self.refresh_rate()
         if self.compact:

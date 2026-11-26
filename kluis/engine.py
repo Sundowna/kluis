@@ -152,6 +152,7 @@ class SyncResult:
     trashed: int = 0
     deferred: int = 0           # big items handed to the big-items lane this run
     held: int = 0               # transfers left out: paused by the user, or already in the lane
+    waiting: int = 0            # changes left for later because the files lane is paused
     errors: list = field(default_factory=list)
 
 
@@ -190,6 +191,9 @@ class SyncEngine:
         # item; held(folder id) lists paths to leave alone this run (paused, or being transferred by the lane).
         self.defer: Callable | None = None
         self.held: Callable[[str], list] | None = None
+        # files_paused(): the user paused lane 1 (everything but big items). A run then only hands big items
+        # to the big-items lane; every other change waits on both sides, nothing is trashed.
+        self.files_paused: Callable[[], bool] | None = None
 
     # ---------------- public ----------------
     def cancel(self):
@@ -225,6 +229,12 @@ class SyncEngine:
                     remote, local = self.fit_windows_names(f, local, remote, state)
             plan = self.make_plan(f, local, remote, state)
             res.held = self.drop_held(plan, self.held(f.id) if self.held else [])
+            if self.defer is not None and self.files_paused and self.files_paused():
+                res.waiting = len(plan.conflicts) + len(plan.trash_local) + len(plan.trash_remote)
+                plan.conflicts, plan.trash_local, plan.trash_remote = [], [], []
+                self._files_paused = True
+            else:
+                self._files_paused = False
             log.info("[%s] plan: %s", f.name, plan.describe())
             if dry_run:
                 res.message = plan.describe()
@@ -281,6 +291,9 @@ class SyncEngine:
             if res.trashed:
                 parts.append(f"{res.trashed} moved to trash")
             res.message = ", ".join(parts) or "Up to date"
+            if res.waiting:
+                res.message = f"Files lane paused · {res.waiting} change(s) wait" + (
+                    f" · {', '.join(parts)}" if parts else "")
             if res.deferred:
                 res.message += f" · {res.deferred} big item(s) in the big-items lane"
         return res
@@ -762,6 +775,10 @@ class SyncEngine:
                     self.defer(f, direction, it, local, remote)
                     res.deferred += 1
                     total -= len(it[2])
+            if getattr(self, "_files_paused", False):
+                res.waiting += len(ups) + len(downs)
+                total -= len(ups) + len(downs)
+                ups, downs = [], []
             total = max(total, 1)
             self._prog = (min(done, total), total)
         self.upload_files(f, ups, local, res, step)

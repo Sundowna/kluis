@@ -69,6 +69,7 @@ class SyncManager:
                             start_thread=start_thread)
         self.engine.defer = self.lane.add
         self.engine.held = self.lane.held
+        self.engine.files_paused = lambda: self.settings.files_paused
         self.quiet_since = time.time()      # last time anything synced: paused big items resume after a while
         self.status: dict[str, FolderStatus] = {}
         self.activity: collections.deque[Activity] = collections.deque(maxlen=500)
@@ -323,6 +324,23 @@ class SyncManager:
     def send_first(self, key: tuple) -> bool:
         return self.lane.send_first(key)
 
+    def set_files_paused(self, paused: bool):
+        """Lane 1 (everything but big items) paused or not. The run in progress stops between files; runs
+        still look for changes, so new big items keep reaching the big-items lane."""
+        if self.settings.files_paused == paused:
+            return
+        self.settings.files_paused = paused
+        self.settings.save()
+        if paused:
+            if self.current is not None:
+                self._again.add(self.current)          # looked at again, for its big items only
+                self.engine.cancel()
+            self.log("info", "", "Files lane paused", "Big items keep syncing. Other changes wait until you resume.")
+        else:
+            self.log("info", "", "Files lane resumed")
+        self.request(reason="resume")
+        self._notify("global")
+
     def _auto_resume(self, now: float):
         """Paused big items go again once nothing else has synced for Settings.resume_paused_after minutes."""
         mins = self.settings.resume_paused_after
@@ -472,6 +490,8 @@ class SyncManager:
             while self._queue and not self._stop and not self.settings.paused and not self.hold                     and not self.switching:
                 fid = self._queue.popleft()
                 if fid == PHOTOS_ID:
+                    if self.settings.files_paused:
+                        continue                # Photos timeline sync belongs to the files lane
                     self._run_photos()
                     self._requeue(fid, "ok")
                     continue

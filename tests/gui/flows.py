@@ -1668,6 +1668,20 @@ def f25(d, env, app):
     d.expect(act.big.get_visible() and d.find("Pause SLOW-backup.zip") and d.find("Send SLOW-second.zip first")
              and not d.find("Send SLOW-backup.zip first", visible=False),
              "Activity shows both big items: Pause for each, Send first only for the waiting one")
+    lane2 = act.big_state.get_text()
+    d.expect(d.find("Lane 1 · Files") and d.find("Lane 2 · Big items (1 GB or more)") and
+             lane2.startswith("Uploading SLOW-backup.zip") and "1 waiting" in lane2,
+             f"F-041 Transfers shows the two lanes, lane 2 with what it uploads ({lane2})")
+    sp = app.window.status_panel
+    d.press("<Primary>1")
+    yield 0.6
+    big_cell = sp.cells["big"]
+    d.expect(big_cell[1].get_text() == "Big items" and big_cell[2].get_text().startswith("Uploading SLOW-backup.zip")
+             and big_cell[0].get_mapped() and sp.cells["prog"][1].get_text().startswith("Files · "),
+             "F-041 the status panel shows both lanes side by side: Files and Big items")
+    d.shot("two lanes in the status panel")
+    d.press("<Primary>6")
+    yield 0.6
     st = app.status()
     d.expect(st.kind == "syncing" and st.title == "Uploading SLOW-backup.zip" and
              "Everything else is up to date" in st.subtitle, f"F-036 the status names the big item ({st.title})")
@@ -1686,7 +1700,26 @@ def f25(d, env, app):
     yield 0.8
     d.expect(not f.held and d.find("Pause SLOW-second.zip"), "F-037 the row says it is uploading again")
     yield until(lambda: os.path.exists(os.path.join(cloud, "SLOW-second.zip")), 30, "F-037 and it uploads")
-    yield until(lambda: not act.big.get_visible(), 15, "the Big items card to go away when empty")
+    yield until(lambda: not act.big_list.get_children(), 15, "the big-items list to empty")
+    d.expect(act.big.get_visible() and act.big_state.get_text() == "Idle", "F-041 lane 2 says Idle, the card stays")
+    # F-040: pause lane 1, the big lane keeps going
+    d.click("Pause the files lane")
+    yield until(lambda: app.settings.files_paused, 5, "F-040 the files lane to pause")
+    d.expect(d.find("Resume the files lane") and act.files_state.get_text().startswith("Paused"),
+             f"F-040 lane 1 says paused, its button says Resume ({act.files_state.get_text()})")
+    with open(os.path.join(f.local, "waits.txt"), "w") as fh:
+        fh.write("w")
+    with open(os.path.join(f.local, "SLOW-big-while-paused.zip"), "w") as fh:
+        fh.write("z" * 2000)
+    m.request(f.id)
+    yield until(lambda: os.path.exists(os.path.join(cloud, "SLOW-big-while-paused.zip")), 40,
+                "F-040 the big file to upload while lane 1 is paused")
+    d.expect(not os.path.exists(os.path.join(cloud, "waits.txt")), "F-040 the small file waits")
+    d.expect(app.status().title in ("Files lane paused", "Uploading SLOW-big-while-paused.zip")
+             or app.status().title.startswith("Uploading"), f"F-040 the status says so ({app.status().title})")
+    d.shot("files lane paused")
+    d.click("Resume the files lane")
+    yield until(lambda: os.path.exists(os.path.join(cloud, "waits.txt")), 30, "F-040 Resume: the small file goes")
     # F-038: Send first, with two waiting behind a running one
     for name in ("SLOW-c.zip", "SLOW-d.zip", "SLOW-e.zip"):
         with open(os.path.join(f.local, name), "w") as fh:

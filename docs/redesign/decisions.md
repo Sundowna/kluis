@@ -156,3 +156,8 @@ process; the CLI can't resume, so that file starts over later (said in the toast
 `resume_paused_after` minutes (default 5) without other syncing, so a forgotten pause doesn't keep a backup out of
 Proton Drive. Photos timeline sync (`kluis/photos.py`) is not part of the lane.
 Tests: `tests/test_lane.py`, `tests/test_units.py` (big items), GUI flow F25; FEATURES.md F-036…F-039.
+Both lanes are always on screen (Walter, same day): *Activity › Transfers* (lane 1 Files, lane 2 Big items, each with
+its state) and the status panel's second row (Files | Big items, in the slot "Space used" had, which stayed hidden
+because the CLI has no quota command). Lane 1 has its own *Pause* (`Settings.files_paused`): runs still scan and plan,
+so new big items keep reaching lane 2, but every other change waits on both sides and nothing goes to a trash
+(conflicts and trashes wait too). Photos timeline sync counts as lane 1. FEATURES.md F-040, F-041.

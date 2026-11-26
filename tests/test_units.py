@@ -390,6 +390,31 @@ check(Settings.from_dict({"resume_paused_after": 7, "folders": [{"local": "/x", 
       == 5, "an unknown resume time falls back to 5 min")
 check(Settings.from_dict({"folders": [{"local": "/x", "remote": "/my-files/x", "held": ["ok.zip", 3, "/"]}]})
       .folders[0].held == ["ok.zip"], "only sensible paused paths are loaded")
+print("files lane (lane 1) paused")
+s_fp = compute(Snapshot(folders=1, files_paused=True, syncing=True, total=4))
+check(s_fp.kind == "paused" and s_fp.title == "Files lane paused" and "Big items still sync" in s_fp.subtitle,
+      f"F-040 the status says the files lane is paused, even while a run looks for big items ({s_fp.title})")
+s_fpb = compute(Snapshot(folders=1, files_paused=True, big_name="backup.zip"))
+check(s_fpb.kind == "syncing" and s_fpb.title == "Uploading backup.zip" and "Files lane paused" in s_fpb.subtitle,
+      "F-040 with a big item running it names that and says lane 1 is paused")
+check(compute(Snapshot(paused=True, files_paused=True)).title == "Sync paused — your files are safe",
+      "Pause syncing still wins over the files-lane pause")
+check(status.files_lane_text(False, False, False, "", 0, 0) == "Idle · up to date" and
+      status.files_lane_text(False, True, True, "Docs", 1, 3) == "Paused · changes wait until you resume" and
+      status.files_lane_text(False, False, True, "Docs", 1, 3) == "Syncing Docs · 1 of 3 files" and
+      status.files_lane_text(True, False, False, "", 0, 0) == "Paused with everything",
+      "F-041 lane 1's line in Transfers: idle, syncing, paused")
+check(status.big_lane_text(False, "", True, 0, 0, 0, 0) == "Idle" and
+      status.big_lane_text(False, "backup.zip", True, 300_000_000_000, 125, 2, 1) ==
+      "Uploading backup.zip · 300.0 GB · 2 min · 2 waiting · 1 paused",
+      "F-041 lane 2's line: idle, or what it transfers, how big, how long, what waits")
+asked.clear()
+mb.set_files_paused(True)
+check(sb.files_paused and asked == [None] and any(a.text == "Files lane paused" for a in mb.activity),
+      "F-040 Pause on lane 1 is kept in the settings, logged, and runs go on looking for big items")
+check(mb.engine.files_paused() is True, "F-040 the engine sees it")
+mb.set_files_paused(False)
+check(not sb.files_paused and any(a.text == "Files lane resumed" for a in mb.activity), "F-040 Resume")
 fb.held = ["Belastingaangifte-2025.zip"]
 check("Belastingaangifte" not in diagnostics.collect(sb, "1.0"), "F-037 Copy diagnostics names no paused file")
 mb.lane.shutdown()

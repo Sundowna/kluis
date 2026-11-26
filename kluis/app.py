@@ -220,6 +220,7 @@ class KluisApp(Gtk.Application):
         snap = Snapshot(paused=s.paused, syncing=m.busy and not s.paused, done=m.run_done, total=m.run_total,
                         big_name=big.name if big and not s.paused else "", big_up=bool(big and big.direction == "up"),
                         big_waiting=len(m.lane.waiting()), big_paused=sum(len(f.held) for f in s.folders),
+                        files_paused=s.files_paused,
                         eta_s=self.eta(), city=place[0] if place else "", via_vpn=vpn_on and known,
                         problems=problems, folders=len(s.folders), enabled=len(enabled), watching=m.watching(),
                         conflicts=conflicts, remote_checked=m.last_remote_check,
@@ -957,7 +958,7 @@ class KluisApp(Gtk.Application):
         elif kind in ("global", "tick"):
             if kind == "tick":
                 w.folders.refresh_all()
-                w.activity.refresh_big()
+            w.activity.refresh_big()
             self.refresh_all()
         elif kind == "lane":
             w.activity.refresh_big()

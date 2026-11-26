@@ -7,8 +7,8 @@ import time
 from gi.repository import Gtk
 
 from ..i18n import _
-from ..status import duration_text, human_bytes
-from .common import a11y, button, clear, combo, label, styled, vbox
+from ..status import big_lane_text, duration_text, files_lane_text, human_bytes
+from .common import a11y, button, clear, combo, label, set_button_text, styled, vbox
 
 ICONS = {"ok": ("✓", "k-ok"), "info": ("i", "k-muted"), "warning": ("!", "k-warn"), "error": ("✕", "k-error")}
 
@@ -37,25 +37,62 @@ class ActivityPage(Gtk.Box):
         sw.add(self.list)
         self.pack_start(sw, True, True, 0)
 
-    # ---------- big items ----------
+    # ---------- the two lanes ----------
     def _big_card(self):
-        self.big = vbox(spacing=6)
+        """Transfers: lane 1 (files) and lane 2 (big items) with what each is doing; big items listed under
+        lane 2 with Pause / Resume / Send first."""
+        self.big = vbox(spacing=8)
         styled(self.big, "k-card")
-        self.big.set_no_show_all(True)
-        a11y(self.big, _("Big items"))
-        self.big_title = label(_("Big items"), "k-h3")
-        self.big_hint = label("", "k-muted", "k-s12", wrap=True)
+        a11y(self.big, _("Transfers"))
+        self.big.pack_start(label(_("Transfers"), "k-h3"), False, False, 0)
+
+        def lane(title, glyph):
+            ic = label(glyph, "k-iconbox", "k-muted", xalign=0.5)
+            ic.set_size_request(32, 32)
+            name = label(title, "k-bold", ellipsize="end")
+            state = label("", "k-muted", "k-s12", ellipsize="end")
+            row = Gtk.Box(spacing=10)
+            row.pack_start(ic, False, False, 0)
+            row.pack_start(vbox(name, state, spacing=2), True, True, 0)
+            self.big.pack_start(row, False, False, 0)
+            return row, state
+        row1, self.files_state = lane(_("Lane 1 · Files"), "⇅")
+        a11y(self.files_state, _("Files lane"))
+        self.files_btn = button(_("Pause"), self._toggle_files, name=_("Pause the files lane"),
+                                tooltip=_("Big items keep syncing; other changes wait until you resume."))
+        self.files_btn.set_valign(Gtk.Align.CENTER)
+        row1.pack_end(self.files_btn, False, False, 0)
+        _row2, self.big_state = lane(_("Lane 2 · Big items (1 GB or more)"), "⇅")
+        a11y(self.big_state, _("Big items lane"))
         self.big_list = vbox(spacing=4)
-        for w in (self.big_title, self.big_hint, self.big_list):
-            self.big.pack_start(w, False, False, 0)
+        self.big_list.set_margin_start(42)
+        self.big.pack_start(self.big_list, False, False, 0)
+        self.big_hint = label("", "k-muted", "k-s12", wrap=True)
+        self.big.pack_start(self.big_hint, False, False, 0)
         self._big_sig = None
+        self._big_rows = []
         return self.big
 
-    def refresh_big(self):
-        """Rebuilds the big-items card when the items or their states changed; else updates the times only."""
+    def _toggle_files(self):
         m = self.app.manager
+        m.set_files_paused(not self.app.settings.files_paused)
+        self.refresh_big()
+
+    def refresh_big(self):
+        """Updates both lanes; rebuilds the big-items list only when its items or their states changed."""
+        m, s = self.app.manager, self.app.settings
         lane = m.lane
         running = lane.current
+        self.files_state.set_text(files_lane_text(s.paused, s.files_paused, m.busy, m.name_of(m.current),
+                                                  m.run_done, m.run_total))
+        paused = s.files_paused
+        set_button_text(self.files_btn, _("Resume") if paused else _("Pause"),
+                        _("Resume the files lane") if paused else _("Pause the files lane"))
+        self.files_btn.set_sensitive(not s.paused)
+        self.big_state.set_text(big_lane_text(
+            s.paused, running.name if running else "", bool(running and running.direction == "up"),
+            running.bytes if running else 0, time.time() - running.started if running else 0,
+            len(lane.waiting()), sum(len(f.held) for f in s.folders)))
         rows = [(it, "running" if it is running else "waiting", None) for it in list(lane.items)]
         rows += [(it, "paused", (f, path)) for f, path, it in lane.paused_list()]
         sig = tuple((r[0].key if r[0] else r[2], r[1]) for r in rows)
@@ -67,18 +104,14 @@ class ActivityPage(Gtk.Box):
                 row, detail = self._big_row(it, state, where)
                 self.big_list.pack_start(row, False, False, 0)
                 self._big_rows.append((it, state, where, detail))
+            self.big_list.show_all()
         for it, state, where, detail in self._big_rows:
             detail.set_text(self._big_detail(it, state, where))
-        mins = self.app.settings.resume_paused_after
-        self.big_hint.set_text(_("Big files and folders sync next to everything else, one at a time.") + " " + (
-            _("Paused items continue by themselves after {n} min without other syncing.").format(n=mins) if mins
-            else _("Paused items wait until you resume them.")))
-        if rows:
-            self.big.set_no_show_all(False)
-            self.big.show_all()
-        else:
-            self.big.hide()
-            self.big.set_no_show_all(True)
+        mins = s.resume_paused_after
+        self.big_hint.set_text(_("Big files and folders sync in lane 2, one at a time, next to everything else.")
+                               + " " + (_("Paused big items continue by themselves after {n} min without other "
+                                          "syncing.").format(n=mins) if mins
+                                        else _("Paused big items wait until you resume them.")))
 
     def _big_row(self, it, state, where):
         row = Gtk.Box(spacing=10)

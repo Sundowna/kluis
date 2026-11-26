@@ -31,6 +31,7 @@ class Snapshot:
     big_up: bool = True
     big_waiting: int = 0
     big_paused: int = 0
+    files_paused: bool = False  # lane 1 paused by the user: only big items sync
 
 
 @dataclass
@@ -66,6 +67,12 @@ def compute(snap: Snapshot) -> Status:
     if snap.paused:
         return Status("paused", _("Sync paused — your files are safe"),
                       _("New changes wait on this computer until you resume"), "warn")
+    if snap.files_paused and not snap.signed_out and not snap.hold_text:
+        if snap.big_name:
+            title = (_("Uploading {n}") if snap.big_up else _("Downloading {n}")).format(n=snap.big_name)
+            return Status("syncing", title, _("Files lane paused · only big items sync"), "sync")
+        return Status("paused", _("Files lane paused"),
+                      _("Big items still sync · other changes wait until you resume"), "warn")
     if snap.syncing:
         if snap.total:
             title = ngettext("Syncing {done} of {total} file", "Syncing {done} of {total} files",
@@ -113,6 +120,34 @@ def compute(snap: Snapshot) -> Status:
     if snap.remote_checked:
         parts.append(_("Proton Drive checked {t}").format(t=time.strftime("%H:%M", time.localtime(snap.remote_checked))))
     return Status("ok", title, " · ".join(parts), "ok")
+
+
+def files_lane_text(paused: bool, files_paused: bool, syncing: bool, folder: str, done: int, total: int) -> str:
+    """Lane 1 (everything but big items), one line for the Transfers card."""
+    if paused:
+        return _("Paused with everything")
+    if files_paused:
+        return _("Paused · changes wait until you resume")
+    if syncing:
+        if total:
+            return _("Syncing {f} · {d} of {n} files").format(f=folder, d=done, n=total) if folder else                 _("Syncing · {d} of {n} files").format(d=done, n=total)
+        return _("Looking for changes in {f}…").format(f=folder) if folder else _("Looking for changes…")
+    return _("Idle · up to date")
+
+
+def big_lane_text(paused: bool, name: str, up: bool, nbytes: int, seconds: float, waiting: int, held: int) -> str:
+    """Lane 2 (big items), one line for the Transfers card and the status panel."""
+    if paused:
+        return _("Paused with everything")
+    bits = []
+    if name:
+        verb = _("Uploading") if up else _("Downloading")
+        bits.append(f"{verb} {name} · {human_bytes(nbytes)} · {duration_text(seconds)}")
+    if waiting:
+        bits.append(ngettext("{n} waiting", "{n} waiting", waiting).format(n=waiting))
+    if held:
+        bits.append(ngettext("{n} paused", "{n} paused", held).format(n=held))
+    return " · ".join(bits) if bits else _("Idle")
 
 
 def human_bytes(n: float) -> str:

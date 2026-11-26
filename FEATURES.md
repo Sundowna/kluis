@@ -69,5 +69,7 @@ Same window, tabs and behaviour as on Linux; these lines are what Windows does d
 - F-037 *Pause* on a big item in Activity leaves it out of every sync (also after a restart) and never trashes it on either side; *Resume* takes it back. A paused file that was being transferred starts again from the beginning (Proton's CLI can't continue a transfer); a paused folder keeps the files already done — `tests/test_lane.py`, `tests/gui/flows.py: F25`
 - F-038 *Send first* puts a waiting big item next in line; the one being transferred keeps going — `tests/test_lane.py`, `tests/gui/flows.py: F25`
 - F-039 Paused big items resume by themselves once nothing else has synced for 5 minutes (Settings: 5, 15, 30, 60 min or Never); Activity says so — `tests/test_units.py: big items`
+- F-040 *Pause* on lane 1 (Files) in Activity › Transfers holds every change except big items, on both sides (nothing is trashed meanwhile, Photos waits too), kept over a restart; lane 2 keeps going and still gets new big items; *Resume* syncs what waited; the status line, panel and tray say *Files lane paused* — `tests/test_lane.py: files lane paused`, `tests/test_units.py: files lane`, `tests/gui/flows.py: F25`
+- F-041 The two lanes are always visible: Activity › Transfers shows *Lane 1 · Files* and *Lane 2 · Big items (1 GB or more)* with what each is doing (idle, syncing which folder, uploading which item, how big, how long, waiting, paused), and the status panel shows *Files* and *Big items* side by side — `tests/test_units.py: files lane`, `tests/gui/flows.py: F25`
 
 ## Removed

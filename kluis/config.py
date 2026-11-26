@@ -105,6 +105,7 @@ class Settings:
     accent: str = "green"              # green | purple
     skip_thumbnails: bool = False
     paused: bool = False
+    files_paused: bool = False         # lane 1 paused: only big items sync (kluis/lane.py)
     resume_paused_after: int = 5       # minutes without other syncing before paused big items resume; 0 = never
     onboarded: bool = False
     onboarding_step: int = 1
