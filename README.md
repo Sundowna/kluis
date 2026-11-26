@@ -5,11 +5,11 @@ It does no encryption or networking itself. Every file operation goes through **
 Proton Drive CLI** (`proton-drive`), so your files stay end-to-end encrypted the way Proton intends.
 Not affiliated with Proton AG.
 
-![Folders](docs/folders.png)
+![Home](docs/screens/home-dark.png)
 
-| Dark theme | Browse Proton Drive | Add a folder |
+| Folders (light) | Browse Proton Drive | Photos |
 |---|---|---|
-| ![](docs/folders-dark.png) | ![](docs/browse.png) | ![](docs/add-folder.png) |
+| ![](docs/screens/folders-light.png) | ![](docs/screens/browse-dark.png) | ![](docs/screens/photos-dark.png) |
 
 ## Install (about 1 minute)
 
@@ -70,22 +70,33 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
   ![Gallery](docs/photos-gallery.png)
 
   ![Photos](docs/photos.png)
-- **Fast reaction to changes:** local edits sync about 10 seconds after you save. Proton Drive is checked
-  every 15 minutes (you can change this).
+- **Home:** a world map with your location (or your Proton VPN exit, read from NetworkManager) and Proton Drive
+  in Zürich, plus a status panel with today's transfers and a live transfer graph. No geo-IP lookups.
+- **Fast reaction to changes:** local edits sync about 10 seconds after you save, even while a sync is running.
+  Proton Drive is checked every 5, 15, 30 or 60 minutes.
 - **Safe by design:**
   - Nothing is ever deleted for good. Deletions go to the system Trash or the Proton Drive trash.
   - If a file changed on both sides, Kluis keeps both copies: `report (conflict 2026-11-17 1042 laptop).pdf`.
   - Overwritten files stay available as earlier versions in Proton Drive.
   - Files are only marked as synced after their SHA-1 matches what Proton Drive reports.
+  - Downloads land in a hidden `.kluis-part` folder and are moved into place only when complete and verified.
+  - **Mass-deletion guard:** more than 50 files (or 10 % of a folder) about to go to a trash? Kluis pauses and asks.
+  - **Missing-folder guard:** an unplugged drive is never treated as "everything was deleted".
+  - Offline, disk full or signed out: syncing pauses and resumes by itself, with backoff (at most every 15 min).
+- **Shared with me:** keep a copy of items others share with you. Viewer items sync down only.
+- **Always the latest official CLI:** every new version is SHA-512 checked and must pass a capability self-test
+  before Kluis uses it. `kluis --selftest` proves your account works, in its own test folder only.
 - **Panel icon** with sync now, pause and quit: XApp's native icon on Cinnamon, MATE and Xfce;
   the standard system-tray icon on KDE Plasma (EndeavourOS) and other desktops.
   Closing the window keeps Kluis syncing in the background.
-- **Drive browser:** open folders, download, upload (drag files in), create, rename and trash.
+- **Drive browser:** open folders, download, upload (drag files in), create, rename, and trash with Undo.
+  Folder sizes and file counts, resizable columns.
 - **Drag a folder onto the window** to start syncing it.
 - **Activity log** and desktop notifications (all, problems only, or off).
-- **Settings:** start at login, start hidden, check interval, light/dark theme,
-  one-click CLI update (checksum-verified), sign out.
-- Shortcuts: `Ctrl+R` sync, `Ctrl+N` add folder, `Ctrl+,` settings, `Ctrl+Q` quit.
+- **Quick settings** column and **Settings:** your Proton Drive folder (move it safely), start at login,
+  start hidden, check interval, theme, notifications, home location, Kluis update notices (never installs
+  by itself), CLI updates, sign out, and "Copy diagnostics" (no email, tokens or private paths).
+- Shortcuts: `Ctrl+1…6` tabs, `Ctrl+F` search, `Ctrl+R` sync, `Ctrl+N` add folder, `Ctrl+,` settings, `Ctrl+Q` quit.
 
 ## How it works
 
@@ -116,18 +127,27 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
   changes are still picked up instantly.
 - **Proton Docs and Sheets are skipped.** The CLI cannot download them.
 - **Renames show up as delete + new file.** The copy in the trash is still recoverable.
-- **Built against CLI 0.9.0 (2026-10-05).** If Proton changes command flags, `kluis/cli.py` is the one
-  file to adjust.
+- **Always the newest CLI, but only if it passes the capability self-test.** If Proton changes command flags,
+  Kluis keeps the previous CLI and says "Proton changed its Drive tool. Kluis needs an update for it."
+  `kluis/cli.py` and `kluis/capabilities.py` are the files to adjust. See `docs/cli-capabilities.md`.
+- **No storage figure.** The CLI has no quota command, so Kluis shows no "space used" (never a guess).
 - When Proton ships its own Linux app, compare the two. Kluis's settings never touch Proton's.
 
 ## Development
 
 ```bash
-python3 tests/test_engine.py        # 33 folder-sync scenarios
-python3 tests/test_photos.py        # 12 Proton Photos scenarios
+python3 tests/test_engine.py        # folder-sync scenarios
+python3 tests/test_photos.py        # Proton Photos scenarios
+python3 tests/test_safety.py        # one test per safety rule (HANDOVER §7)
+python3 tests/test_units.py         # status text, ring mapping, migration, contrast …
+python3 tests/test_lint.py          # static checks + every module imports
+tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F20 under Xvfb, light/dark × 1440x900/1024x640
 KLUIS_DEBUG=1 python3 -m kluis      # run from the source folder with debug logs
+python3 -m kluis --selftest         # real account, own test folder only
 packaging/build-deb.sh              # build dist/kluis_<version>_all.deb
 ```
+
+The 1.0 redesign's handover, decisions and feature inventory are in `docs/redesign/`.
 
 `tests/mock_cli/proton-drive` imitates the real CLI's commands, JSON output and error texts
 (taken from `ProtonDriveApps/sdk/cli`). It is used for tests only.
