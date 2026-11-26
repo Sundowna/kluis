@@ -140,22 +140,26 @@ class StatusPanel(Gtk.Box):
         self.compact = on
         H, V = Gtk.Orientation.HORIZONTAL, Gtk.Orientation.VERTICAL
         self.left.set_orientation(H if on else V)
-        self.left.set_spacing(20 if on else 6)
+        self.left.set_spacing(12 if on else 6)
         self.head.set_max_width_chars(26 if on else 34)
-        places = {"enc": (0, 0), "space": (1, 0), "prog": (2, 0) if on else (0, 1), "today": (3, 0) if on else (1, 1)}
+        # one line: the hidden "Space used" cell goes last, so it leaves no gap (it must fit 1024 px wide)
+        places = ({"enc": (0, 0), "prog": (1, 0), "today": (2, 0), "space": (3, 0)} if on else
+                  {"enc": (0, 0), "space": (1, 0), "prog": (0, 1), "today": (1, 1)})
         for key, (col, row) in places.items():
             box = self.cells[key][0]
             self.grid.child_set_property(box, "left-attach", col)
             self.grid.child_set_property(box, "top-attach", row)
             box.set_orientation(H if on else V)
-            box.set_spacing(6 if on else 2)
+            box.set_spacing(4 if on else 2)
             pb = self.cells[key][3]
             if pb is not None:
                 pb.set_valign(Gtk.Align.CENTER)
-                pb.set_size_request(48 if on else 72, -1)
+                pb.set_size_request(36 if on else 72, -1)
         self.grid.set_column_homogeneous(not on)
-        self.grid.set_column_spacing(20 if on else 16)
+        self.grid.set_column_spacing(10 if on else 16)
         self.graph_title.set_visible(not on)
+        self.set_spacing(10 if on else 16)
+        self.right.set_spacing(8 if on else 4)
         self.right.set_orientation(H if on else V)
         self.right.reorder_child(self.graph, 0 if on else 1)
         self.graph.set_size_request(-1, 24 if on else 72)
