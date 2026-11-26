@@ -1312,6 +1312,8 @@ def f21(d, env, app):
 
     # F-004: add a second account through Proton's browser sign-in
     next_login(env, LINDI)
+    pop = open_account_menu(app)          # it was closed for the Browse check above
+    yield 0.5
     d.click("+ Add another Proton account", root=pop)
     yield until(lambda: d.has_text("Sign in to another Proton account"), 20, "sign-in page for another account")
     d.expect(app.manager.switching and not app.manager.busy, "nothing syncs while the other account signs in")
