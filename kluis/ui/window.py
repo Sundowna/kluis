@@ -22,6 +22,7 @@ from .statuspanel import StatusPanel
 
 TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")), ("photos", _("Photos")),
         ("shared", _("Shared with me")), ("activity", _("Activity"))]
+MIN_W = 960            # the window's narrowest width: a half-screen tile on 1920 px
 TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
 
 
@@ -42,9 +43,10 @@ class MainWindow(Gtk.ApplicationWindow):
         s = app.settings
         styled(self, "kluis")
         self.set_icon_name("dev.kluis.Kluis")
-        self.set_size_request(1024, 640)
+        # 960 px: half of a 1920 px screen, so Cinnamon/KDE can snap Kluis to a side (Walter, 2026-11-26)
+        self.set_size_request(MIN_W, 640)
         win = s.window or {}
-        self.set_default_size(max(1024, int(win.get("w", 1440))), max(640, int(win.get("h", 900))))
+        self.set_default_size(max(MIN_W, int(win.get("w", 1440))), max(640, int(win.get("h", 900))))
         if win.get("x", -1) >= 0 and win.get("y", -1) >= 0:
             self.move(int(win["x"]), int(win["y"]))
         if win.get("max"):

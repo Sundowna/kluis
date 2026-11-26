@@ -40,5 +40,6 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-015 Collapsing or expanding Quick settings doesn't move *Sync now*, *Pause* or the account button — `tests/gui/flows.py: F13`
 - F-018 Quick settings opens and closes with a small icon button at the far right of the header; its column starts level with the page content — `tests/gui/flows.py: F13`
 - F-019 Activity: *Show*, *Open log folder* and *Clear* sit side by side in one row — `tests/gui/flows.py: F22`
+- F-020 Every tab fits 960 px wide (half of a 1920 px screen), so Mint and KDE can snap Kluis to a side of the screen — `tests/gui/flows.py: F23`
 
 ## Removed

@@ -1,4 +1,4 @@
-"""End-to-end flows F1–F22 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
+"""End-to-end flows F1–F23 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
 
 Run one: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/flows.py F4 dark 1440x900 OUT
 All:     tests/gui/run_all.sh OUT
@@ -1552,6 +1552,31 @@ def f22(d, env, app):
     d.expect(not d.get("Open Computers", visible=False).is_visible(), "hint hidden when My files has items")
 
 
+# ------------------------------------------------------------------ F23
+def setup_f23(env):
+    set_cfg(env, folders=folders_cfg(env, "Documents"))
+
+
+def f23(d, env, app):
+    """F-020: every tab fits a half-screen tile of a 1920 px screen (960 px), so the window manager can snap it."""
+    from kluis.ui.window import MIN_W
+    yield main_ready(app)
+    yield idle(app)
+    win = app.window
+    d.expect(MIN_W <= 960 and win.get_size_request()[0] <= 960, "F-020 the window asks for at most 960 px")
+    for i, tab in enumerate(("home", "folders", "browse", "photos", "shared", "activity"), 1):
+        for collapsed in (False, True):
+            win.set_qs_collapsed(collapsed, save=False)
+            d.press(f"<Primary>{i}")
+            yield 0.8
+            need = win.get_preferred_width()[0]
+            d.expect(need <= 960, f"F-020 {tab}{' (Quick settings hidden)' if collapsed else ''} fits 960 px ({need} px)")
+    win.set_qs_collapsed(False, save=False)
+    win.resize(960, 640)
+    yield 1
+    d.shot("960 px wide")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1561,7 +1586,7 @@ FLOWS = {
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
-    "F22": (f22, setup_f22, {}),
+    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}),
 }
 
 
