@@ -14,19 +14,24 @@ import hashlib
 import logging
 import os
 import posixpath
+import shutil
 import socket
 import stat as statmod
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 
 from .cli import CliError, ProtonDriveCli, RemoteNode, TransferSummary, rjoin
-from .config import FolderPair
+from .config import PART_DIR, FolderPair
+from .errors import DISK_FULL, HoldError, classify
 from .state import Entry, StateStore
 
 log = logging.getLogger("kluis.engine")
 BATCH = 40  # paths per CLI call
+GUARD_FILES = 50        # §7.8: more than 50 files …
+GUARD_SHARE = 0.10      # … or more than 10 % of the folder in one run asks first
 
 
 class Cancelled(Exception):
@@ -73,8 +78,13 @@ class Plan:
 
 @dataclass
 class SyncResult:
-    status: str = "ok"          # ok | error | conflict | cancelled
+    status: str = "ok"          # ok | error | conflict | cancelled | guard | missing | hold
     message: str = ""
+    hold_kind: str = ""         # errors.HOLD_KINDS when status == "hold"
+    pending_trash: int = 0      # guard: files this run would move to a trash
+    files: int = 0              # files in the folder after this run
+    bytes_up: int = 0
+    bytes_down: int = 0
     uploaded: int = 0
     downloaded: int = 0
     conflicts: int = 0
@@ -122,42 +132,73 @@ class SyncEngine:
         self._cancel = True
         self.cli.cancel()
 
-    def sync(self, f: FolderPair, dry_run: bool = False) -> SyncResult:
+    def sync(self, f: FolderPair, dry_run: bool = False, allow_trash: int = 0) -> SyncResult:
+        """One run. `allow_trash`: the user confirmed the mass-deletion guard for up to this many files."""
         self._cancel = False
         res = SyncResult()
+        f = self.effective(f)
         try:
+            state = self.store.load(f.id)
+            had_files = sum(1 for e in state.values() if not e.is_dir)
+            # §7.9 missing-folder guard: a vanished folder or drive is never "everything deleted"
             if not os.path.isdir(f.local):
-                if f.mode == "mirror":
+                if f.mode == "mirror" and not had_files:
                     os.makedirs(f.local, exist_ok=True)
                 else:
-                    raise CliError(f"Local folder is missing: {f.local}")
+                    return self._missing(f, res)
+            if not os.access(f.local, os.R_OK | os.X_OK):
+                return self._missing(f, res)
+            self._clear_parts(f)
             self._emit(f, "phase", text="Looking for changes on this computer…")
             local = self.scan_local(f)
+            if had_files and not any(not li.is_dir for li in local.values()):
+                return self._missing(f, res)
             remote = None
             if f.mode != "backup":
                 self._emit(f, "phase", text="Looking for changes in Proton Drive…")
                 remote = self.scan_remote(f)
-            state = self.store.load(f.id)
             plan = self.make_plan(f, local, remote, state)
             log.info("[%s] plan: %s", f.name, plan.describe())
             if dry_run:
                 res.message = plan.describe()
                 return res
+            # §7.8 mass-deletion guard
+            n_trash = self.trash_count(plan, local, remote)
+            folder_files = max(had_files, 1)
+            if n_trash and (n_trash > GUARD_FILES or n_trash > GUARD_SHARE * folder_files) \
+                    and n_trash > allow_trash:
+                res.status, res.pending_trash = "guard", n_trash
+                res.message = (f"Kluis is about to move {n_trash} files from {f.name} to the trash. "
+                               "This usually means a folder was moved or a drive is missing.")
+                return res
             self.execute(f, plan, local, remote, res)
+            res.files = sum(1 for e in self.store.load(f.id).values() if not e.is_dir)
         except Cancelled:
             res.status, res.message = "cancelled", "Stopped"
+            return res
+        except HoldError as e:
+            res.status, res.hold_kind, res.message = "hold", e.kind, str(e)
             return res
         except CliError as e:
             if e.code == 130:
                 res.status, res.message = "cancelled", "Stopped"
                 return res
+            kind = classify(e)
+            if kind:
+                res.status, res.hold_kind, res.message = "hold", kind, str(e)
+                return res
             res.status, res.message = "error", str(e)
             res.errors.append(str(e))
             return res
         except OSError as e:
+            if classify(e) == DISK_FULL:
+                res.status, res.hold_kind, res.message = "hold", DISK_FULL, str(e)
+                return res
             res.status, res.message = "error", str(e)
             res.errors.append(str(e))
             return res
+        finally:
+            self._clear_parts(f)
         if res.errors:
             res.status = "error"
             res.message = f"{len(res.errors)} problem(s): {res.errors[0]}"
@@ -175,8 +216,66 @@ class SyncEngine:
             res.message = ", ".join(parts) or "Up to date"
         return res
 
+    # ---------------- guards ----------------
+    def effective(self, f: FolderPair) -> FolderPair:
+        """Viewer shares are always mirror-down (invariant 4). Unknown role counts as viewer."""
+        if not f.is_share:
+            return f
+        role = self.share_role(f.remote)
+        if role in ("editor", "admin") or f.mode == "mirror":
+            return f
+        import dataclasses
+        return dataclasses.replace(f, mode="mirror")
+
+    def share_role(self, remote: str) -> str:
+        top = remote[len("/shared-with-me/"):].split("/")[0]
+        try:
+            for n in self.cli.list("/shared-with-me"):
+                if n.uid == top or n.name == top:
+                    return n.role or "viewer"
+        except CliError as e:
+            if classify(e):
+                raise
+        return "viewer"
+
+    def _missing(self, f: FolderPair, res: SyncResult) -> SyncResult:
+        res.status = "missing"
+        res.message = f"Folder not found: {f.local}. Reconnect the drive or choose the folder again."
+        return res
+
+    def trash_count(self, plan: Plan, local: dict, remote: dict | None) -> int:
+        """Files (not folders) this plan would move to either trash, including files inside trashed folders."""
+        n = 0
+        for rel in plan.trash_local:
+            li = local.get(rel)
+            if li and li.is_dir:
+                n += sum(1 for r, x in local.items() if r.startswith(rel + "/") and not x.is_dir)
+            else:
+                n += 1
+        for rel in plan.trash_remote:
+            rn = (remote or {}).get(rel)
+            if rn and rn.is_folder:
+                n += sum(1 for r, x in (remote or {}).items() if r.startswith(rel + "/") and not x.is_folder)
+            else:
+                n += 1
+        return n
+
+    def _clear_parts(self, f: FolderPair):
+        """Remove Kluis's own staging folder (only ever holds partial downloads Kluis made)."""
+        d = os.path.join(f.local, PART_DIR)
+        if os.path.isdir(d) and not os.path.islink(d):
+            shutil.rmtree(d, ignore_errors=True)
+
+    @staticmethod
+    def _hold_if_fatal(e):
+        kind = classify(e)
+        if kind:
+            raise HoldError(kind, str(e))
+
     # ---------------- scanning ----------------
     def _ignored(self, f: FolderPair, rel: str) -> bool:
+        if rel == PART_DIR or rel.startswith(PART_DIR + "/"):
+            return True
         base = posixpath.basename(rel)
         for pat in f.ignore:
             pat = pat.strip()
@@ -453,6 +552,7 @@ class SyncEngine:
                     self._emit(f, "log", level="info",
                                text=f"Moved {len(chunk)} item(s) to the Proton Drive trash")
                 except CliError as e:
+                    self._hold_if_fatal(e)
                     res.errors.append(f"Trash in Proton Drive failed: {e}")
         for rel in p.trash_local:
             self._check()
@@ -473,6 +573,7 @@ class SyncEngine:
                 self.cli.create_folder(rjoin(f.remote, parent), name)
                 self.store.put(fid, Entry(rel, True))
             except CliError as e:
+                self._hold_if_fatal(e)
                 if e.not_found:
                     self.cli.ensure_folder(rjoin(f.remote, rel))
                     self.store.put(fid, Entry(rel, True))
@@ -493,22 +594,27 @@ class SyncEngine:
                 label = f"Uploading {d or f.name} ({len(chunk)} file(s))"
                 self._emit(f, "progress", done=done, total=total, text=label)
                 target = rjoin(f.remote, d)
+                t0 = time.monotonic()
                 try:
                     summary = self._upload_retry(target, [os.path.join(f.local, r) for r in chunk])
                     self._failures(summary, res, "upload")
+                    res.bytes_up += summary.bytes
+                    self._emit(f, "bytes", up=summary.bytes, seconds=time.monotonic() - t0)
                 except CliError as e:
                     if e.code == 130:
                         raise Cancelled()
+                    self._hold_if_fatal(e)
                     res.errors.append(f"Upload to {target} failed: {e}")
                 touched_remote_dirs.add(d)
                 step(label, len(chunk))
 
-        # 5. verify uploads against Proton Drive and record the new revisions
+        # 5. verify uploads against Proton Drive and record the new revisions (invariant 3)
         for d in touched_remote_dirs:
             self._check()
             try:
                 nodes = {n.name: n for n in self.cli.list(rjoin(f.remote, d))}
             except CliError as e:
+                self._hold_if_fatal(e)
                 res.errors.append(f"Could not verify {d or f.name}: {e}")
                 continue
             for rel in by_dir[d]:
@@ -517,15 +623,19 @@ class SyncEngine:
                 if li is None or n is None:
                     continue
                 lsha = self._local_sha1(f, rel, li)
-                if n.sha1 and n.sha1 != lsha:
-                    continue  # not confirmed: retried next time
+                if n.sha1:
+                    if n.sha1 != lsha:
+                        continue  # not confirmed: retried next time
+                elif n.size is not None and n.size != li.size:
+                    continue      # Proton reports no SHA-1 (decisions D15): size must match at least
                 self.store.put(fid, Entry(rel, False, li.size, li.mtime, n.revision, lsha))
                 res.uploaded += 1
 
-        # 6. downloads, grouped by local folder
+        # 6. downloads: into <folder>/.kluis-part, verified, then renamed into place (invariant 7)
         by_ldir = defaultdict(list)
         for rel in p.download:
             by_ldir[posixpath.dirname(rel)].append(rel)
+        stage_root = os.path.join(f.local, PART_DIR, f"{os.getpid()}-{time.time_ns()}")
         for d in sorted(by_ldir, key=lambda r: r.count("/")):
             ldir = os.path.join(f.local, d)
             os.makedirs(ldir, exist_ok=True)
@@ -533,30 +643,57 @@ class SyncEngine:
                 self._check()
                 label = f"Downloading {d or f.name} ({len(chunk)} file(s))"
                 self._emit(f, "progress", done=done, total=total, text=label)
+                stage = os.path.join(stage_root, d)
+                os.makedirs(stage, exist_ok=True)
+                t0 = time.monotonic()
                 try:
-                    summary = self.cli.download([rjoin(f.remote, r) for r in chunk], ldir,
-                                                file_strategy="remove", folder_strategy="merge")
+                    summary = self.cli.download([rjoin(f.remote, r) for r in chunk], stage,
+                                                file_strategy="rename", folder_strategy="merge")
                     self._failures(summary, res, "download")
+                    res.bytes_down += summary.bytes
+                    self._emit(f, "bytes", down=summary.bytes, seconds=time.monotonic() - t0)
                 except CliError as e:
                     if e.code == 130:
                         raise Cancelled()
+                    self._hold_if_fatal(e)
                     res.errors.append(f"Download into {d or f.name} failed: {e}")
                 for rel in chunk:
-                    path = os.path.join(f.local, rel)
-                    rn = remote.get(rel) if remote else None
-                    try:
-                        st = os.stat(path)
-                    except FileNotFoundError:
-                        continue
-                    li = LocalItem(False, st.st_size, st.st_mtime_ns)
-                    sha = self._local_sha1(f, rel, li)
-                    if rn and rn.sha1 and rn.sha1 != sha:
-                        continue
-                    self.store.put(fid, Entry(rel, False, li.size, li.mtime, rn.revision if rn else None, sha))
-                    res.downloaded += 1
+                    self._check()
+                    self._place_download(f, rel, stage, local, remote, res)
                 step(label, len(chunk))
 
     # ---------------- helpers ----------------
+    def _place_download(self, f, rel, stage, local, remote, res):
+        staged = os.path.join(stage, posixpath.basename(rel))
+        if not os.path.isfile(staged):
+            return
+        rn = remote.get(rel) if remote else None
+        st = os.stat(staged)
+        sha = sha1_file(staged)
+        if rn and rn.sha1 and rn.sha1 != sha:
+            os.unlink(staged)
+            res.errors.append(f"download of {rel} didn't match Proton's checksum; it will be retried")
+            return
+        target = os.path.join(f.local, rel)
+        before = local.get(rel)
+        try:
+            now = os.stat(target)
+        except FileNotFoundError:
+            now = None
+        changed = now is not None and (before is None or before.is_dir or now.st_size != before.size
+                                       or now.st_mtime_ns != before.mtime)
+        if changed:
+            # edited on this computer while we downloaded: keep both copies (invariant 2)
+            os.rename(target, os.path.join(f.local, conflict_name(rel)))
+            res.conflicts += 1
+            self._emit(f, "log", level="warning", text=f"Conflict in {rel}: kept both copies")
+        os.replace(staged, target)
+        st = os.stat(target)
+        li = LocalItem(False, st.st_size, st.st_mtime_ns)
+        self.store.store_sha1(target, li.size, li.mtime, sha)
+        self.store.put(f.id, Entry(rel, False, li.size, li.mtime, rn.revision if rn else None, sha))
+        res.downloaded += 1
+
     def _upload_retry(self, target: str, paths: list[str]) -> TransferSummary:
         try:
             return self.cli.upload(paths, target)

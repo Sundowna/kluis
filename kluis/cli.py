@@ -75,6 +75,11 @@ class RemoteNode:
     modified: str = ""  # ISO string
     shared: bool = False
     media_type: str = ""
+    role: str = ""          # viewer | editor | admin (shares)
+    shared_by: str = ""     # Shared with me: who shared it
+    shared_on: str = ""     # Shared with me: invite time (ISO)
+    trashed: str = ""       # /trash: trash time (ISO)
+    parent_uid: str = ""
 
     @property
     def is_folder(self) -> bool:
@@ -87,6 +92,10 @@ class RemoteNode:
             name = name.get("value") if name.get("ok", True) else ""
         rev = d.get("activeRevision") or {}
         digests = rev.get("claimedDigests") or {}
+        mem = d.get("membership") or {}
+        by = mem.get("sharedBy") or {}
+        if isinstance(by, dict):
+            by = by.get("value") if by.get("ok", True) else ""
         return cls(
             name=name or d.get("path") or d.get("uid", "?"),
             type=d.get("type", "folder" if "path" in d else "file"),
@@ -97,6 +106,11 @@ class RemoteNode:
             modified=rev.get("claimedModificationTime") or d.get("modificationTime") or "",
             shared=bool(d.get("isShared")),
             media_type=d.get("mediaType") or "",
+            role=mem.get("role") or d.get("directRole") or "",
+            shared_by=by or "",
+            shared_on=mem.get("inviteTime") or "",
+            trashed=d.get("trashTime") or "",
+            parent_uid=d.get("parentUid") or "",
         )
 
 
@@ -425,6 +439,23 @@ class ProtonDriveCli:
 
     def trash(self, paths: list[str]):
         return self.run(["filesystem", "trash", *paths], timeout=300)
+
+    def list_trash(self) -> list[RemoteNode]:
+        return self.list("/trash")
+
+    def restore(self, uids: list[str]):
+        """Undo a trash: restores by uid (/trash/<uid>), which works even when names repeat."""
+        return self.run(["filesystem", "restore", *[f"/trash/{u}" for u in uids]], timeout=300)
+
+    def delete_trashed(self, uids: list[str]):
+        """Permanent delete. Only --selftest calls this, and only for items it created (decisions D12)."""
+        return self.run(["filesystem", "delete", *[f"/trash/{u}" for u in uids]], timeout=300)
+
+    def shared_with_me(self) -> list[RemoteNode]:
+        return [n for n in self.list("/shared-with-me") if n.type in ("file", "folder")]
+
+    def help_text(self, *cmd: str) -> str:
+        return self.run([*cmd, "--help"], json_out=False, timeout=60, ok_codes=(0, 1)) or ""
 
     def rename(self, path: str, new_name: str):
         return self.run(["filesystem", "rename", path, new_name], timeout=120)
