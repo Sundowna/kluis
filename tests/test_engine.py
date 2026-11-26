@@ -6,7 +6,10 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TMP = tempfile.mkdtemp(prefix="kluis-test-")
+# inside the home folder, like real synced folders, so the home Trash is on the same drive
+_base = os.path.join(os.path.expanduser("~"), ".cache")
+os.makedirs(_base, exist_ok=True)
+TMP = tempfile.mkdtemp(prefix="kluis-test-", dir=_base)
 os.environ["XDG_CONFIG_HOME"] = os.path.join(TMP, "config")
 os.environ["XDG_DATA_HOME"] = os.path.join(TMP, "data")
 os.environ["XDG_STATE_HOME"] = os.path.join(TMP, "state")

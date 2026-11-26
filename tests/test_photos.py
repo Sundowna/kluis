@@ -6,7 +6,10 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TMP = tempfile.mkdtemp(prefix="kluis-photos-")
+# inside the home folder, like real synced folders, so the home Trash is on the same drive
+_base = os.path.join(os.path.expanduser("~"), ".cache")
+os.makedirs(_base, exist_ok=True)
+TMP = tempfile.mkdtemp(prefix="kluis-photos-", dir=_base)
 for k, v in (("XDG_CONFIG_HOME", "config"), ("XDG_DATA_HOME", "data"), ("XDG_STATE_HOME", "state")):
     os.environ[k] = os.path.join(TMP, v)
 os.environ["MOCK_ROOT"] = os.path.join(TMP, "cloud")
