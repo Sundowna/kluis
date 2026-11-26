@@ -1462,8 +1462,13 @@ def f22(d, env, app):
     pressed = lambda n: "k-pressed" in d.get(f"Section: {n}").get_style_context().list_classes()  # noqa: E731
     d.expect(pressed("Computers") and not pressed("My files"), "F-014 the Computers section button is highlighted")
     d.expect("k-flat" not in d.get("Reload").get_style_context().list_classes(), "F-014 ↻ has a normal border")
-    b.go("/devices/WalterXPS")
-    yield until(lambda: browse_names(app) == ["Desktop", "Documents"], 20, "F-013 the computer's synced folders")
+    from gi.repository import Gtk as _Gtk
+    calls_before = len(harness.calls(env.tmp))
+    b._activated(None, _Gtk.TreePath(0), None)            # double-click on the computer
+    yield until(lambda: b.path == "/devices/WalterXPS" and browse_names(app) == ["Desktop", "Documents"], 20,
+                "F-013 double-click opens the computer's synced folders")
+    d.expect(not any(c.startswith("filesystem download") for c in harness.calls(env.tmp)[calls_before:]),
+             "F-013 opening a computer never downloads it")
     d.shot("WalterXPS folders")
     d.click("Section: My files")
     yield until(lambda: b.path == "/my-files" and d.has_text("My files is empty"), 20, "F-014 back via the section row")

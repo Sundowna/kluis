@@ -376,8 +376,10 @@ class BrowserPage(Gtk.Box):
         n = self.store[tpath][0]
         if n.is_folder:
             self.go(rjoin(self.path, n.name))
-        else:
+        elif n.type == "file":
             self.open_file(n)
+        else:       # never "open" (= download) something that isn't one file: it can be a whole computer
+            self.app.toast(_("Kluis can't open “{n}” here").format(n=n.name))
 
     # ---------- actions ----------
     def open_file(self, n):
