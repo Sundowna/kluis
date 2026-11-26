@@ -167,8 +167,7 @@ if WIN:
 else:
     skip("F-034 Linux replaces a running program file without help")
 
-# Last on purpose: the harness stops at the first failing check, and this one is a known open bug.
-print("names Windows tells apart (F-021, F-022; BROKEN, found by audit 2026-11-26)")
+print("names Windows tells apart (F-021, F-022; broken in 2ec033e, fixed by audit 2026-11-26)")
 eng.windows = True
 f = pair("Strasse")
 write(f"{CLOUD}/Strasse/straße.txt", "with ß")
