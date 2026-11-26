@@ -250,8 +250,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
         self.qs_header_btn.set_no_show_all(True)
         self.account_btn = AccountButton(self.app)
+        row.pack_end(self.qs_header_btn, False, False, 0)     # far right: where the Quick settings column was
         row.pack_end(self.account_btn, False, False, 0)
-        row.pack_end(self.qs_header_btn, False, False, 0)
         row.pack_end(self.pause_btn, False, False, 0)
         row.pack_end(self.sync_btn, False, False, 0)
         return row
