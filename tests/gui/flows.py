@@ -1296,6 +1296,8 @@ def f21(d, env, app):
     # F-001 / F-006: the existing setup belongs to the signed-in account
     d.expect(app.settings.account == ME and [f.id for f in app.settings.folders] == ["documents"],
              "existing folders belong to the signed-in account")
+    d.press("<Primary>3")
+    yield until(lambda: browse_names(app) == ["Documents"], 20, "Browse lists the first account's Drive")
     btn = d.get(f"Account: {ME}")
     d.expect(d.has_text("me", root=btn), "header shows the account name next to its initials")
     pop = open_account_menu(app)
@@ -1306,14 +1308,9 @@ def f21(d, env, app):
     d.expect(d.has_text("Other accounts", root=pop) and d.find("More account actions", root=pop) is not None,
              "Other accounts heading with its ⋮ menu")
     d.shot("account menu, one account")
-    pop.popdown()
-    d.press("<Primary>3")
-    yield until(lambda: browse_names(app) == ["Documents"], 20, "Browse lists the first account's Drive")
 
     # F-004: add a second account through Proton's browser sign-in
     next_login(env, LINDI)
-    pop = open_account_menu(app)          # it was closed for the Browse check above
-    yield 0.5
     d.click("+ Add another Proton account", root=pop)
     yield until(lambda: d.has_text("Sign in to another Proton account"), 20, "sign-in page for another account")
     d.expect(app.manager.switching and not app.manager.busy, "nothing syncs while the other account signs in")
