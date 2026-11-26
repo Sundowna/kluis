@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Kluis installer for Linux Mint (21/22) and other Ubuntu/Debian desktops. Installs for your user only.
+# Kluis installer from source, for Linux Mint/Ubuntu/Debian (apt) and EndeavourOS/Arch/Manjaro (pacman).
+# Installs for your user only. Easier: the .deb or pacman package from the Releases page.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,21 +12,25 @@ ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 bold "Installing Kluis (unofficial Proton Drive client)…"
 
-# 1. Dependencies: all preinstalled on Linux Mint; checked anyway.
-missing=()
-python3 -c 'import gi; gi.require_version("Gtk","3.0"); from gi.repository import Gtk' 2>/dev/null \
-  || missing+=(python3-gi gir1.2-gtk-3.0)
-python3 -c 'import gi; gi.require_version("XApp","1.0")' 2>/dev/null \
-  || python3 -c 'import gi; gi.require_version("AyatanaAppIndicator3","0.1")' 2>/dev/null \
-  || missing+=(gir1.2-xapp-1.0)
-command -v gnome-keyring-daemon >/dev/null 2>&1 || missing+=(gnome-keyring)
+# 1. Dependencies: checked, then installed with apt or pacman after asking.
+have_gi() { python3 -c "import gi; gi.require_version(\"$1\",\"$2\")" 2>/dev/null; }
+missing_apt=(); missing_pac=()
+have_gi Gtk 3.0 || { missing_apt+=(python3-gi gir1.2-gtk-3.0); missing_pac+=(python-gobject gtk3); }
+have_gi XApp 1.0 || have_gi AyatanaAppIndicator3 0.1 \
+  || { missing_apt+=(gir1.2-ayatanaappindicator3-0.1); missing_pac+=(libayatana-appindicator); }
+ldconfig -p 2>/dev/null | grep -q libsecret-1 || { missing_apt+=(libsecret-1-0); missing_pac+=(libsecret); }
+command -v ffmpegthumbnailer >/dev/null || { missing_apt+=(ffmpegthumbnailer); missing_pac+=(ffmpegthumbnailer); }
+
+if command -v pacman >/dev/null; then pm=(sudo pacman -S --needed); missing=("${missing_pac[@]}")
+elif command -v apt-get >/dev/null; then pm=(sudo apt-get install -y); missing=("${missing_apt[@]}")
+else pm=(); missing=(); echo "Unknown package manager: install python-gobject, gtk3 and libsecret yourself."; fi
 if ((${#missing[@]})); then
   echo "Kluis needs: ${missing[*]}"
-  read -r -p "Install them now with apt (asks for your password)? [Y/n] " ans
+  read -r -p "Install them now (asks for your password)? [Y/n] " ans
   if [[ "${ans:-Y}" =~ ^[Yy]$ ]]; then
-    sudo apt-get install -y "${missing[@]}"
+    "${pm[@]}" "${missing[@]}"
   else
-    echo "Install them later with: sudo apt install ${missing[*]}"
+    echo "Install them later with: ${pm[*]} ${missing[*]}"
   fi
 fi
 
@@ -38,7 +43,7 @@ find "$APP_DIR" -name '__pycache__' -prune -exec rm -rf {} +
 cat > "$BIN" <<EOF
 #!/usr/bin/env bash
 export PYTHONPATH="$APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}"
-exec /usr/bin/python3 -m kluis "\$@"
+exec python3 -m kluis "\$@"
 EOF
 chmod +x "$BIN"
 

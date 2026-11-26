@@ -45,33 +45,50 @@ class Tray:
         self._setup()
 
     def _setup(self):
+        # Cinnamon, MATE and Xfce (Linux Mint) have XApp's own panel applet. KDE Plasma (EndeavourOS
+        # default), GNOME with the AppIndicator extension, Budgie etc. use StatusNotifier via Ayatana.
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+        xapp_first = any(d in desktop for d in ("CINNAMON", "MATE", "XFCE"))
+        order = [self._try_xapp, self._try_indicator] if xapp_first else [self._try_indicator, self._try_xapp]
+        for attempt in order:
+            if attempt():
+                log.info("panel icon: %s (desktop %s)", self.kind, desktop or "?")
+                return
+        log.warning("No panel icon library found; closing the window will quit Kluis")
+        self.icon = None
+
+    def _try_xapp(self) -> bool:
         try:
             gi.require_version("XApp", "1.0")
             from gi.repository import XApp
-            self.icon = XApp.StatusIcon()
-            self.icon.set_name("kluis")
-            self.icon.set_icon_name(_icon("idle"))
-            self.icon.set_tooltip_text("Kluis")
-            self.icon.set_secondary_menu(self.menu)
-            self.icon.connect("activate", self._xapp_activate)
-            self.icon.set_visible(True)
-            self.kind = "xapp"
-            return
         except (ValueError, ImportError) as e:
             log.info("XApp status icon not available: %s", e)
+            return False
+        self.icon = XApp.StatusIcon()
+        self.icon.set_name("kluis")
+        self.icon.set_icon_name(_icon("idle"))
+        self.icon.set_tooltip_text("Kluis")
+        self.icon.set_secondary_menu(self.menu)
+        self.icon.connect("activate", self._xapp_activate)
+        self.icon.set_visible(True)
+        self.kind = "xapp"
+        return True
+
+    def _try_indicator(self) -> bool:
         for ns in ("AyatanaAppIndicator3", "AppIndicator3"):
             try:
                 gi.require_version(ns, "0.1")
                 mod = __import__("gi.repository." + ns, fromlist=[ns])
-                ind = mod.Indicator.new("kluis", _icon("idle"), mod.IndicatorCategory.APPLICATION_STATUS)
-                ind.set_status(mod.IndicatorStatus.ACTIVE)
-                ind.set_menu(self.menu)
-                ind.set_title("Kluis")
-                self.icon, self.kind = ind, "indicator"
-                return
             except (ValueError, ImportError) as e:
                 log.info("%s not available: %s", ns, e)
-        self.icon = None
+                continue
+            ind = mod.Indicator.new("kluis", _icon("idle"), mod.IndicatorCategory.APPLICATION_STATUS)
+            ind.set_status(mod.IndicatorStatus.ACTIVE)
+            ind.set_menu(self.menu)
+            ind.set_title("Kluis")
+            self.icon, self.kind = ind, "indicator"
+            return True
+        return False
 
     @property
     def available(self) -> bool:

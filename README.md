@@ -1,4 +1,4 @@
-# Kluis: a Proton Drive desktop app for Linux Mint
+# Kluis: a Proton Drive desktop app for Linux Mint and EndeavourOS
 
 *Kluis* (Afrikaans for *safe* or *vault*) is an **unofficial** desktop client for Proton Drive.
 It does no encryption or networking itself. Every file operation goes through **Proton's official
@@ -13,24 +13,38 @@ Not affiliated with Proton AG.
 
 ## Install (about 1 minute)
 
-**Easiest:** download `kluis_<version>_all.deb` from the
-[latest release](https://github.com/Sundowna/kluis/releases/latest) and double-click it.
+**Linux Mint / Ubuntu / Debian:** download
+[`kluis_latest_all.deb`](https://github.com/Sundowna/kluis/releases/latest/download/kluis_latest_all.deb)
+and double-click it.
 
-**From source:**
+**EndeavourOS / Arch / Manjaro:** open a terminal (Konsole) and paste:
+
+```bash
+curl -LO https://github.com/Sundowna/kluis/releases/latest/download/kluis-latest-any.pkg.tar.zst
+sudo pacman -U kluis-latest-any.pkg.tar.zst
+```
+
+pacman pulls in everything Kluis needs. To update later, run the same two lines again; to remove:
+`sudo pacman -R kluis`. A `PKGBUILD` is in `packaging/arch/` if you prefer `makepkg -si`.
+
+**From source (either system):**
 
 ```bash
 git clone https://github.com/Sundowna/kluis && cd kluis && ./install.sh
 ```
 
-Then open **Kluis** from the Mint menu. The first run walks you through three steps:
+Then open **Kluis** from your app menu. The first run walks you through three steps:
 
 1. **Get the official CLI.** One click downloads it from `proton.me` and checks Proton's
    SHA-512 checksum.
 2. **Sign in.** Your browser opens Proton's own sign-in page, and the session is kept in your keyring.
 3. **Pick folders.** Documents, Pictures, or any other folder.
 
-Installs for your user only (`~/.local`), with no `sudo`. Everything it needs is preinstalled on
-Linux Mint 21/22. Remove it with `./uninstall.sh` (add `--purge` to also delete settings).
+`./install.sh` installs for your user only (`~/.local`). It checks for what Kluis needs and offers to
+install anything missing with apt or pacman. Remove it with `./uninstall.sh` (`--purge` also deletes settings).
+
+**Sign-in on KDE:** Proton's CLI keeps your session in the system keyring. On KDE that is KWallet. If sign-in
+isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and log out and in once.
 
 ## Features
 
@@ -63,7 +77,8 @@ Linux Mint 21/22. Remove it with `./uninstall.sh` (add `--purge` to also delete 
   - If a file changed on both sides, Kluis keeps both copies: `report (conflict 2026-11-17 1042 laptop).pdf`.
   - Overwritten files stay available as earlier versions in Proton Drive.
   - Files are only marked as synced after their SHA-1 matches what Proton Drive reports.
-- **Panel icon** (native XApp icon on Cinnamon, MATE and Xfce) with sync now, pause and quit.
+- **Panel icon** with sync now, pause and quit: XApp's native icon on Cinnamon, MATE and Xfce;
+  the standard system-tray icon on KDE Plasma (EndeavourOS) and other desktops.
   Closing the window keeps Kluis syncing in the background.
 - **Drive browser:** open folders, download, upload (drag files in), create, rename and trash.
 - **Drag a folder onto the window** to start syncing it.
@@ -117,6 +132,8 @@ packaging/build-deb.sh              # build dist/kluis_<version>_all.deb
 `tests/mock_cli/proton-drive` imitates the real CLI's commands, JSON output and error texts
 (taken from `ProtonDriveApps/sdk/cli`). It is used for tests only.
 
-Releases: bump `VERSION` in `kluis/__init__.py` and push to `main`. GitHub Actions runs the tests, builds the `.deb` and publishes release `vX.Y.Z` (once per version).
+Releases: bump `VERSION` in `kluis/__init__.py` and `pkgver` in `packaging/arch/PKGBUILD`, then push to `main`.
+GitHub Actions builds the `.deb` (Ubuntu) and the pacman package (in an Arch Linux container), installs and starts
+each, and publishes release `vX.Y.Z` once both pass.
 
 License: GPL-3.0.

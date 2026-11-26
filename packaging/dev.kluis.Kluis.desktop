@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kluis
+GenericName=Proton Drive sync
+Comment=Sync folders and photos with Proton Drive (unofficial, uses the official Proton Drive CLI)
+Exec=kluis
+Icon=dev.kluis.Kluis
+Terminal=false
+Categories=Network;FileTransfer;Utility;Graphics;Photography;
+Keywords=proton;drive;photos;sync;cloud;backup;encrypted;
+StartupNotify=true
+SingleMainWindow=true

@@ -1,6 +1,6 @@
 name: Release
-# Bump VERSION in kluis/__init__.py and push to main -> tests run, the .deb is built,
-# and a release vX.Y.Z is published with it (once per version).
+# Bump VERSION in kluis/__init__.py (and pkgver in packaging/arch/PKGBUILD) and push to main.
+# Both packages are built, installed, tested and started; then release vX.Y.Z is published once.
 on:
   push:
     branches: [main]
@@ -10,18 +10,77 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  deb:
+    name: Debian / Linux Mint package
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install test dependencies
-        run: sudo apt-get update -q && sudo apt-get install -y -q python3-gi gir1.2-gtk-3.0
+      - name: Install dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q python3-gi gir1.2-gtk-3.0 xvfb dbus-x11 imagemagick
       - name: Run tests
         run: |
           python3 tests/test_engine.py
           python3 tests/test_photos.py
-      - name: Build .deb
-        run: packaging/build-deb.sh
+      - name: Build and install .deb
+        run: |
+          packaging/build-deb.sh
+          sudo apt-get install -y -q ./dist/*.deb
+      - name: Start the installed app
+        run: |
+          xvfb-run -a -s "-screen 0 1000x720x24" dbus-run-session -- bash -c \
+            'KLUIS_DEBUG=1 kluis & sleep 10; import -window root dist/mint-screenshot.png; kill -0 $! && echo "Kluis is running"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/
+
+  arch:
+    name: Arch / EndeavourOS package
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - name: Install build tools and dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git python python-gobject gtk3 gdk-pixbuf2 libsecret \
+            libayatana-appindicator xorg-server-xvfb xorg-xauth dbus imagemagick ttf-dejavu adwaita-icon-theme
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: |
+          python3 tests/test_engine.py
+          python3 tests/test_photos.py
+      - name: Build package with makepkg
+        run: |
+          V="$(python3 -c 'import kluis; print(kluis.VERSION)')"
+          grep -q "^pkgver=$V$" packaging/arch/PKGBUILD || { echo "PKGBUILD pkgver must be $V"; exit 1; }
+          git config --global --add safe.directory "$PWD"
+          mkdir -p /tmp/build && cp packaging/arch/PKGBUILD /tmp/build/
+          git archive --prefix="kluis-$V/" -o "/tmp/build/kluis-$V.tar.gz" HEAD
+          useradd -m builder && chown -R builder /tmp/build
+          su builder -c "cd /tmp/build && makepkg --nodeps --noconfirm"
+          mkdir -p dist && cp /tmp/build/*.pkg.tar.zst dist/
+      - name: Install package with pacman
+        run: |
+          pacman -U --noconfirm dist/*.pkg.tar.zst
+          pacman -Qi kluis | sed -n '1,4p'
+          python3 -c "import gi; gi.require_version('AyatanaAppIndicator3','0.1'); print('panel icon library ok')"
+      - name: Start the installed app (KDE-like session)
+        run: |
+          XDG_CURRENT_DESKTOP=KDE xvfb-run -a -s "-screen 0 1000x720x24" dbus-run-session -- bash -c \
+            'KLUIS_DEBUG=1 kluis & sleep 10; import -window root dist/arch-screenshot.png; kill -0 $! && echo "Kluis is running"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: dist/
+
+  release:
+    needs: [deb, arch]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - name: Publish release (only if this version is new)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -29,7 +88,11 @@ jobs:
           V="v$(python3 -c 'import kluis; print(kluis.VERSION)')"
           if gh release view "$V" >/dev/null 2>&1; then
             echo "Release $V already exists; nothing to publish."
-          else
-            gh release create "$V" dist/*.deb --target "$GITHUB_SHA" \
-              --title "Kluis ${V#v}" --notes-file packaging/release-notes.md
+            exit 0
           fi
+          cd dist
+          # fixed names so the README's "latest" links never change
+          cp kluis_*_all.deb kluis_latest_all.deb
+          cp kluis-*-any.pkg.tar.zst kluis-latest-any.pkg.tar.zst
+          gh release create "$V" kluis_*.deb kluis-*.pkg.tar.zst --target "$GITHUB_SHA" \
+            --title "Kluis ${V#v}" --notes-file ../packaging/release-notes.md

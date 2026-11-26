@@ -11,20 +11,7 @@ find "$B" -name __pycache__ -prune -exec rm -rf {} +
 printf '#!/bin/sh\nexport PYTHONPATH="/usr/lib/kluis${PYTHONPATH:+:$PYTHONPATH}"\nexec /usr/bin/python3 -m kluis "$@"\n' > "$B/usr/bin/kluis"
 cp "$ROOT/kluis/data/icons/dev.kluis.Kluis.svg" "$B/usr/share/icons/hicolor/scalable/apps/"
 cp "$ROOT/README.md" "$ROOT/LICENSE" "$B/usr/share/doc/kluis/"
-cat > "$B/usr/share/applications/dev.kluis.Kluis.desktop" <<'DESK'
-[Desktop Entry]
-Type=Application
-Name=Kluis
-GenericName=Proton Drive sync
-Comment=Sync folders and photos with Proton Drive (unofficial, uses the official Proton Drive CLI)
-Exec=kluis
-Icon=dev.kluis.Kluis
-Terminal=false
-Categories=Network;FileTransfer;Utility;Graphics;Photography;
-Keywords=proton;drive;photos;sync;cloud;backup;encrypted;
-StartupNotify=true
-SingleMainWindow=true
-DESK
+cp "$ROOT/packaging/dev.kluis.Kluis.desktop" "$B/usr/share/applications/"
 cat > "$B/DEBIAN/control" <<CTRL
 Package: kluis
 Version: $VERSION
@@ -32,7 +19,7 @@ Section: net
 Priority: optional
 Architecture: all
 Installed-Size: $(du -sk "$B/usr" | cut -f1)
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-xapp-1.0 | gir1.2-ayatanaappindicator3-0.1
+Depends: python3 (>= 3.10), python3-gi, libsecret-1-0, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-xapp-1.0 | gir1.2-ayatanaappindicator3-0.1
 Recommends: gnome-keyring, ffmpegthumbnailer, gir1.2-cinnamondesktop-3.0 | gir1.2-gnomedesktop-3.0
 Maintainer: Sundowna <noreply@github.com>
 Homepage: https://github.com/Sundowna/kluis
