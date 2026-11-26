@@ -1,224 +1,348 @@
-"""First-run flow: 1 get the official CLI, 2 sign in, 3 pick folders. Each step is one click."""
+"""First run (HANDOVER §3.0): Step 1 get the CLI, 2 sign in, 3 pick folders. Back/Next on every step;
+the current step is saved, so closing mid-setup resumes there."""
 from __future__ import annotations
 
 import os
+import time
 
 from gi.repository import GLib, Gtk
 
-from ..cli import download_cli, rjoin
+from ..cli import DOWNLOAD_PAGE_URL, ChecksumMismatch, download_cli, find_cli, rjoin
 from ..config import FolderPair
-from .common import label, open_uri, run_bg, short_path, styled, text_button, user_dir
-from ..cli import DOWNLOAD_PAGE_URL
+from ..i18n import _
+from .common import a11y, button, clear, hbox, label, open_uri, run_bg, set_button_text, short_path, styled, \
+    user_dir, vbox
+
+SIGNIN_TIMEOUT = float(os.environ.get("KLUIS_SIGNIN_TIMEOUT", "300"))   # 5 min; tests shorten it (mock clock)
+STEPS = (_("Get the CLI"), _("Sign in"), _("Pick folders"))
 
 
-class Step(Gtk.Box):
-    def __init__(self, num, title, sub):
-        super().__init__(spacing=14)
-        styled(self, "k-step")
-        self.num = label(str(num), "k-step-num", xalign=0.5)
-        self.num.set_valign(Gtk.Align.START)
-        self.pack_start(self.num, False, False, 0)
-        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        v.pack_start(label(title, "k-step-title"), False, False, 0)
-        self.sub = label(sub, "k-dim", wrap=True)
-        self.sub.set_max_width_chars(60)
-        v.pack_start(self.sub, False, False, 0)
-        self.actions = Gtk.Box(spacing=8, margin_top=4)
-        v.pack_start(self.actions, False, False, 0)
-        self.pack_start(v, True, True, 0)
-        self._n = num
-
-    def set_state(self, state):  # pending | active | done
-        ctx = self.get_style_context()
-        for c in ("k-active", "k-done"):
-            ctx.remove_class(c)
-        if state == "active":
-            ctx.add_class("k-active")
-        if state == "done":
-            ctx.add_class("k-done")
-            self.num.set_text("✓")
-        else:
-            self.num.set_text(str(self._n))
-        self.actions.set_visible(state != "pending")
-        self.set_sensitive(state != "pending")
-
-    def set_actions(self, *widgets):
-        for c in self.actions.get_children():
-            c.destroy()
-        for w in widgets:
-            self.actions.pack_start(w, False, False, 0)
-        self.actions.show_all()
+def is_kde() -> bool:
+    return "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 
 
-class Onboarding(Gtk.ScrolledWindow):
+class Onboarding(Gtk.Box):
     def __init__(self, app, on_finished):
-        super().__init__(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
         self.app = app
         self.on_finished = on_finished
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, halign=Gtk.Align.CENTER)
-        styled(outer, "k-welcome")
-        outer.set_size_request(560, -1)
-        head = Gtk.Box(spacing=14)
-        head.pack_start(Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.DIALOG), False, False, 0)
-        hv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
-        hv.pack_start(label("Welcome to Kluis", "k-logo-title"), False, False, 0)
-        hv.pack_start(label("Your Proton Drive folders, synced on Linux Mint. End-to-end encrypted, "
-                            "powered by Proton's official CLI.", "k-dim", wrap=True), False, False, 0)
-        head.pack_start(hv, True, True, 0)
-        outer.pack_start(head, False, False, 6)
-
-        self.s1 = Step(1, "Get the official Proton Drive CLI",
-                       "Kluis talks to Proton Drive through Proton's own command-line tool. "
-                       "It is downloaded from proton.me and checked against Proton's SHA-512 checksum.")
-        self.s2 = Step(2, "Sign in", "Your browser opens Proton's sign-in page. Your password never "
-                                     "passes through Kluis; the session is kept in your keyring.")
-        self.s3 = Step(3, "Choose what to sync", "Pick folders now or later. Each one syncs both ways "
-                                                  "with a folder of the same name in Proton Drive.")
-        for s in (self.s1, self.s2, self.s3):
-            outer.pack_start(s, False, False, 0)
-        self.add(outer)
-        self.suggestions = {}
+        self.cli_state = "idle"         # idle | busy | done | error
+        self.sign_state = "idle"        # idle | busy | done | timeout | error
+        self.picks: dict[str, bool] = {}
+        self._signin_src = 0
+        card = vbox(spacing=22)
+        styled(card, "k-panel")
+        card.set_size_request(640, -1)
+        card.set_margin_top(24)
+        card.set_margin_bottom(24)
+        head = hbox(Gtk.Image.new_from_icon_name("dev.kluis.Kluis", Gtk.IconSize.DIALOG),
+                    vbox(label(_("Welcome to Kluis"), "k-h0"),
+                         label(_("Proton Drive on Linux, through Proton’s official CLI"), "k-muted"), spacing=2),
+                    spacing=14)
+        card.pack_start(head, False, False, 0)
+        self.bars = Gtk.Box(spacing=8, homogeneous=True)
+        a11y(self.bars, _("Progress"))
+        card.pack_start(self.bars, False, False, 0)
+        self.step_lbl = label("", "k-muted", "k-s13", "k-bold")
+        card.pack_start(self.step_lbl, False, False, 0)
+        self.body = vbox(spacing=12)
+        card.pack_start(self.body, False, False, 0)
+        nav = Gtk.Box(spacing=12)
+        nav.set_margin_top(8)
+        self.back = button(_("Back"), self._back, "k-big")
+        self.next = button(_("Next"), self._next, "suggested-action", "k-big")
+        self.next.set_size_request(160, -1)
+        nav.pack_start(self.back, False, False, 0)
+        nav.pack_end(self.next, False, False, 0)
+        card.pack_start(Gtk.Separator(), False, False, 0)
+        card.pack_start(nav, False, False, 0)
+        self.pack_start(card, False, False, 0)
+        self.step = 1
 
     # ---------- state ----------
     def refresh(self, account_state: str):
-        """account_state: checking | no-cli | signed-out | ok | offline"""
+        """account_state: checking | no-cli | signed-out | ok | offline. Resumes at the saved step."""
+        saved = max(1, min(3, self.app.settings.onboarding_step or 1))
         if account_state == "checking":
-            for s in (self.s1, self.s2, self.s3):
-                s.set_state("pending")
-            self.s1.set_actions(Gtk.Spinner(active=True), label("Looking for the Proton Drive CLI…", "k-dim"))
-            self.s1.actions.set_visible(True)
-            self.show_all()
+            self.cli_state = "busy"
+            self.show_step(1)
             return
         if account_state == "no-cli":
-            self._step1()
-            self.s2.set_state("pending")
-            self.s3.set_state("pending")
-        elif account_state == "signed-out":
-            self._cli_done()
-            self._step2()
-            self.s3.set_state("pending")
+            if self.cli_state != "error":
+                self.cli_state = "idle"
+            self.show_step(1)
+            return
+        self.cli_state = "done"
+        if account_state == "signed-out":
+            if self.sign_state not in ("busy", "timeout", "error"):
+                self.sign_state = "idle"
+            self.show_step(min(saved, 2))
         else:
-            self._cli_done()
-            self.s2.set_state("done")
-            self.s2.set_actions()
-            self.s2.sub.set_text("You are signed in.")
-            self._step3()
-        self.show_all()
-        for s in (self.s1, self.s2, self.s3):
-            s.actions.set_visible(s.get_sensitive())
+            self.sign_state = "done"
+            self.show_step(saved)
 
-    def _cli_done(self):
-        self.s1.set_state("done")
-        self.s1.sub.set_text(f"Found at {short_path(self.app.cli.path or '')}")
-        self.s1.set_actions()
+    def show_step(self, n: int):
+        self.step = n
+        self.app.settings.onboarding_step = n
+        self.app.settings.save()
+        clear(self.bars)
+        for i, name in enumerate(STEPS, 1):
+            bar = Gtk.Box()
+            styled(bar, "k-step-bar", "k-on" if i <= n else "")
+            lb = label(name, "k-s12", "k-bold", "k-ok" if i <= n else "k-muted")
+            self.bars.pack_start(vbox(bar, lb, spacing=6), True, True, 0)
+        self.bars.show_all()
+        self.step_lbl.set_text(_("Step {n} of 3").format(n=n))
+        clear(self.body)
+        getattr(self, f"_step{n}")()
+        self.body.show_all()
+        self.back.set_sensitive(n > 1)
+        set_button_text(self.next, _("Start syncing") if n == 3 else _("Next"))
+        self._update_next()
 
+    def _update_next(self):
+        ok = {1: self.cli_state == "done", 2: self.sign_state == "done", 3: True}[self.step]
+        self.next.set_sensitive(ok)
+
+    def _back(self):
+        if self.step > 1:
+            self.show_step(self.step - 1)
+
+    def _next(self):
+        if self.step < 3:
+            self.show_step(self.step + 1)
+        else:
+            self._finish()
+
+    # ---------- step 1 ----------
     def _step1(self):
-        self.s1.set_state("active")
-        self.bar = Gtk.ProgressBar(valign=Gtk.Align.CENTER, width_request=160)
-        self.bar.set_no_show_all(True)
-        dl = text_button("Download from proton.me", self._download, "k-accent", "k-pill",
-                         icon="folder-download-symbolic")
-        have = text_button("I already have it…", self._locate, "k-pill")
-        page = text_button("Download page", lambda: open_uri(DOWNLOAD_PAGE_URL), "flat")
-        self.s1.set_actions(dl, have, page, self.bar)
+        self.body.pack_start(label(_("Get the official Proton Drive CLI"), "k-h1"), False, False, 0)
+        self.body.pack_start(label(_("One click downloads it from proton.me and checks Proton’s SHA-512 checksum. "
+                                     "Kluis never touches your files any other way."), "k-muted", wrap=True,
+                                   max_chars=70), False, False, 0)
+        self.dl_btn = button(_("Download from proton.me"), self._download, "suggested-action", "k-big")
+        self.dl_btn.set_size_request(240, -1)
+        self.cli_note = label("", "k-num", wrap=True, max_chars=50)
+        self.body.pack_start(hbox(self.dl_btn, self.cli_note, spacing=12), False, False, 0)
+        self.body.pack_start(hbox(button(_("I already have it…"), self._locate, "k-flat"),
+                                  button(_("Download page"), lambda: open_uri(DOWNLOAD_PAGE_URL), "k-link"),
+                                  spacing=8), False, False, 0)
+        self._paint_cli()
+
+    def _paint_cli(self, text=None, tone=None):
+        st = self.cli_state
+        for c in ("k-ok", "k-error", "k-muted"):
+            self.cli_note.get_style_context().remove_class(c)
+        if st == "busy" and text is None:
+            text = _("Looking for the Proton Drive CLI…")
+        if st == "done":
+            ver = getattr(self, "_cli_version", "")
+            text = text or (_("✓ Downloaded · proton-drive {v} · SHA-512 checksum matches").format(v=ver)
+                            if getattr(self, "_downloaded", False) else
+                            _("✓ Found at {p}").format(p=short_path(self.app.cli.path or "")))
+            tone = "k-ok"
+            set_button_text(self.dl_btn, _("✓ Downloaded") if getattr(self, "_downloaded", False)
+                            else _("Download from proton.me"), _("Download from proton.me"))
+            self.dl_btn.set_sensitive(not getattr(self, "_downloaded", False))
+        elif st == "busy":
+            self.dl_btn.set_sensitive(False)
+        else:
+            self.dl_btn.set_sensitive(True)
+        self.cli_note.set_text(text or _("about 38 MB"))
+        self.cli_note.get_style_context().add_class(tone or "k-muted")
+        self._update_next()
 
     def _download(self):
-        self.s1.actions.set_sensitive(False)
-        self.bar.show()
+        self.cli_state = "busy"
+        set_button_text(self.dl_btn, _("Downloading…"), _("Download from proton.me"))
+        self._paint_cli(_("Starting…"))
+        t0 = time.monotonic()
 
-        def progress(frac):
-            GLib.idle_add(self.bar.set_fraction, frac)
+        def progress(done, total):
+            def show():
+                if self.cli_state == "busy" and hasattr(self, "cli_note"):
+                    self.cli_note.set_text(_("{a} of {b} MB").format(a=f"{done / 1e6:.1f}",
+                                                                     b=f"{total / 1e6:.1f}" if total else "?"))
+                return False
+            if time.monotonic() - t0 >= 0 or done == total:
+                GLib.idle_add(show)
 
         def done(path):
+            from ..capabilities import self_test  # noqa: F401  (self-test runs at sign-in time)
+            self._downloaded = True
             self.app.set_cli_path(path)
-            self.app.recheck()
+            run_bg(lambda: self.app.cli.version(), lambda v: (setattr(self, "_cli_version", v.split("+")[0]
+                                                                       .replace("cli-drive@", "")),
+                                                               self._done_cli()), lambda e: self._done_cli())
 
         def fail(e):
-            self.s1.actions.set_sensitive(True)
-            self.bar.hide()
-            self.s1.sub.set_markup(f"<span foreground='#e5484d'>Download failed: {GLib.markup_escape_text(str(e))}"
-                                   "</span>\nYou can download it from the download page, then choose "
-                                   "“I already have it…”.")
+            self.cli_state = "error"
+            set_button_text(self.dl_btn, _("Download from proton.me"))
+            msg = str(e) if isinstance(e, ChecksumMismatch) else \
+                _("Download failed: {e}").format(e=e)
+            self._paint_cli(msg, "k-error")
         run_bg(lambda: download_cli(progress), done, fail)
 
-    def _locate(self):
-        fc = Gtk.FileChooserNative.new("Choose the proton-drive program", self.get_toplevel(),
-                                       Gtk.FileChooserAction.OPEN, "Select", "Cancel")
-        fc.set_current_folder(os.path.expanduser("~/Downloads"))
-        if fc.run() == Gtk.ResponseType.ACCEPT:
-            path = fc.get_filename()
-            try:
-                os.chmod(path, os.stat(path).st_mode | 0o111)  # same as `chmod +x proton-drive`
-            except OSError:
-                pass
-            self.app.set_cli_path(path)
-            self.app.recheck()
-        fc.destroy()
+    def _done_cli(self):
+        self.cli_state = "done"
+        if self.step == 1:
+            self._paint_cli()
 
+    def _locate(self):
+        from .dialogs import choose_file
+        path = choose_file(self.get_toplevel(), _("Choose the proton-drive program"), os.path.expanduser("~/Downloads"))
+        if not path:
+            return
+        try:
+            os.chmod(path, os.stat(path).st_mode | 0o111)  # same as `chmod +x proton-drive`
+        except OSError:
+            pass
+        self.app.set_cli_path(path, custom=path != find_cli(None))
+        self.cli_state = "done"
+        self._paint_cli()
+
+    # ---------- step 2 ----------
     def _step2(self):
-        self.s2.set_state("active")
-        self.s2.sub.set_text("Your browser opens Proton's sign-in page. Your password never passes through "
-                             "Kluis; the session is kept in your keyring.")
-        go = text_button("Sign in with your browser", self._sign_in, "k-accent", "k-pill",
-                         icon="dialog-password-symbolic")
-        self.s2.set_actions(go)
+        self.body.pack_start(label(_("Sign in to Proton"), "k-h1"), False, False, 0)
+        self.body.pack_start(label(_("Your browser opens Proton’s own sign-in page. Kluis never sees your password; "
+                                     "the session is kept in your system keyring."), "k-muted", wrap=True,
+                                   max_chars=70), False, False, 0)
+        self.sign_btn = button(_("Open Proton sign-in"), self._sign_in, "suggested-action", "k-big")
+        self.sign_note = label("", wrap=True, max_chars=50)
+        self.body.pack_start(hbox(self.sign_btn, self.sign_note, spacing=12), False, False, 0)
+        self.again = Gtk.Box()
+        self.body.pack_start(self.again, False, False, 0)
+        if is_kde():
+            self.kde_note = label(_("On KDE Plasma, if sign-in isn’t remembered, install gnome-keyring and log in "
+                                    "again."), "k-muted", "k-s13", wrap=True, max_chars=70)
+            a11y(self.kde_note, "KDE keyring note")
+            self.body.pack_start(self.kde_note, False, False, 0)
+        self._paint_sign()
+
+    def _paint_sign(self, text=None):
+        st = self.sign_state
+        ctx = self.sign_note.get_style_context()
+        for c in ("k-ok", "k-error", "k-muted"):
+            ctx.remove_class(c)
+        if st == "done":
+            email = self.app.manager.email
+            text = _("✓ Signed in as {e}").format(e=email) if email else _("✓ Signed in")
+            ctx.add_class("k-ok")
+            self.sign_btn.set_sensitive(False)
+        elif st == "busy":
+            text = _("Waiting for your browser…")
+            ctx.add_class("k-muted")
+            self.sign_btn.set_sensitive(False)
+        elif st == "timeout":
+            text = _("Sign-in didn't finish. Try again.")
+            ctx.add_class("k-error")
+            self.sign_btn.set_sensitive(True)
+        else:
+            ctx.add_class("k-error" if st == "error" else "k-muted")
+            self.sign_btn.set_sensitive(True)
+        self.sign_note.set_text(text or "")
+        self._update_next()
 
     def _sign_in(self):
-        spin = Gtk.Spinner(active=True)
-        wait = label("Waiting for you to finish in the browser…", "k-dim")
-        self.s2.set_actions(spin, wait)
+        self.sign_state = "busy"
+        self._paint_sign()
+        attempt = object()
+        self._attempt = attempt
 
         def on_url(url):
             def show():
-                again = Gtk.LinkButton(uri=url, label="Open the sign-in page again")
-                self.s2.set_actions(spin, wait, again)
+                if self.step == 2 and self._attempt is attempt:
+                    clear(self.again)
+                    self.again.pack_start(button(_("Open the sign-in page again"), lambda: open_uri(url), "k-link"),
+                                          False, False, 0)
+                    self.again.show_all()
                 return False
             GLib.idle_add(show)
 
-        def fail(e):
-            self._step2()
-            self.s2.sub.set_markup(f"<span foreground='#e5484d'>{GLib.markup_escape_text(str(e))}</span>")
-        run_bg(lambda: self.app.cli.login(on_url), lambda _r: self.app.recheck(), fail)
+        def timeout():
+            self._signin_src = 0
+            if self._attempt is attempt and self.sign_state == "busy":
+                self._attempt = None
+                self.app.cli.cancel()
+                self.sign_state = "timeout"
+                if self.step == 2:
+                    self._paint_sign()
+            return False
+        if self._signin_src:
+            GLib.source_remove(self._signin_src)
+        self._signin_src = GLib.timeout_add(int(SIGNIN_TIMEOUT * 1000), timeout)
 
+        def done(_r):
+            if self._attempt is not attempt:
+                return
+            if self._signin_src:
+                GLib.source_remove(self._signin_src)
+                self._signin_src = 0
+
+            def checked(state):
+                self.sign_state = "done" if state == "ok" else "error"
+                if self.step == 2:
+                    self._paint_sign()
+                return False
+            self.app.manager.check_account(checked)
+
+        def fail(e):
+            if self._attempt is not attempt:
+                return
+            self.sign_state = "error"
+            if self.step == 2:
+                self._paint_sign(str(e))
+        run_bg(lambda: self.app.cli.login(on_url), done, fail)
+
+    # ---------- step 3 ----------
     def _step3(self):
-        self.s3.set_state("active")
-        chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=4, column_spacing=6,
-                            row_spacing=6)
-        self.suggestions = {}
-        for kind in (GLib.UserDirectory.DIRECTORY_DOCUMENTS, GLib.UserDirectory.DIRECTORY_PICTURES,
-                     GLib.UserDirectory.DIRECTORY_DESKTOP, GLib.UserDirectory.DIRECTORY_MUSIC):
-            p = user_dir(kind)
-            if not p or self.app.settings.overlaps(p):
-                continue
-            t = Gtk.ToggleButton(label=f"  {os.path.basename(p)}")
-            styled(t, "k-suggest")
-            t.set_active(kind == GLib.UserDirectory.DIRECTORY_DOCUMENTS)
-            self.suggestions[p] = t
-            chips.add(t)
-        other = text_button("Another folder…", self._other, "k-suggest", icon="list-add-symbolic")
-        chips.add(other)
-        start = text_button("Start syncing", self._finish, "k-accent", "k-pill")
-        later = text_button("Skip for now", lambda: self._finish(skip=True), "flat")
-        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        v.pack_start(chips, False, False, 0)
-        hb = Gtk.Box(spacing=8)
-        hb.pack_start(start, False, False, 0)
-        hb.pack_start(later, False, False, 0)
-        v.pack_start(hb, False, False, 0)
-        self.s3.set_actions(v)
+        self.body.pack_start(label(_("Pick folders to sync"), "k-h1"), False, False, 0)
+        self.body.pack_start(label(_("Each starts as two-way sync. You can change that per folder later."), "k-muted",
+                                   wrap=True), False, False, 0)
+        flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=5, column_spacing=8,
+                           row_spacing=8, homogeneous=False)
+        kinds = [(GLib.UserDirectory.DIRECTORY_DOCUMENTS, True), (GLib.UserDirectory.DIRECTORY_PICTURES, True),
+                 (GLib.UserDirectory.DIRECTORY_DESKTOP, False), (GLib.UserDirectory.DIRECTORY_MUSIC, False)]
+        if not self.picks:
+            for kind, default in kinds:
+                p = user_dir(kind)
+                if p and not self.app.settings.overlaps(p):
+                    self.picks[p] = default
+        for p, on in list(self.picks.items()):
+            t = Gtk.ToggleButton(label=("✓ " if on else "") + os.path.basename(p))
+            styled(t, "k-chipbtn", "k-big")
+            t.set_active(on)
+            a11y(t, os.path.basename(p))
+            t.connect("toggled", self._flip, p)
+            flow.add(t)
+        other = button(_("+ Other folder…"), self._other, "k-big")
+        flow.add(other)
+        self.body.pack_start(flow, False, False, 0)
+        self.body.pack_start(button(_("Skip for now"), lambda: self._finish(skip=True), "k-link"), False, False, 0)
+
+    def _flip(self, t, path):
+        self.picks[path] = t.get_active()
+        t.set_label(("✓ " if t.get_active() else "") + os.path.basename(path))
 
     def _other(self):
-        from .dialogs import FolderDialog
-        r = FolderDialog(self.get_toplevel(), self.app).run()
-        if r:
-            self.app.add_folder(r[0])
-            self._finish(skip=True)
+        from .dialogs import choose_local_folder
+        p = choose_local_folder(self.get_toplevel(), _("Choose a folder to sync"), os.path.expanduser("~"))
+        if p:
+            from ..config import validate_local
+            err = validate_local(self.app.settings, p)
+            if err:
+                self.app.toast(err)
+                return
+            self.picks[os.path.realpath(p)] = True
+            self.show_step(3)
 
     def _finish(self, skip=False):
         if not skip:
-            for path, t in self.suggestions.items():
-                if t.get_active() and not self.app.settings.overlaps(path):
-                    self.app.add_folder(FolderPair(local=path, remote=rjoin("/my-files", os.path.basename(path))))
+            for path, on in self.picks.items():
+                if on and not self.app.settings.overlaps(path):
+                    self.app.add_folder(FolderPair(local=path, remote=rjoin("/my-files", os.path.basename(path))),
+                                        quiet=True)
         self.app.settings.onboarded = True
+        self.app.settings.onboarding_step = 1
         self.app.settings.save()
         self.on_finished()

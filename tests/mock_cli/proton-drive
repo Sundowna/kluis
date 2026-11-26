@@ -347,7 +347,9 @@ def main():
             lp = resolve(p)
             if not os.path.exists(lp):
                 fail(f"Node not found: {os.path.basename(p)}")
-            uid = node(lp)["uid"] + "-" + str(time.time_ns())[-6:]
+            uid = node(lp)["uid"]          # a trashed node keeps its uid (like the real CLI)
+            if uid in index:
+                uid += "-" + str(time.time_ns())[-6:]
             stored = os.path.join(trash_dir, f"{time.time_ns()}-{os.path.basename(lp)}")
             shutil.move(lp, stored)
             index[uid] = {"orig": lp, "stored": stored, "time": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())}

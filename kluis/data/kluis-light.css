@@ -1,0 +1,45 @@
+/* Kluis GTK3 theme — light. Load with Gtk.CssProvider at APPLICATION priority; swap file on theme change. Generated from tokens.json. */
+@define-color k_bg #f0eff7;
+@define-color k_panel #faf9fe;
+@define-color k_surface #ebeaf3;
+@define-color k_line #d4d3de;
+@define-color k_text #24222d;
+@define-color k_muted #555460;
+@define-color k_mapdot #bdbcca;
+@define-color k_accent #00704e;
+@define-color k_accent_soft #c3ecd9;
+@define-color k_on_accent #fcfcfc;
+@define-color k_upload #af3b43;
+@define-color k_warn #a16100;
+@define-color k_error #b63132;
+
+window.kluis, .kluis .k-bg { background-color: @k_bg; color: @k_text; }
+.kluis .k-glow { background-image: linear-gradient(to bottom, alpha(@k_accent, 0.45), alpha(@k_accent, 0) 300px); }
+.kluis .k-panel { background-color: @k_panel; border: 1px solid @k_line; border-radius: 10px; }
+.kluis .k-surface { background-color: @k_surface; border-radius: 8px; }
+.kluis .dim-label, .kluis .k-muted { color: @k_muted; }
+.kluis .k-num { font-feature-settings: "tnum"; }
+.kluis button { min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid @k_line; background-image: none; background-color: @k_surface; color: @k_text; box-shadow: none; font-weight: 600; }
+.kluis button:hover { background-color: shade(@k_surface, 1.08); }
+.kluis button:active, .kluis button:checked { background-color: @k_accent_soft; border-color: @k_accent; }
+.kluis button.suggested-action, .kluis button.k-primary { background-color: @k_accent; color: @k_on_accent; border: none; min-height: 44px; }
+.kluis button.destructive-action { color: @k_error; }
+.kluis button:disabled { opacity: 0.45; }
+.kluis *:focus { outline: 2px solid @k_accent; outline-offset: 2px; }
+.kluis switch { min-width: 44px; min-height: 26px; border-radius: 13px; border: 1px solid @k_line; background-color: @k_surface; }
+.kluis switch:checked { background-color: @k_accent; border-color: @k_accent; }
+.kluis switch slider { min-width: 20px; min-height: 20px; border-radius: 10px; background-color: @k_muted; }
+.kluis switch:checked slider { background-color: @k_on_accent; }
+.kluis .k-nav button { border: none; background-color: transparent; font-weight: 400; }
+.kluis .k-nav button.k-current { background-color: @k_surface; font-weight: 700; box-shadow: inset 3px 0 0 @k_accent; }
+.kluis .k-badge { background-color: @k_warn; color: @k_on_accent; border-radius: 9px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
+.kluis .k-warn { color: @k_warn; } .kluis .k-error { color: @k_error; } .kluis .k-ok { color: @k_accent; }
+.kluis .k-toast { background-color: @k_text; color: @k_bg; border-radius: 10px; padding: 12px 16px; }
+.kluis popover, .kluis .k-menu { background-color: @k_panel; border: 1px solid @k_line; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08); }
+.kluis treeview header button { border: none; border-bottom: 1px solid @k_line; background-color: transparent; color: @k_muted; font-size: 12px; font-weight: 700; }
+.kluis treeview.view:selected { background-color: @k_accent_soft; color: @k_text; }
+/* Scrollbar: thin 2px track line + rounded accent thumb fading downwards (same look as the timeline) */
+.kluis scrollbar { background-color: transparent; border: none; }
+.kluis scrollbar trough { background-image: linear-gradient(to right, transparent 5px, alpha(@k_line, 0.6) 5px, alpha(@k_line, 0.6) 7px, transparent 7px); min-width: 12px; }
+.kluis scrollbar slider { min-width: 6px; border-radius: 6px; border: none; background-image: linear-gradient(to bottom, @k_accent, alpha(@k_accent, 0.35)); }
+.kluis scrollbar slider:hover { background-image: linear-gradient(to bottom, shade(@k_accent, 1.1), alpha(@k_accent, 0.6)); }
