@@ -69,9 +69,7 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
     (sharing its cache). Photos only in Proton are fetched once in the background and only a ~20 KB
     preview is kept in `~/.cache/kluis/previews` (switch: "Previews for all photos"; videos over 60 MB skipped).
 
-  ![Gallery](docs/photos-gallery.png)
-
-  ![Photos](docs/photos.png)
+  ![Photos](docs/screens/photos-light.png)
 - **Home:** a world map with your location (or your Proton VPN exit, read from NetworkManager) and Proton Drive
   in Zürich, plus a status panel with today's transfers and a live transfer graph. No geo-IP lookups.
 - **Fast reaction to changes:** local edits sync about 10 seconds after you save, even while a sync is running.
