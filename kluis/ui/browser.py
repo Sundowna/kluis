@@ -263,6 +263,7 @@ class BrowserPage(Gtk.Box):
 
     def load(self):
         self.loaded_once = True
+        self.to_devices.hide()           # only for an empty My files (_check_devices); never left over
         self._crumbs()
         path = self.path
         self._loading = path
