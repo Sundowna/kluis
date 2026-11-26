@@ -18,7 +18,7 @@ from ..i18n import _, ngettext
 from ..photos import captured_dt
 from ..thumbs import Thumbnailer
 from .common import (a11y, button, combo, hbox, label, open_path, open_uri, run_bg, short_path, styled,
-                     switch, vbox, wrap_check, wrapbar, ellipsize_button)
+                     switch, vbox, wrap_check, wrapbar)
 from .dialogs import choose_local_folder
 from .theme import animations_enabled
 
@@ -55,7 +55,12 @@ class CollapsibleCard(Gtk.Box):
         self.rev = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                 transition_duration=220 if animations_enabled() else 0)
         self.body = vbox(spacing=10, margin_top=12)
-        self.rev.add(self.body)
+        # the settings scroll only when the window is too short to show them (1024×640); at 1440×900
+        # everything shows and only the gallery scrolls
+        sc = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True)
+        sc.set_min_content_height(72)
+        sc.add(self.body)
+        self.rev.add(sc)
         self.pack_start(self.rev, False, False, 0)
         self.title = title
         self.on_toggle = None
@@ -465,16 +470,14 @@ class PhotosPage(Gtk.Box):
         a11y(self.down.switch, _("Download my photos to this computer"))
         self.down.switch.set_active(ps.download)
         self.down.switch.connect("notify::active", lambda s, _p: self._toggle("download", s.get_active()))
-        self.down_path = button("", lambda: self._open_dir(ps.download_dir), "k-link",
-                                tooltip=_("Open in file manager"), name=_("Open download folder"))
+        self.down_path = self._path_button(lambda: self._open_dir(ps.download_dir), _("Open download folder"))
         self.down.body.pack_start(label(_("New photos from your phone appear here automatically, sorted into folders."),
-                                        "k-muted", "k-s13", wrap=True, max_chars=24), False, False, 0)
-        ellipsize_button(self.down_path, 20)
-        self.down.body.pack_start(hbox(self.down_path, button(_("Change…"), self._pick_download,
+                                        "k-muted", "k-s13", wrap=True, max_chars=20), False, False, 0)
+        self.down.body.pack_start(hbox(self.down_path, button(_("Change…"), self._pick_download, "k-small",
                                                               name=_("Change download folder"))), False, False, 0)
         self.layout_combo = combo([("month", _("Folders by month (2026 / 2026-11)")),
                                    ("year", _("Folders by year (2026)")), ("flat", _("All in one folder"))],
-                                  ps.layout, lambda v: self._set("layout", v), _("Folder layout"), max_chars=18)
+                                  ps.layout, lambda v: self._set("layout", v), _("Folder layout"), max_chars=14)
         self.down.body.pack_start(self.layout_combo, False, False, 0)
         self.albums_chk = Gtk.CheckButton(label=_("Also save albums as folders (Albums/…)"), active=ps.albums)
         a11y(self.albums_chk, _("Also save albums as folders"))
@@ -483,31 +486,26 @@ class PhotosPage(Gtk.Box):
                                          active=ps.remove_deleted)
         a11y(self.trash_chk, _("If a photo is deleted in Proton, move my copy to the Trash"))
         self.trash_chk.connect("toggled", lambda c: self._set("remove_deleted", c.get_active()))
-        self.down.body.pack_start(wrap_check(self.albums_chk, 24), False, False, 0)
-        self.down.body.pack_start(wrap_check(self.trash_chk, 24), False, False, 0)
+        self.down.body.pack_start(wrap_check(self.albums_chk, 20), False, False, 0)
+        self.down.body.pack_start(wrap_check(self.trash_chk, 20), False, False, 0)
 
         # --- Upload card
         self.up = CollapsibleCard("↑", _("Upload"))
         a11y(self.up.switch, _("Add photos from this computer"))
         self.up.switch.set_active(ps.upload)
         self.up.switch.connect("notify::active", lambda s, _p: self._toggle("upload", s.get_active()))
-        self.up_path = button("", lambda: self._open_dir(ps.upload_dir) if ps.upload_dir else self._pick_upload(),
-                              "k-link", tooltip=_("Open in file manager"), name=_("Open upload folder"))
+        self.up_path = self._path_button(lambda: self._open_dir(ps.upload_dir) if ps.upload_dir else self._pick_upload(),
+                                         _("Open upload folder"))
         self.up.body.pack_start(label(_("New photos and videos in a folder (e.g. a camera import folder) are added to "
                                         "Proton Photos. Ones already there are skipped."), "k-muted", "k-s13",
                                       wrap=True), False, False, 0)
-        ellipsize_button(self.up_path, 20)
-        self.up.body.pack_start(hbox(self.up_path, button(_("Change…"), self._pick_upload,
+        self.up.body.pack_start(hbox(self.up_path, button(_("Change…"), self._pick_upload, "k-small",
                                                           name=_("Change upload folder"))), False, False, 0)
         self.up.body.pack_start(label(_("Photos you downloaded above are never uploaded again."), "k-muted",
-                                      "k-s12", wrap=True, max_chars=24), False, False, 0)
-        # side by side when there is room, stacked when the window is narrow (1024×640)
-        cards = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, min_children_per_line=1,
-                            max_children_per_line=2, column_spacing=12, row_spacing=6)
-        for c in (self.down, self.up):
-            child = Gtk.FlowBoxChild(can_focus=False)
-            child.add(c)
-            cards.add(child)
+                                      "k-s12", wrap=True, max_chars=20), False, False, 0)
+        cards = Gtk.Box(spacing=12, homogeneous=True)
+        cards.pack_start(self.down, True, True, 0)
+        cards.pack_start(self.up, True, True, 0)
         self.pack_start(cards, False, False, 0)
 
         # --- toolbar (wraps onto two rows when narrow)
@@ -545,6 +543,19 @@ class PhotosPage(Gtk.Box):
         self.refresh_status()
         self.sel_changed()
 
+    @staticmethod
+    def _path_button(cb, name):
+        """A link-style button whose own label ellipsizes long paths (it never widens the window)."""
+        from gi.repository import Pango
+        b = Gtk.Button()
+        lb = Gtk.Label(ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=22, xalign=0)
+        b.add(lb)
+        b.kluis_label = lb
+        styled(b, "k-link")
+        b.set_tooltip_text(_("Open in file manager"))
+        b.connect("clicked", lambda *_a: cb())
+        return a11y(b, name)
+
     # ---------- settings ----------
     def _set(self, key, value):
         ps = self.app.settings.photos
@@ -557,8 +568,8 @@ class PhotosPage(Gtk.Box):
 
     def _labels(self):
         ps = self.app.settings.photos
-        self.down_path.set_label(short_path(ps.download_dir or self._default_download_dir()))
-        self.up_path.set_label(short_path(ps.upload_dir) if ps.upload_dir else _("No folder chosen yet"))
+        self.down_path.kluis_label.set_text(short_path(ps.download_dir or self._default_download_dir()))
+        self.up_path.kluis_label.set_text(short_path(ps.upload_dir) if ps.upload_dir else _("No folder chosen yet"))
 
     def _default_download_dir(self):
         pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or os.path.expanduser("~/Pictures")

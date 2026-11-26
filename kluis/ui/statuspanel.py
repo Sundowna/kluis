@@ -62,7 +62,7 @@ class StatusPanel(Gtk.Box):
         super().__init__(spacing=24)
         self.app = app
         left = vbox(spacing=6)
-        self.head = label("", "k-h3")
+        self.head = label("", "k-h3", ellipsize="end", max_chars=34)
         a11y(self.head, _("Sync state"))
         left.pack_start(self.head, False, False, 0)
         grid = Gtk.Grid(column_spacing=28, row_spacing=6, column_homogeneous=True)
@@ -112,6 +112,7 @@ class StatusPanel(Gtk.Box):
         else:
             head = _("🔒 In sync • for {d}").format(d=duration_text(now - m.state_since))
         self.head.set_text(head)
+        self.head.set_tooltip_text(head)
         _box, t, v, pb = self.cells["prog"]
         if st.kind == "syncing":
             t.set_text(_("Uploading") if m.today.get("up", 0) >= m.today.get("down", 0) else _("Downloading"))

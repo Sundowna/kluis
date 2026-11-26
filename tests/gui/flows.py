@@ -600,7 +600,7 @@ def f9(d, env, app):
     answer(dl)
     d.click("Change download folder")
     yield 0.3
-    d.expect(app.settings.photos.download_dir == dl and d.get("Open download folder").get_label() == "~/Photos-out",
+    d.expect(app.settings.photos.download_dir == dl and d.get("Open download folder").kluis_label.get_text() == "~/Photos-out",
              "path updates")
     d.click("Open download folder")
     d.expect(OPENED[-1].endswith("/Photos-out"), "path opens the file manager")
