@@ -100,3 +100,8 @@ dialog.kluis .k-inline-error { color: @k_error; }
 dialog.kluis expander title label { color: @k_text; }
 dialog.kluis textview, dialog.kluis textview text { background-color: @k_surface; color: @k_text; }
 dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k_text; }
+/* lists (Activity, Proton Drive folder picker) follow the Kluis theme, not the system one */
+.kluis list, .kluis list row { background-color: @k_panel; color: @k_text; }
+.kluis list row:hover { background-color: alpha(@k_surface, 0.7); }
+.kluis list row:selected { background-color: @k_accent_soft; }
+.kluis scrolledwindow, .kluis viewport { background-color: transparent; }

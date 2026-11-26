@@ -177,7 +177,11 @@ class MainWindow(Gtk.ApplicationWindow):
         side.pack_start(label(_("Today’s timeline"), "k-section-head"), False, False, 14)
         self.timeline = vbox(spacing=8)
         a11y(self.timeline, _("Today’s timeline"))
-        side.pack_start(self.timeline, False, False, 0)
+        tl_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                       propagate_natural_height=True)
+        tl_scroll.set_min_content_height(40)       # never makes the window taller than the screen
+        tl_scroll.add(self.timeline)
+        side.pack_start(tl_scroll, False, False, 0)
         allact = button(_("All activity"), lambda: self.show_tab("activity"), "k-link")
         allact.set_halign(Gtk.Align.START)
         side.pack_start(allact, False, False, 4)
@@ -266,7 +270,7 @@ class MainWindow(Gtk.ApplicationWindow):
         col.pack_start(self.qs_btn, False, False, 0)
         allb = Gtk.MenuButton()
         allb.add(vbox(label("⚙", "k-h2", xalign=0.5), label(_("All settings…"), "k-s12", xalign=0.5, wrap=True,
-                                                             max_chars=8), spacing=0))
+                                                             max_chars=12), spacing=0))
         a11y(allb, _("All settings…"))
         self.all_menu = popover_menu(allb, [
             (_("+ Add folder"), self.app.add_folder_dialog, False, "Ctrl+N"),
@@ -284,15 +288,15 @@ class MainWindow(Gtk.ApplicationWindow):
         div = Gtk.Box()
         styled(div, "k-divider")
         col.pack_start(div, False, False, 6)
-        col.pack_start(label(_("Quick settings"), "k-section-head", xalign=0.5, wrap=True, max_chars=8), False, False, 0)
+        col.pack_start(label(_("Quick settings"), "k-section-head", xalign=0.5, wrap=True, max_chars=12), False, False, 0)
         self.qs = {}
         for key, title in (("pause", _("Pause sync")), ("notify", _("Notifications")), ("dark", _("Dark mode")),
                            ("login", _("Start at login")), ("vpn", _("VPN view"))):
             b = Gtk.Button()
             st = label("", "k-qs-state", xalign=0.5)
             st.set_line_wrap(True)
-            st.set_max_width_chars(8)
-            b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=8), st, spacing=2))
+            st.set_max_width_chars(12)
+            b.add(vbox(label(title, xalign=0.5, wrap=True, max_chars=12), st, spacing=2))
             b.connect("clicked", lambda _b, k=key: self.app.quick_toggle(k))
             styled(b, "k-qs-toggle")
             a11y(b, title)

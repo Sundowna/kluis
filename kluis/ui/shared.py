@@ -13,8 +13,9 @@ from ..i18n import _, ngettext
 from .common import a11y, button, iso_date, label, open_path, run_bg, short_path, styled, vbox
 from .dialogs import choose_local_folder
 
-COLS = [("perm", _("Permissions"), 120), ("name", _("Name"), 260), ("by", _("Shared by"), 180),
-        ("target", _("Local folder"), 300), ("date", _("Shared on"), 130), ("sync", _("Sync"), 90)]
+# defaults fit a 1440×900 window with Quick settings open; Name and Local folder take any extra room
+COLS = [("perm", _("Permissions"), 96), ("name", _("Name"), 170), ("by", _("Shared by"), 150),
+        ("target", _("Local folder"), 200), ("date", _("Shared on"), 104), ("sync", _("Sync"), 64)]
 
 
 def perm_text(role):
@@ -68,6 +69,7 @@ class SharedPage(Gtk.Box):
             col.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
             col.set_fixed_width(int(widths.get(key, w)))
             col.set_min_width(56)
+            col.set_expand(key in ("name", "target") and key not in widths)
             col.connect("notify::width", self._col_width, key)
             if key == "date":
                 col.set_clickable(True)
