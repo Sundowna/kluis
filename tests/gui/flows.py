@@ -1035,22 +1035,33 @@ def f15(d, env, app):
 
 
 # ------------------------------------------------------------------ F16
+def newer_version():
+    """One patch above the running Kluis, so F16 stays right after every version bump."""
+    from kluis import VERSION
+    major, minor, patch = (int(x) for x in VERSION.split(".")[:3])
+    return f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0-beta.1"
+
+
 def setup_f16(env):
     rel = os.path.join(env.tmp, "releases.json")
-    json.dump([{"tag_name": "v1.0.1", "prerelease": False, "html_url": "https://github.com/Sundowna/kluis/releases/tag/v1.0.1"},
-               {"tag_name": "v1.1.0-beta.1", "prerelease": True, "html_url": "u"}], open(rel, "w"))
+    newer, beta = newer_version()
+    json.dump([{"tag_name": f"v{newer}", "prerelease": False,
+                "html_url": f"https://github.com/Sundowna/kluis/releases/tag/v{newer}"},
+               {"tag_name": f"v{beta}", "prerelease": True, "html_url": "u"}], open(rel, "w"))
     os.environ["KLUIS_TEST_RELEASES"] = "file://" + rel
     set_cfg(env, app_last_check=0, cli_last_check=time.time())
 
 
 def f16(d, env, app):
     yield main_ready(app)
-    yield until(lambda: any(t.startswith("Kluis 1.0.1 is available") for t, _b in app.sent_notifications), 40,
+    newer, beta = newer_version()
+    yield until(lambda: any(t.startswith(f"Kluis {newer} is available") for t, _b in app.sent_notifications), 40,
                 "update notice")
     d.expect(not any(f.endswith(".deb") or f.endswith(".zst") for f in os.listdir(env.home)), "nothing installs")
     d.shot("notice")
     from kluis import appupdate
-    d.expect(appupdate.pick([{"tag_name": "v1.1.0-beta.1", "prerelease": True}], "1.0.0", False) is None,
+    from kluis import VERSION
+    d.expect(appupdate.pick([{"tag_name": f"v{beta}", "prerelease": True}], VERSION, False) is None,
              "beta off: pre-release ignored")
 
 
