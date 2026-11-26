@@ -18,7 +18,7 @@ from ..i18n import _, ngettext
 from ..photos import captured_dt
 from ..thumbs import Thumbnailer
 from .common import (a11y, button, combo, hbox, label, open_path, open_uri, run_bg, short_path, styled,
-                     switch, vbox)
+                     switch, vbox, wrap_check, wrapbar, ellipsize_button)
 from .dialogs import choose_local_folder
 from .theme import animations_enabled
 
@@ -451,7 +451,7 @@ def _rr(cr, x, y, w, h, r):
 
 class PhotosPage(Gtk.Box):
     def __init__(self, app):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.app = app
         ps = app.settings.photos
         self.thumbs = Thumbnailer(app.cli, self._preview_ready)
@@ -468,12 +468,13 @@ class PhotosPage(Gtk.Box):
         self.down_path = button("", lambda: self._open_dir(ps.download_dir), "k-link",
                                 tooltip=_("Open in file manager"), name=_("Open download folder"))
         self.down.body.pack_start(label(_("New photos from your phone appear here automatically, sorted into folders."),
-                                        "k-muted", "k-s13", wrap=True), False, False, 0)
+                                        "k-muted", "k-s13", wrap=True, max_chars=24), False, False, 0)
+        ellipsize_button(self.down_path, 20)
         self.down.body.pack_start(hbox(self.down_path, button(_("Change…"), self._pick_download,
                                                               name=_("Change download folder"))), False, False, 0)
         self.layout_combo = combo([("month", _("Folders by month (2026 / 2026-11)")),
                                    ("year", _("Folders by year (2026)")), ("flat", _("All in one folder"))],
-                                  ps.layout, lambda v: self._set("layout", v), _("Folder layout"))
+                                  ps.layout, lambda v: self._set("layout", v), _("Folder layout"), max_chars=18)
         self.down.body.pack_start(self.layout_combo, False, False, 0)
         self.albums_chk = Gtk.CheckButton(label=_("Also save albums as folders (Albums/…)"), active=ps.albums)
         a11y(self.albums_chk, _("Also save albums as folders"))
@@ -482,8 +483,8 @@ class PhotosPage(Gtk.Box):
                                          active=ps.remove_deleted)
         a11y(self.trash_chk, _("If a photo is deleted in Proton, move my copy to the Trash"))
         self.trash_chk.connect("toggled", lambda c: self._set("remove_deleted", c.get_active()))
-        self.down.body.pack_start(self.albums_chk, False, False, 0)
-        self.down.body.pack_start(self.trash_chk, False, False, 0)
+        self.down.body.pack_start(wrap_check(self.albums_chk, 24), False, False, 0)
+        self.down.body.pack_start(wrap_check(self.trash_chk, 24), False, False, 0)
 
         # --- Upload card
         self.up = CollapsibleCard("↑", _("Upload"))
@@ -495,32 +496,29 @@ class PhotosPage(Gtk.Box):
         self.up.body.pack_start(label(_("New photos and videos in a folder (e.g. a camera import folder) are added to "
                                         "Proton Photos. Ones already there are skipped."), "k-muted", "k-s13",
                                       wrap=True), False, False, 0)
+        ellipsize_button(self.up_path, 20)
         self.up.body.pack_start(hbox(self.up_path, button(_("Change…"), self._pick_upload,
                                                           name=_("Change upload folder"))), False, False, 0)
         self.up.body.pack_start(label(_("Photos you downloaded above are never uploaded again."), "k-muted",
-                                      "k-s12"), False, False, 0)
-        cards = Gtk.Box(spacing=12, homogeneous=True)
-        cards.pack_start(self.down, True, True, 0)
-        cards.pack_start(self.up, True, True, 0)
+                                      "k-s12", wrap=True, max_chars=24), False, False, 0)
+        # side by side when there is room, stacked when the window is narrow (1024×640)
+        cards = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, min_children_per_line=1,
+                            max_children_per_line=2, column_spacing=12, row_spacing=6)
+        for c in (self.down, self.up):
+            child = Gtk.FlowBoxChild(can_focus=False)
+            child.add(c)
+            cards.add(child)
         self.pack_start(cards, False, False, 0)
 
-        # --- toolbar
-        bar = Gtk.Box(spacing=8)
-        bar.pack_start(label(_("Gallery"), "k-h3"), False, False, 0)
-        self.album_combo = combo([("", _("All photos"))], "", self._album_changed, _("Album"))
-        bar.pack_start(self.album_combo, False, False, 0)
+        # --- toolbar (wraps onto two rows when narrow)
+        self.album_combo = combo([("", _("All photos"))], "", self._album_changed, _("Album"), max_chars=14)
         self.sel_lbl = label("", "k-muted", "k-s13")
-        bar.pack_start(self.sel_lbl, False, False, 0)
         self.open_btn = button(_("Open"), self._open_selected)
         self.dl_btn = button(_("↓ Download selected"), self._download_selected, "suggested-action")
-        bar.pack_end(button(_("Open on the web"), lambda: open_uri(WEB_PHOTOS), "k-link"), False, False, 0)
         self.prev_sw = switch(ps.remote_previews, self._toggle_previews, _("Previews for all photos"),
                               tooltip=_("Photos not saved on this computer are fetched once; a small preview is kept "
                                         "and the original deleted. Videos over 60 MB are skipped."))
-        bar.pack_end(self.prev_sw, False, False, 0)
-        bar.pack_end(label(_("Previews for all photos"), "k-muted", "k-s12"), False, False, 0)
-        bar.pack_end(self.dl_btn, False, False, 0)
-        bar.pack_end(self.open_btn, False, False, 0)
+        bar = wrapbar(label(_("Gallery"), "k-h3"), self.album_combo, self.sel_lbl, self.open_btn, self.dl_btn)
         self.pack_start(bar, False, False, 0)
 
         # --- gallery
@@ -530,14 +528,19 @@ class PhotosPage(Gtk.Box):
         self.wait = label(_("Reading your timeline…"), "k-muted", xalign=0.5)
         self.gstack.add_named(vbox(Gtk.Spinner(active=True), self.wait, valign=Gtk.Align.CENTER), "loading")
         self.gmsg = label("", "k-muted", xalign=0.5, wrap=True)
-        empty = vbox(label("🖼", "k-h0", xalign=0.5), label(_("See your photo timeline"), "k-h2", xalign=0.5),
+        empty = vbox(label(_("See your photo timeline"), "k-h2", xalign=0.5),
                      self.gmsg, hbox(button(_("Show my photos"), self.load, "suggested-action"),
                                      button(_("See your photo timeline"), lambda: open_uri(WEB_PHOTOS)),
-                                     halign=Gtk.Align.CENTER), spacing=10, valign=Gtk.Align.CENTER)
+                                     halign=Gtk.Align.CENTER), spacing=6, valign=Gtk.Align.CENTER)
         self.gstack.add_named(empty, "msg")
         self.pack_start(self.gstack, True, True, 0)
-        self.pack_start(label(_("Click to select (several at once is fine) · double-click opens a photo · previews "
-                                "are made on this computer"), "k-muted", "k-s12"), False, False, 0)
+        foot = Gtk.Box(spacing=12)
+        foot.pack_start(label(_("Click to select (several at once is fine) · double-click opens a photo · previews "
+                                "are made on this computer"), "k-muted", "k-s12", wrap=True), True, True, 0)
+        foot.pack_end(button(_("Open on the web"), lambda: open_uri(WEB_PHOTOS), "k-link"), False, False, 0)
+        foot.pack_end(hbox(label(_("Previews for all photos"), "k-muted", "k-s12"), self.prev_sw, spacing=6),
+                      False, False, 0)
+        self.pack_start(foot, False, False, 0)
         self._labels()
         self.refresh_status()
         self.sel_changed()

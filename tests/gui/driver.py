@@ -205,6 +205,13 @@ class Driver:
                 break
             Gtk.main_iteration_do(False)
         self.step += 1
+        win = getattr(getattr(self, "app", None), "window", None)
+        if win is not None and win.get_visible():
+            mw, mh = win.get_preferred_width()[0], win.get_preferred_height()[0]
+            sw, sh = self.env.size
+            if mw > sw or mh > sh:            # content would be cut off at this screen size
+                self.log.append(f"{self.step:02d} FAILED: window needs {mw}x{mh} on a {sw}x{sh} screen")
+                raise FlowFailed(f"window needs {mw}x{mh}, larger than the {sw}x{sh} screen ({note})")
         root = Gdk.get_default_root_window()
         w, h = self.env.size
         pb = Gdk.pixbuf_get_from_window(root, 0, 0, w, h)

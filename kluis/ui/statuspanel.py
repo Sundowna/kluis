@@ -12,7 +12,7 @@ from .common import a11y, label, vbox
 
 class Graph(Gtk.DrawingArea):
     def __init__(self, app):
-        super().__init__(height_request=92, hexpand=True)
+        super().__init__(height_request=72, hexpand=True)
         self.app = app
         self.connect("draw", self._draw)
         a11y(self, _("Current transfer graph"))
@@ -61,11 +61,11 @@ class StatusPanel(Gtk.Box):
     def __init__(self, app):
         super().__init__(spacing=24)
         self.app = app
-        left = vbox(spacing=10)
+        left = vbox(spacing=6)
         self.head = label("", "k-h3")
         a11y(self.head, _("Sync state"))
         left.pack_start(self.head, False, False, 0)
-        grid = Gtk.Grid(column_spacing=28, row_spacing=10, column_homogeneous=True)
+        grid = Gtk.Grid(column_spacing=28, row_spacing=6, column_homogeneous=True)
         self.cells = {}
 
         def cell(key, title, col, row, bar=False):

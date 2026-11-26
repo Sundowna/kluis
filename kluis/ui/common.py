@@ -119,8 +119,12 @@ def switch(active: bool, on_change=None, name: str = "", tooltip: str | None = N
     return a11y(sw, name)
 
 
-def combo(options: list[tuple[str, str]], active: str, on_change=None, name: str = ""):
+def combo(options: list[tuple[str, str]], active: str, on_change=None, name: str = "", max_chars: int = 0):
     c = Gtk.ComboBoxText()
+    if max_chars:
+        cell = c.get_cells()[0]
+        cell.set_property("ellipsize", Pango.EllipsizeMode.END)
+        cell.set_property("width-chars", max_chars)
     for k, t in options:
         c.append(k, t)
     c.set_active_id(active)
@@ -251,4 +255,34 @@ def vbox(*children, spacing=8, **kw):
     for c in children:
         if c is not None:
             b.pack_start(c, False, False, 0)
+    return b
+
+
+def wrapbar(*children, spacing=8, per_line=3):
+    """A toolbar that wraps onto a second row when the window is narrow (1024×640)."""
+    fb = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=spacing, row_spacing=6,
+                     homogeneous=False, max_children_per_line=20, min_children_per_line=per_line)
+    fb.set_valign(Gtk.Align.START)
+    for c in children:
+        if c is not None:
+            child = Gtk.FlowBoxChild(can_focus=False)
+            child.add(c)
+            fb.add(child)
+    return fb
+
+
+def wrap_check(check: Gtk.CheckButton, chars=40):
+    lb = check.get_child()
+    if isinstance(lb, Gtk.Label):
+        lb.set_line_wrap(True)
+        lb.set_max_width_chars(chars)
+    return check
+
+
+def ellipsize_button(b: Gtk.Button, chars=24):
+    """Path buttons: shorten long paths instead of widening the window."""
+    lb = b.get_child()
+    if isinstance(lb, Gtk.Label):
+        lb.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        lb.set_max_width_chars(chars)
     return b

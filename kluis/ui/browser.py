@@ -98,17 +98,15 @@ class BrowserPage(Gtk.Box):
         a11y(self.crumbs, _("Breadcrumbs"))
         self.pack_start(self.crumbs, False, False, 0)
 
-        bar = Gtk.Box(spacing=8)
         self.up_btn = button(_("↑ Upload…"), self._upload_dialog, "suggested-action")
         self.new_btn = button(_("+ New folder"), self._new_folder)
         self.dl_btn = button(_("↓ Download"), self._download_selected)
         self.rn_btn = button(_("Rename"), self._rename_selected)
         self.tr_btn = button(_("Move to trash"), self._trash_selected, "k-danger")
-        for b in (self.up_btn, self.new_btn, self.dl_btn, self.rn_btn, self.tr_btn):
-            bar.pack_start(b, False, False, 0)
         self.refresh_btn = button("↻", self.load, "k-flat", tooltip=_("Reload this folder"), name=_("Reload"))
-        bar.pack_end(self.refresh_btn, False, False, 0)
-        self.pack_start(bar, False, False, 0)
+        from .common import wrapbar
+        self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.rn_btn, self.tr_btn, self.refresh_btn),
+                        False, False, 0)
 
         # list
         self.store = Gtk.ListStore(GObject.TYPE_PYOBJECT, bool, str, str, str, str, str)
@@ -155,13 +153,13 @@ class BrowserPage(Gtk.Box):
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
         self.stack.add_named(sw, "list")
         skel = vbox(spacing=12, margin=16)
-        for _i in range(7):
+        for _i in range(4):
             row = Gtk.Box(spacing=16)
-            for wdt in (260, 60, 70, 90):
+            for wdt in (160, 50, 60, 80):
                 b = Gtk.Box()
                 b.set_size_request(wdt, 14)
                 styled(b, "k-skeleton")
-                row.pack_start(b, wdt == 260, wdt == 260, 0)
+                row.pack_start(b, wdt == 160, wdt == 160, 0)
             skel.pack_start(row, False, False, 0)
         a11y(skel, _("Loading"))
         self.stack.add_named(skel, "skeleton")
@@ -173,7 +171,7 @@ class BrowserPage(Gtk.Box):
         self.stack.add_named(msgbox, "msg")
         self.pack_start(self.stack, True, True, 0)
         self.pack_start(label(_("Drag files onto this list to upload · click a folder to open it · trashed items can "
-                                "be restored from the Proton Drive trash"), "k-muted", "k-s12", wrap=True),
+                                "be restored from the Proton Drive trash"), "k-muted", "k-s12", wrap=True, max_chars=60),
                         False, False, 0)
         self.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new("text/uri-list", 0, 0)], Gdk.DragAction.COPY)
         self.connect("drag-data-received", self._on_drop)
