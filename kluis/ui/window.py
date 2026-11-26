@@ -310,6 +310,11 @@ class MainWindow(Gtk.ApplicationWindow):
         return col
 
     def set_qs_collapsed(self, collapsed, save=True):
+        if collapsed:
+            # the header button takes exactly the room the column frees (its width + the 16 px gap, minus the
+            # header's 8 px gap), so Sync now, Pause and the account button don't move (Walter, 2026-11-26)
+            w = self.qs_col.get_allocated_width()
+            self.qs_header_btn.set_size_request((w if w > 1 else 132) + 8, -1)
         self.app.settings.qs_collapsed = collapsed
         self.qs_col.set_visible(not collapsed)
         self.qs_header_btn.set_visible(collapsed)

@@ -882,8 +882,15 @@ def f13(d, env, app):
     d.click("Notifications", root=col)
     d.expect(app.settings.notifications in ("all", "problems", "off"), "Settings shows the same value")
     w_before = app.window.stack.get_allocated_width()
+
+    def header_x():
+        win = app.window
+        return [w.translate_coordinates(win, 0, 0)[0] for w in (win.sync_btn, win.pause_btn, win.account_btn)
+                if w.get_mapped()]
+    x_before = header_x()
     d.click(app.window.qs_btn)
     yield 0.5
+    d.expect(header_x() == x_before, f"F-015 Sync now, Pause and the account button stay put ({x_before} → {header_x()})")
     d.expect(not col.get_visible() and app.window.qs_header_btn.get_visible(), "column gone; button in header")
     icons = app.window.qs_header_btn.get_child().get_children()
     d.expect(icons and all(i.get_visible() for i in icons), "the header button shows its sliders icon and chevron")
@@ -891,6 +898,9 @@ def f13(d, env, app):
     d.shot("collapsed")
     import kluis.config as kc
     d.expect(kc.Settings.load().qs_collapsed, "state saved (stays collapsed after restart)")
+    d.click(app.window.qs_header_btn)
+    yield 0.5
+    d.expect(col.get_visible() and header_x() == x_before, "expanding again: the header buttons still don't move")
 
 
 # ------------------------------------------------------------------ F14
