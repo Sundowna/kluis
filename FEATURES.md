@@ -62,7 +62,8 @@ Same window, tabs and behaviour as on Linux; these lines are what Windows does d
 - F-033 A file another program has open (Word, a video player) is not replaced: Activity says it is in use, the rest of the folder syncs, and the next sync brings the new version once it is closed — `tests/test_windows.py: a file open in another program`
 - F-034 Updating Proton's CLI works while `proton-drive.exe` is still running: the running one is moved aside, the new one takes its place — `tests/test_windows.py: updating proton-drive.exe`
 - F-035 A junction (Windows' link to another folder) inside a synced folder is not followed: nothing behind it is uploaded — `tests/test_windows.py: junctions`
-- F-036 Windows text is smoothed in grey like on Linux, without ClearType's red and green edges — `tests/test_units.py: Windows: text smoothing`
+- F-042 Windows text is smoothed in grey like on Linux, without ClearType's red and green edges — `tests/test_units.py: Windows: text smoothing`
+- F-043 Windows' title bar takes Kluis's theme colours: on Windows 11 the colour at the top of the window (accent glow over the background), so the bar flows into it; on Windows 10 light or dark — `tests/gui/flows.py: F24`
 
 ## Big items (Kluis 1.2)
 

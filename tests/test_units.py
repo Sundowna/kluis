@@ -304,7 +304,7 @@ if os.name == "nt":
     check(_second.stdout.strip() == "True" and _shown == [1],
           f"F-028 a second start hands over: the running Kluis shows its window ({_second.stdout!r}, {_shown})")
 
-    print("Windows: text smoothing (F-036)")
+    print("Windows: text smoothing (F-042)")
     import cairo  # noqa: E402
     import gi  # noqa: E402
     gi.require_version("Gdk", "3.0")
@@ -314,7 +314,7 @@ if os.name == "nt":
     _fo = Gdk.Screen.get_default().get_font_options()
     check(_fo is not None and _fo.get_antialias() == cairo.ANTIALIAS_GRAY
           and _fo.get_subpixel_order() in (cairo.SUBPIXEL_ORDER_DEFAULT,),
-          f"F-036 text is smoothed in grey, without ClearType's coloured edges "
+          f"F-042 text is smoothed in grey, without ClearType's coloured edges "
           f"({_fo and (_fo.get_antialias(), _fo.get_subpixel_order())})")
 
 print("CLI processes end with Kluis (F-029)")

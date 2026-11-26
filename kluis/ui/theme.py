@@ -14,7 +14,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 log = logging.getLogger("kluis.theme")
@@ -32,7 +32,7 @@ def windows_dark() -> bool:
 
 
 def windows_text():
-    """F-036 Windows: smooth text in grey, not with ClearType's coloured edges. GTK copies Windows' ClearType
+    """F-042 Windows: smooth text in grey, not with ClearType's coloured edges. GTK copies Windows' ClearType
     setting, but its windows have see-through edges, where ClearType can't blend: letters get red and green
     fringes. Grey smoothing with slight hinting looks like Linux and stays sharp."""
     s = Gtk.Settings.get_default()
@@ -56,6 +56,7 @@ class Theme:
         if os.name == "nt":
             windows_text()
             self._win_dark = windows_dark()
+            GObject.add_emission_hook(Gtk.Window, "realize", self._on_realize)
             GLib.timeout_add_seconds(3, self._windows_poll)
             return
         try:
@@ -112,8 +113,38 @@ class Theme:
         css += "\n" + open(os.path.join(DATA, "app.css"), encoding="utf-8").read()
         self.provider.load_from_data(css.encode())
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", dark)
+        if os.name == "nt":
+            for w in Gtk.Window.list_toplevels():
+                self.style_title_bar(w)
         for cb in list(self.listeners):
             cb(dark)
+
+    def title_bar_colors(self) -> tuple[str, str]:
+        """F-043 (bar, text) for Windows' title bar: the colour at the very top of the window, where the
+        accent glow (.k-glow: 45 % accent over the background) starts, so the bar flows into it."""
+        mode = "dark" if self.dark else "light"
+        bg = TOKENS[mode]["bg"]
+        accent = ACCENTS.get(self.accent, {}).get(mode, {}).get("accent") or TOKENS[mode]["accent"]
+        mix = "#" + "".join(f"{round(int(bg[i:i + 2], 16) * 0.55 + int(accent[i:i + 2], 16) * 0.45):02x}"
+                            for i in (1, 3, 5))
+        return mix, TOKENS[mode]["text"]
+
+    def style_title_bar(self, window) -> bool:
+        """Windows: the title bar takes the theme's colours (exact on Windows 11, light/dark on Windows 10)."""
+        if os.name != "nt" or not window.get_realized():
+            return False
+        try:
+            from kluis import wintitle
+            bar, text = self.title_bar_colors()
+            return wintitle.style(window, bar, text, self.dark)
+        except Exception:  # noqa: BLE001
+            log.exception("title bar colour")
+            return False
+
+    def _on_realize(self, window, *_args):
+        if isinstance(window, Gtk.Window):
+            self.style_title_bar(window)
+        return True
 
     def color(self, name: str) -> tuple[float, float, float]:
         """Token colour as RGB floats for Cairo drawing (§5 table)."""

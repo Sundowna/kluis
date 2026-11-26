@@ -54,6 +54,15 @@ def set_cfg(env, **kw):
     json.dump(cfg, open(p, "w"))
 
 
+def title_bar_pixel(window):
+    """Windows: the colour of the title bar Windows draws above `window` (right of the title text)."""
+    from gi.repository import Gdk
+    fr = window.get_window().get_frame_extents()
+    pb = Gdk.pixbuf_get_from_window(Gdk.get_default_root_window(), fr.x + fr.width * 3 // 5, fr.y + 12, 1, 1)
+    px = pb.get_pixels()
+    return px[0], px[1], px[2]
+
+
 def autostart_entry():
     """What starts Kluis at sign-in: the .desktop file on Linux, the registry Run value on Windows ("" = none)."""
     if os.name == "nt":
@@ -1628,6 +1637,20 @@ def f24(d, env, app):
         yield until(lambda: app.window.get_visible(), 10, "F-023 a click on a notification opens Kluis")
         d.expect(tray.balloon("Kluis test", "A notification from the tray icon"),
                  "F-023 Windows accepts Kluis's notification")
+        # F-043 the title bar Windows draws above Kluis takes the theme's colours, also when the theme changes
+        from kluis import wintitle
+        d.expect(wintitle.hwnd_of(app.window), "F-043 Kluis finds its window's Windows handle")
+        for dark in (app.theme.dark, not app.theme.dark, app.theme.dark):
+            app.theme.apply("dark" if dark else "light")
+            yield 0.8
+            rgb = title_bar_pixel(app.window)
+            lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+            want = app.theme.title_bar_colors()[0]
+            exact = all(abs(int(want[1 + 2 * i:3 + 2 * i], 16) - rgb[i]) <= 12 for i in range(3))
+            d.expect(exact or (lum < 0.35 if dark else lum > 0.6),
+                     f"F-043 {'dark' if dark else 'light'} theme: the title bar is {'#%02x%02x%02x' % rgb} "
+                     f"({'the theme colour ' + want if exact else 'Windows 10: ' + ('dark' if dark else 'light')})")
+        app.theme.apply(app.settings.theme)
     n = len(app.sent_notifications)
     app.notify("Conflict in Documents", "Kept both copies", force=True)
     d.expect(len(app.sent_notifications) == n + 1, "F-023 a notification goes out")

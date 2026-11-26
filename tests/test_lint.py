@@ -57,7 +57,7 @@ for path in glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True)
 
 mods = [os.path.relpath(p, REPO)[:-3].replace(os.sep, ".") for p in
         glob.glob(os.path.join(REPO, "kluis", "**", "*.py"), recursive=True)]
-WINDOWS_ONLY = {"kluis.wintray", "kluis.winsingle", "kluis.winwatch"}      # Win32 API modules: imported only on Windows
+WINDOWS_ONLY = {"kluis.wintray", "kluis.winsingle", "kluis.winwatch", "kluis.wintitle"}      # Win32 API modules: imported only on Windows
 for m in sorted(mods):
     if m.endswith("__main__") or (m in WINDOWS_ONLY and os.name != "nt"):
         continue
