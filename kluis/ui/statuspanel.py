@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 
-from gi.repository import Gtk
+from gi.repository import Gtk, Pango
 
 from ..i18n import _
 from ..status import axis_max, duration_text, eta_text, human_bytes
@@ -103,7 +103,7 @@ class StatusPanel(Gtk.Box):
         top = Gtk.Box(spacing=12)
         self.graph_title = label(_("Current transfer (KB/s)"), "k-muted", "k-s12", ellipsize="end")
         top.pack_start(self.graph_title, True, True, 0)
-        self.rates = label("", "k-num", "k-s12")
+        self.rates = label("", "k-num", "k-s12", ellipsize="end")
         top.pack_end(self.rates, False, False, 0)
         right.pack_start(top, False, False, 0)
         self.graph = Graph(app)
@@ -151,6 +151,10 @@ class StatusPanel(Gtk.Box):
             self.grid.child_set_property(box, "top-attach", row)
             box.set_orientation(H if on else V)
             box.set_spacing(4 if on else 2)
+            # one line on a narrow window: labels may shorten with "…" instead of widening the window
+            for lb in self.cells[key][1:3]:
+                lb.set_ellipsize(Pango.EllipsizeMode.END)
+                lb.set_width_chars(4 if on else -1)
             pb = self.cells[key][3]
             if pb is not None:
                 pb.set_valign(Gtk.Align.CENTER)
