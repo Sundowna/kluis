@@ -263,6 +263,7 @@ class BrowserPage(Gtk.Box):
 
     def load(self):
         self.loaded_once = True
+        self._gen = getattr(self, "_gen", 0) + 1      # answers of an earlier load must not change this one
         self.to_devices.hide()           # only for an empty My files (_check_devices); never left over
         self._crumbs()
         path = self.path
@@ -301,8 +302,10 @@ class BrowserPage(Gtk.Box):
     def _check_devices(self):
         """My files is empty: folders synced from a computer by Proton's desktop app are under Computers
         (/devices). Say so, instead of looking like an empty Drive."""
+        gen = self._gen
+
         def done(devices):
-            if self.path != "/my-files" or self.nodes or not devices:
+            if gen != self._gen or self.path != "/my-files" or self.nodes or not devices:
                 return
             names = ", ".join(d.name for d in devices[:3]) + ("…" if len(devices) > 3 else "")
             self.msg.set_text(_("My files is empty. Folders synced from your computers are under Computers: "

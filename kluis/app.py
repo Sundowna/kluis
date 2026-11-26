@@ -453,8 +453,6 @@ class KluisApp(Gtk.Application):
         def done(_r):
             if rec is not None:
                 rec["signed_out"] = True
-            if me and self.vault.available:
-                run_bg(lambda: self.vault.forget(me))
             if nxt:
                 self.manager.log("info", "", _("Signed out of {e}").format(e=me))
                 self.switch_account(nxt, force=True)
@@ -469,7 +467,15 @@ class KluisApp(Gtk.Application):
             self.manager.log("info", "", _("Signed out"), _("Your files stay on this computer and in Proton Drive."))
             self._update_tray()
             self.refresh_accounts()
-        run_bg(self.cli.logout, done, lambda e: self.toast(_("Sign-out failed: {e}").format(e=e)))
+
+        def work():
+            self.cli.logout()
+            if me and self.vault.available:          # in the same step: gone before anything else happens
+                try:
+                    self.vault.forget(me)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("keyring: %s", e)
+        run_bg(work, done, lambda e: self.toast(_("Sign-out failed: {e}").format(e=e)))
 
     # ---------- more than one Proton account (kluis/accounts.py, decisions D30) ----------
     def _stop_for_switch(self):
