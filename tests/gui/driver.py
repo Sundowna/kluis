@@ -295,7 +295,17 @@ def run_flow(flow_id, fn, theme, size, shots_dir, desktop="X-Cinnamon", setup=No
             started["v"] = True
             GLib.idle_add(lambda: (d.run(fn, app), False)[1])
     app.connect("activate", on_activate)
+    errors = []
+    orig_hook = sys.excepthook
+
+    def hook(t, v, tb):                 # exceptions in GTK callbacks are only printed: count them as failures
+        errors.append(f"{t.__name__}: {v}")
+        orig_hook(t, v, tb)
+    sys.excepthook = hook
     app.run([])
+    sys.excepthook = orig_hook
+    if errors and d.result == "PASS":
+        d.result = f"FAIL: {len(errors)} uncaught exception(s) in the app, first: {errors[0]}"
     ok = d.result == "PASS"
     with open(os.path.join(d.shots, f"log-{label}.txt"), "w") as fh:
         fh.write("\n".join(d.log + [d.result or "no result"]) + "\n")

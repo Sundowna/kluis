@@ -106,3 +106,9 @@ resolves trashed items as `/trash/<name>`, not by uid. A name can repeat in the 
 another "Notes.txt"), and restoring or deleting by name could then hit the wrong item. So Kluis offers Undo, and
 the self-test permanently deletes its own items, **only when each name is unique in the trash**. Otherwise the
 item stays in the Proton Drive trash, where it can be restored on the web. The mock CLI now behaves like the real one.
+
+**D26 · Cairo bridge as a hard dependency.** Found by the Arch/KDE container run: Arch's `python-gobject` does not
+pull in `python-cairo`, and without it every Cairo drawing (Home map, photo gallery, transfer graph) fails silently.
+The pacman package now depends on `python-cairo` and the `.deb` on `python3-gi-cairo`. Kluis checks for the bridge at
+start (`gi.require_foreign("cairo")`), `tests/test_lint.py` checks it, and every GUI flow now fails on any uncaught
+exception in a GTK callback (before, those were only printed).

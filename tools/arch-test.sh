@@ -3,7 +3,7 @@
 # Usage (from the repo): podman run --rm -v "$PWD":/src:ro -v OUT:/out docker.io/library/archlinux:latest \
 #                          bash /src/tools/arch-test.sh [FLOWS...]
 set -euo pipefail
-pacman -Syu --noconfirm --needed base-devel git python python-gobject gtk3 gdk-pixbuf2 libsecret \
+pacman -Syu --noconfirm --needed base-devel git python python-gobject python-cairo gtk3 gdk-pixbuf2 libsecret \
   libayatana-appindicator gnome-keyring xorg-server-xvfb xorg-xauth dbus imagemagick ttf-dejavu \
   adwaita-icon-theme tzdata at-spi2-core which >/out/pacman.log 2>&1
 useradd -m tester
@@ -31,5 +31,5 @@ kluis --version
 pacman -R --noconfirm kluis >/dev/null && test ! -e /usr/bin/kluis && echo "removed cleanly"
 echo "== GUI flows (KDE)"
 FLOWS="${*:-}"
-run "TZ=Europe/Zurich tests/gui/run_all.sh /tmp/flows-kde KDE $FLOWS" || true
+run "JOBS=6 TZ=Europe/Zurich tests/gui/run_all.sh /tmp/flows-kde KDE $FLOWS" || true
 cp -r /tmp/flows-kde /out/ ; tail -3 /tmp/flows-kde/results.txt

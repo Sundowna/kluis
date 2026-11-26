@@ -65,6 +65,13 @@ for m in sorted(mods):
     except Exception as e:  # noqa: BLE001
         problems.append(f"import {m}: {type(e).__name__}: {e}")
 
+# Cairo drawing (map, gallery, graph) needs the gi ↔ pycairo bridge: python-cairo / python3-gi-cairo
+try:
+    import gi
+    gi.require_foreign("cairo")
+except Exception as e:  # noqa: BLE001
+    problems.append(f"gi cairo bridge missing (install python-cairo / python3-gi-cairo): {e}")
+
 for p in problems:
     print("FAIL:", p)
 print(f"\n{len(mods)} modules checked, {len(problems)} problem(s)")

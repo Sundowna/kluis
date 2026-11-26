@@ -8,7 +8,7 @@ pkgdesc="Unofficial Proton Drive desktop client (folder and photo sync), built o
 arch=('any')
 url="https://github.com/Sundowna/kluis"
 license=('GPL-3.0-or-later')
-depends=('python' 'python-gobject' 'gtk3' 'gdk-pixbuf2' 'libsecret' 'libayatana-appindicator'
+depends=('python' 'python-gobject' 'python-cairo' 'gtk3' 'gdk-pixbuf2' 'libsecret' 'libayatana-appindicator'
          'gnome-keyring')  # keeps the Proton sign-in on KDE when KWallet isn't set up (HANDOVER §2)
 optdepends=('xapp: native panel icon on Cinnamon, MATE and Xfce'
             'ffmpegthumbnailer: video previews in the Photos tab'

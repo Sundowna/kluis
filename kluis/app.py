@@ -12,6 +12,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+gi.require_foreign("cairo")      # map, gallery and graph draw with Cairo: fail clearly if the bridge is missing
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import APP_ID, APP_NAME, VERSION, geo  # noqa: E402
