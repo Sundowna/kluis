@@ -121,3 +121,7 @@ controls keep ≥ 4.5:1 / ≥ 3:1 contrast (unit-tested for every theme × accen
 images and colours on switches, and lacks some symbolic icons (the Quick settings button was blank). Switches,
 check boxes and radio buttons are now fully styled by Kluis in every state, and the UI's icons (sliders, gear,
 chevrons, ⋯) ship with Kluis. A lint test fails if a named Kluis icon is missing.
+
+**D29 · SVG loader as a hard dependency.** Found on CI: without GdkPixbuf's SVG loader, Kluis's own icons and the
+logo show as "missing image". The pacman package depends on `librsvg` and the `.deb` on `librsvg2-common`;
+`tests/test_lint.py` fails without the loader.

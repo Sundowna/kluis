@@ -73,6 +73,16 @@ for path in glob.glob(os.path.join(REPO, "kluis", "ui", "*.py")):
         if not os.path.exists(os.path.join(icon_dir, name + ".svg")):
             problems.append(f"{os.path.relpath(path, REPO)} uses icon {name}, but {name}.svg is not in kluis/data/icons")
 
+# Kluis's icons and logo are SVG: GdkPixbuf needs its SVG loader (librsvg / librsvg2-common)
+try:
+    import gi
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+    if not any("svg" in f.get_name() for f in GdkPixbuf.Pixbuf.get_formats()):
+        problems.append("GdkPixbuf has no SVG loader (install librsvg / librsvg2-common)")
+except Exception as e:  # noqa: BLE001
+    problems.append(f"GdkPixbuf check failed: {e}")
+
 # Cairo drawing (map, gallery, graph) needs the gi ↔ pycairo bridge: python-cairo / python3-gi-cairo
 try:
     import gi

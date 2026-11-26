@@ -1166,7 +1166,8 @@ def f19(d, env, app):
     d.expect(os.path.exists(os.path.join(env.cloud, "my-files", "Agriland", "a00.txt")) and
              os.path.exists(os.path.join(env.home, "Agriland", "a00.txt")), "local delete not copied; file comes back")
     d.expect(not os.path.exists(os.path.join(env.cloud, "my-files", "Agriland", "scratch.tmp")), ".tmp never uploaded")
-    d.expect("changes wait for the next check" in d.get("Status of Agriland").get_text(), "status says so")
+    yield until(lambda: "changes wait for the next check" in d.get("Status of Agriland").get_text(), 10,
+                "status says changes wait for the next check")
     d.shot("options in effect")
     app.recheck_folder("agriland")
     yield idle(app)

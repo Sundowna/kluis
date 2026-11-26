@@ -3,7 +3,7 @@
 # Usage (from the repo): podman run --rm -v "$PWD":/src:ro -v OUT:/out docker.io/library/archlinux:latest \
 #                          bash /src/tools/arch-test.sh [FLOWS...]
 set -euo pipefail
-pacman -Syu --noconfirm --needed base-devel git python python-gobject python-cairo gtk3 gdk-pixbuf2 libsecret \
+pacman -Syu --noconfirm --needed base-devel git python python-gobject python-cairo gtk3 librsvg gdk-pixbuf2 libsecret \
   libayatana-appindicator gnome-keyring xorg-server-xvfb xorg-xauth dbus imagemagick ttf-dejavu \
   adwaita-icon-theme tzdata at-spi2-core which >/out/pacman.log 2>&1
 useradd -m tester

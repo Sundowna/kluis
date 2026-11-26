@@ -21,7 +21,7 @@ Section: net
 Priority: optional
 Architecture: all
 Installed-Size: $(du -sk "$B/usr" | cut -f1)
-Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, libsecret-1-0, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-xapp-1.0 | gir1.2-ayatanaappindicator3-0.1
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, librsvg2-common, libsecret-1-0, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-xapp-1.0 | gir1.2-ayatanaappindicator3-0.1
 Recommends: gnome-keyring, ffmpegthumbnailer, gir1.2-cinnamondesktop-3.0 | gir1.2-gnomedesktop-3.0
 Maintainer: Sundowna <noreply@github.com>
 Homepage: https://github.com/Sundowna/kluis
