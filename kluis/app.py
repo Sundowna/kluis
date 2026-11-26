@@ -166,6 +166,7 @@ class KluisApp(Gtk.Application):
 
     def quit_app(self):
         self.manager.shutdown()
+        self.cli.cancel()                # also a Browse download or preview fetch that is still running
         self.settings.save()
         if self.tray:
             self.tray.close()

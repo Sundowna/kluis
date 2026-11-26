@@ -37,6 +37,17 @@ NOT_LOGGED_IN_MARKERS = ("need to login", "need to log in", "not logged in", "lo
 # A PROTON_DRIVE_CACHE_DIR the user set themselves stays the first account's cache.
 _USER_CACHE_DIR = os.environ.get("PROTON_DRIVE_CACHE_DIR", "")
 
+def _die_with_kluis():
+    """Child side of every CLI process: if Kluis ends for any reason (Quit, crash, force quit), the kernel
+    stops the CLI too. Found on a test laptop: a force-quit Kluis left a CLI download of 4 GB running."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)    # PR_SET_PDEATHSIG
+    except Exception:  # noqa: BLE001  (not Linux/glibc: nothing to do)
+        pass
+
+
 # The CLI keeps a local sqlite cache and an events lock: run one process at a time.
 _CLI_LOCK = threading.RLock()
 
@@ -361,7 +372,7 @@ class ProtonDriveCli:
         with _CLI_LOCK:
             self._cancelled = False
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=env)
+                                    stderr=subprocess.PIPE, text=True, env=env, preexec_fn=_die_with_kluis)
             self._current = proc
             try:
                 out, err = proc.communicate(timeout=timeout)
@@ -410,7 +421,8 @@ class ProtonDriveCli:
         """Starts browser sign-in. Blocks until finished. The CLI opens the browser itself."""
         self._require()
         proc = subprocess.Popen([self.path, "auth", "login", "--json"], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env())
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env(),
+                                preexec_fn=_die_with_kluis)
         self._current = proc
         try:
             for line in proc.stdout:

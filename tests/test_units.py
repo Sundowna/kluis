@@ -226,6 +226,37 @@ from kluis.cli import RemoteNode  # noqa: E402
 dev = RemoteNode.from_json({"uid": "u", "type": "Windows", "rootFolderUid": "r", "name": {"ok": True, "value": "WalterXPS"}})
 check(dev.is_folder and dev.name == "WalterXPS", "F-013 a computer under /devices is a folder named after it")
 
+print("CLI processes end with Kluis")
+import subprocess  # noqa: E402
+import time as _time  # noqa: E402
+
+_script = "\n".join([
+    "import sys, threading, time",
+    f"sys.path.insert(0, {harness.REPO!r})",
+    "from kluis.cli import ProtonDriveCli",
+    f"c = ProtonDriveCli({harness.MOCK!r})",
+    "threading.Thread(target=lambda: c.list('/my-files'), daemon=True).start()",
+    "time.sleep(1.5)",
+    "print(c._current.pid, flush=True)",
+    "time.sleep(60)",
+])
+_p = subprocess.Popen([sys.executable, "-c", _script], stdout=subprocess.PIPE, text=True,
+                      env={**os.environ, "MOCK_DELAY": "30"})
+_child = int(_p.stdout.readline())
+_p.kill()                                     # like a force quit: no cleanup code runs
+_p.wait()
+_time.sleep(2)
+
+
+def _alive(pid):
+    try:
+        return "Z" not in open(f"/proc/{pid}/status").read().split("State:")[1].split()[0]
+    except OSError:
+        return False
+
+
+check(not _alive(_child), "a force-quit Kluis leaves no CLI process running (no orphan downloads)")
+
 diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
       "F-006 Copy diagnostics names no account email and no other account's folders")
