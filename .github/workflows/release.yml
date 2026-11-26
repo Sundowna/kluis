@@ -29,13 +29,12 @@ jobs:
             imagemagick tzdata libsecret-1-0 gir1.2-secret-1 at-spi2-core
       - name: Unit, engine, photo and safety tests
         run: |
-          python3 tests/test_lint.py
-          python3 tests/test_engine.py
-          python3 tests/test_photos.py
-          python3 tests/test_safety.py
-          python3 tests/test_units.py
-      - name: GUI flows F1–F23 (Cinnamon)
-        if: matrix.ubuntu == '24.04'
+          # every suite runs, also after one failed: every result in one run
+          rc=0
+          for t in lint engine photos safety units windows; do python3 tests/test_$t.py || rc=1; done
+          exit $rc
+      - name: GUI flows F1–F24 (Cinnamon)
+        if: ${{ !cancelled() && matrix.ubuntu == '24.04' }}     # also when a test suite failed
         run: TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-mint X-Cinnamon
       - name: Photos with 50'000 items (frame time, memory)
         run: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/perf_photos.py
@@ -67,12 +66,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Tests
         run: |
-          python3 tests/test_lint.py
-          python3 tests/test_engine.py
-          python3 tests/test_photos.py
-          python3 tests/test_safety.py
-          python3 tests/test_units.py
-      - name: GUI flows F1–F23 (KDE)
+          # every suite runs, also after one failed: every result in one run
+          rc=0
+          for t in lint engine photos safety units windows; do python3 tests/test_$t.py || rc=1; done
+          exit $rc
+      - name: GUI flows F1–F24 (KDE)
+        if: ${{ !cancelled() }}         # also when a test suite failed: every result in one run
         run: |
           useradd -m tester && chown -R tester "$PWD"
           su tester -c "TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-kde KDE"
@@ -122,18 +121,19 @@ jobs:
       - name: Unit, engine, photo and safety tests
         run: |
           python --version
-          python tests/test_lint.py
-          python tests/test_engine.py
-          python tests/test_photos.py
-          python tests/test_safety.py
-          python tests/test_units.py
+          # every suite runs, also after one failed: every result in one run
+          rc=0
+          for t in lint engine photos safety units windows; do python tests/test_$t.py || rc=1; done
+          exit $rc
       - name: Screen of 1920x1080 (the flows use windows of 1440x900)
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           Set-DisplayResolution -Width 1920 -Height 1080 -Force
           Add-Type -AssemblyName System.Windows.Forms
           [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
       - name: GUI flows F1–F24 (on the runner's Windows desktop)
+        if: ${{ !cancelled() }}         # also when a test suite failed: every result in one run
         run: python tests/gui/run_windows.py dist/flows-windows
       - name: Build the installer
         if: ${{ !cancelled() }}         # also when a GUI flow failed: every result in one run
