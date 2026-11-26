@@ -2,15 +2,15 @@
 # Arch Linux / EndeavourOS / Manjaro package for Kluis.
 # Build from this folder with:  makepkg -si
 pkgname=kluis
-pkgver=0.3.1
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="Unofficial Proton Drive desktop client (folder and photo sync), built on the official Proton Drive CLI"
 arch=('any')
 url="https://github.com/Sundowna/kluis"
 license=('GPL-3.0-or-later')
-depends=('python' 'python-gobject' 'gtk3' 'gdk-pixbuf2' 'libsecret' 'libayatana-appindicator')
+depends=('python' 'python-gobject' 'gtk3' 'gdk-pixbuf2' 'libsecret' 'libayatana-appindicator'
+         'gnome-keyring')  # keeps the Proton sign-in on KDE when KWallet isn't set up (HANDOVER §2)
 optdepends=('xapp: native panel icon on Cinnamon, MATE and Xfce'
-            'gnome-keyring: keeps your Proton sign-in if KWallet is not set up'
             'ffmpegthumbnailer: video previews in the Photos tab'
             'gnome-desktop: share photo thumbnails with your file manager')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
@@ -28,6 +28,8 @@ exec /usr/bin/python3 -m kluis "$@"
 SH
   install -Dm644 kluis/data/icons/dev.kluis.Kluis.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/dev.kluis.Kluis.svg"
+  install -Dm644 kluis/data/icons/hicolor/symbolic/apps/dev.kluis.Kluis-symbolic.svg \
+    "$pkgdir/usr/share/icons/hicolor/symbolic/apps/dev.kluis.Kluis-symbolic.svg"
   install -Dm644 packaging/dev.kluis.Kluis.desktop "$pkgdir/usr/share/applications/dev.kluis.Kluis.desktop"
   install -Dm644 README.md "$pkgdir/usr/share/doc/kluis/README.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/kluis/LICENSE"

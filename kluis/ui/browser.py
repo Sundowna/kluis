@@ -197,7 +197,8 @@ class BrowserPage(Gtk.Box):
 
     def resize_column(self, key, delta):
         col = self.columns[key]
-        w = max(COL_MIN, min(COL_MAX, col.get_width() + delta))
+        cur = col.get_fixed_width() if key != "name" and col.get_fixed_width() > 0 else col.get_width()
+        w = max(COL_MIN, min(COL_MAX, cur + delta))
         if key == "name":
             col.set_min_width(w)
             return

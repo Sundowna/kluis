@@ -273,7 +273,6 @@ class PhotoSync:
     # ---------------- upload ----------------
     def _upload(self, ps: PhotoSettings, res: SyncResult):
         self._emit("phase", text="Looking for new photos to add…")
-        ps.added = ps.skipped = 0
         done = self.store.photos_uploaded()
         skip_root = os.path.realpath(ps.download_dir) + os.sep if ps.download else None
         todo = []

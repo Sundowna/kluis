@@ -72,6 +72,7 @@ class SyncManager:
         self.guard_counts: dict[str, int] = {}
         self._allow_trash: dict[str, int] = {}
         self._queue: collections.deque[str] = collections.deque()
+        self._again: set[str] = set()      # asked for while running: run once more afterwards
         self._wake = threading.Event()
         self._stop = False
         self._monitors: dict[str, list[Gio.FileMonitor]] = {}
@@ -138,7 +139,13 @@ class SyncManager:
 
     def photos_changed(self, reset: bool = False):
         if reset:
-            self.store.photos_reset()
+            if self.current == PHOTOS_ID:
+                # a run is writing download records for the old folder: stop it, reset when it has ended
+                self._photo_reset = True
+                self.photos.cancel()
+                self._again.add(PHOTOS_ID)
+            else:
+                self.store.photos_reset()
         self.status[PHOTOS_ID] = self._photo_status()
         self._notify("folder", PHOTOS_ID)
         if self.settings.photos.active:
@@ -160,7 +167,10 @@ class SyncManager:
         if not self.busy:
             self.run_started, self.run_done, self.run_total, self.run_file_times = time.time(), 0, 0, []
         for i in ids:
-            if i in self._queue or i == self.current:
+            if i == self.current:
+                self._again.add(i)          # a change during the run is never lost
+                continue
+            if i in self._queue:
                 continue
             if i == PHOTOS_ID:
                 if not self.settings.photos.active:
@@ -181,6 +191,7 @@ class SyncManager:
         """Stop now. Returns (done, total) of the current run for the "Stopped at N of M" toast."""
         done, total = self.run_done, self.run_total
         self._queue.clear()
+        self._again.clear()
         self.engine.cancel()
         self.photos.cancel()
         for k, st in self.status.items():
@@ -398,6 +409,7 @@ class SyncManager:
                 fid = self._queue.popleft()
                 if fid == PHOTOS_ID:
                     self._run_photos()
+                    self._requeue(fid, "ok")
                     continue
                 f = self.settings.folder(fid)
                 if not f or not f.enabled:
@@ -412,6 +424,13 @@ class SyncManager:
                 self.current = None
                 self._quiet_until[fid] = time.time() + 4
                 self._finish(f, res, time.time() - started)
+                self._requeue(fid, res.status)
+
+    def _requeue(self, fid, status):
+        if fid in self._again:
+            self._again.discard(fid)
+            if status not in ("hold", "guard", "missing") and fid not in self._queue:
+                self._queue.append(fid)
 
     def _run_photos(self):
         ps = self.settings.photos
@@ -423,6 +442,11 @@ class SyncManager:
         self._notify("global")
         started = time.time()
         res = self.photos.sync(ps)
+        if getattr(self, "_photo_reset", False):
+            self._photo_reset = False
+            self.store.photos_reset()
+            res.status, res.message = "cancelled", "Stopped"
+            self._again.add(PHOTOS_ID)
         self.current = None
         took = time.time() - started
         if res.status == "cancelled":
@@ -613,8 +637,8 @@ class SyncManager:
         path = file.get_path() or ""
         if f"/{PART_DIR}/" in path or path.endswith("/" + PART_DIR):
             return
-        if self.current == fid or time.time() < self._quiet_until.get(fid, 0):
-            return
+        if time.time() < self._quiet_until.get(fid, 0):
+            return                          # our own writes right after a run
         if event == Gio.FileMonitorEvent.CREATED and file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
                                                                            None) == Gio.FileType.DIRECTORY:
             GLib.timeout_add_seconds(1, lambda: (self.rewatch(), False)[1])

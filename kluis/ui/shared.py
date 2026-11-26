@@ -109,7 +109,8 @@ class SharedPage(Gtk.Box):
 
     def resize_column(self, key, delta):
         col = self.columns[key]
-        w = max(56, min(600, col.get_width() + delta))
+        cur = col.get_fixed_width() if col.get_fixed_width() > 0 else col.get_width()
+        w = max(56, min(600, cur + delta))
         col.set_fixed_width(w)
         self.app.settings.columns.setdefault("shared", {})[key] = w
         self.app.save_soon()

@@ -116,6 +116,7 @@ class Settings:
     window: dict = field(default_factory=lambda: {"w": 1440, "h": 900, "x": -1, "y": -1, "max": False})
     columns: dict = field(default_factory=dict)     # table id -> {column id: width}
     told_background: bool = False
+    selftest_for: str = ""             # "<kluis version>/<cli version>" the last automatic self-test ran for
     folders: list = field(default_factory=list)
     shares: dict = field(default_factory=dict)      # share uid -> folder id (Shared with me sync)
     photos: PhotoSettings = field(default_factory=PhotoSettings)

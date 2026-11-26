@@ -60,7 +60,7 @@ def confirm(parent, title, text, ok, cancel, destructive=False, default="cancel"
     elif default == "cancel":
         no.grab_focus()
     else:
-        d.get_header_bar().grab_focus() if d.get_header_bar() else None
+        d.set_focus(None)          # no default: Enter does nothing, Esc keeps
     d.kluis_buttons = (no, yes)
     d.run()
     d.destroy()

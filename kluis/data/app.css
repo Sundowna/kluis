@@ -89,3 +89,14 @@
 .kluis .k-qs-toggle label { font-size: 12px; }
 .kluis .k-qs-head { min-height: 36px; padding: 0 8px; }
 .kluis .k-nav button.k-current label { font-weight: 700; }
+/* GtkDialog / GtkMessageDialog / GtkAboutDialog use their own CSS node names, not "window" */
+dialog.kluis, messagedialog.kluis, aboutdialog.kluis, window.kluis.k-dialog { background-color: @k_bg; color: @k_text; }
+dialog.kluis headerbar, messagedialog.kluis headerbar, aboutdialog.kluis headerbar, window.kluis headerbar {
+    background-image: none; background-color: @k_panel; border-color: @k_line; color: @k_text; box-shadow: none; }
+dialog.kluis headerbar label, window.kluis headerbar label { color: @k_text; }
+dialog.kluis label, messagedialog.kluis label, aboutdialog.kluis label { color: @k_text; }
+dialog.kluis .k-muted, dialog.kluis .k-section-head { color: @k_muted; }
+dialog.kluis .k-inline-error { color: @k_error; }
+dialog.kluis expander title label { color: @k_text; }
+dialog.kluis textview, dialog.kluis textview text { background-color: @k_surface; color: @k_text; }
+dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k_text; }

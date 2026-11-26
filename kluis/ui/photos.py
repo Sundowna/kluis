@@ -82,7 +82,7 @@ class CollapsibleCard(Gtk.Box):
 class Layout:
     """Rows of a month-grouped gallery for a given width (pure, cheap to rebuild)."""
 
-    def __init__(self, months, width):
+    def __init__(self, months, width, view_h=0):
         self.cols = max(1, int((width + GAP) // (TILE + GAP)))
         self.rows = []          # (y, kind, payload) kind: year | month | tiles
         self.offsets = []       # month block tops (heading included), for the scrubber
@@ -101,7 +101,8 @@ class Layout:
                 self.rows.append((y, "tiles", (m, items[i:i + self.cols], i)))
                 y += TILE + GAP
             y += 8
-        self.height = y + 8
+        # room after the last month so every month's heading can scroll to the top (F9 step 8)
+        self.height = max(y + 8, (self.offsets[-1] if self.offsets else 0) + view_h)
         self._ys = [r[0] for r in self.rows]
 
     def visible(self, top, bottom):
@@ -138,7 +139,7 @@ class Gallery(Gtk.Box):
                                                      self._request_visible()))
         self.sb = Gtk.Scrollbar(orientation=Gtk.Orientation.VERTICAL, adjustment=self.adj)
         a11y(self.sb, _("Gallery scrollbar"))
-        self.scrub = Gtk.DrawingArea(width_request=96)
+        self.scrub = Gtk.DrawingArea(width_request=118)
         self.scrub.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         a11y(self.scrub, _("Month scrubber"))
         self.scrub.connect("draw", self._draw_scrub)
@@ -171,8 +172,8 @@ class Gallery(Gtk.Box):
         w = self.area.get_allocated_width()
         if w <= 1:
             return
-        self.layout = Layout(self.months, w)
         h = self.area.get_allocated_height()
+        self.layout = Layout(self.months, w, h)
         self.adj.configure(min(self.adj.get_value(), max(0, self.layout.height - h)), 0, self.layout.height, 60,
                            max(h - 60, 60), h)
         self.area.queue_draw()
@@ -359,12 +360,14 @@ class Gallery(Gtk.Box):
         cr.restore()
         if p.is_video:
             cr.set_source_rgba(0, 0, 0, 0.6)
-            _rr(cr, x + TILE - 34, y + TILE - 24, 28, 18, 5)
+            _rr(cr, x + TILE - 30, y + TILE - 24, 24, 18, 5)
             cr.fill()
-            cr.set_source_rgb(1, 1, 1)
-            cr.set_font_size(11)
-            cr.move_to(x + TILE - 26, y + TILE - 11)
-            cr.show_text("▶")
+            cr.set_source_rgb(1, 1, 1)          # ▶ drawn as a path: no font glyph needed
+            cr.move_to(x + TILE - 22, y + TILE - 20)
+            cr.line_to(x + TILE - 13, y + TILE - 15)
+            cr.line_to(x + TILE - 22, y + TILE - 10)
+            cr.close_path()
+            cr.fill()
         if selected or focused:
             _rr(cr, x + 1, y + 1, TILE - 2, TILE - 2, 8)
             cr.set_source_rgb(*th.color("accent"))
@@ -374,10 +377,12 @@ class Gallery(Gtk.Box):
             cr.set_source_rgb(*th.color("accent"))
             cr.arc(x + TILE - 14, y + 14, 10, 0, 2 * math.pi)
             cr.fill()
-            cr.set_source_rgb(*th.color("on_accent"))
-            cr.set_font_size(13)
-            cr.move_to(x + TILE - 19, y + 19)
-            cr.show_text("✓")
+            cr.set_source_rgb(*th.color("on_accent"))   # ✓ drawn as a path
+            cr.set_line_width(2.2)
+            cr.move_to(x + TILE - 19, y + 14)
+            cr.line_to(x + TILE - 15, y + 18)
+            cr.line_to(x + TILE - 9, y + 10)
+            cr.stroke()
 
     def _scrub_geom(self):
         h = self.scrub.get_allocated_height()
@@ -391,6 +396,7 @@ class Gallery(Gtk.Box):
             return
         top, bottom, n, gap = self._scrub_geom()
         x = 70
+        cr.select_font_face("sans-serif", 0, 1)
         pos = self.ring()
         ry = top + pos * gap
         cr.set_line_width(2)
@@ -594,6 +600,8 @@ class PhotosPage(Gtk.Box):
         ps = self.app.settings.photos
         p = choose_local_folder(self.get_toplevel(), _("Add photos from…"), ps.upload_dir)
         if p:
+            if p != ps.upload_dir:
+                ps.added = ps.skipped = 0       # the counters belong to one upload folder
             ps.upload_dir = p
             if not ps.upload:
                 ps.upload = True

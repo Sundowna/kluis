@@ -2,4 +2,4 @@
 
 APP_ID = "dev.kluis.Kluis"
 APP_NAME = "Kluis"
-VERSION = "0.3.1"
+VERSION = "1.0.0"

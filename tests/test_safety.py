@@ -156,7 +156,7 @@ check(every, "after a crash mid-move every file exists in at least one place")
 j2 = rootmove.pending(journal)
 check(j2 is not None, "the journal survives the crash")
 check(rootmove.run(j2, journal=journal), "the move resumes from the journal")
-check(all(read(os.path.join(R2, rel)) == txt for rel, txt in files.items()) and not os.listdir(R1)
+check(all(read(os.path.join(R2, rel)) == txt for rel, txt in files.items()) and not os.path.exists(R1)
       and rootmove.pending(journal) is None, "all files moved, nothing lost, journal removed")
 rootmove._same_device = orig_same
 

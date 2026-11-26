@@ -120,6 +120,7 @@ class KluisApp(Gtk.Application):
                 self.window.show_main()
             self.manager.rewatch()
             self.manager.request(reason="start")
+            GLib.timeout_add_seconds(30, lambda: (self.auto_selftest(), False)[1])
         elif state == "offline" and self.settings.onboarded:
             self.window.show_main()
             self.manager.set_hold("offline")
@@ -495,6 +496,47 @@ class KluisApp(Gtk.Application):
             run_bg(lambda: appupdate.check(s.beta), got, lambda e: log.info("update check failed: %s", e))
         return True
 
+    def auto_selftest(self):
+        """§8 D / decisions D18: after an install, an upgrade or a CLI update, run --selftest once in the
+        background (a package script runs as root and can't reach her keyring, so the app does it)."""
+        if os.environ.get("KLUIS_TEST") == "1" or not self.manager.logged_in:
+            return
+        from .ui.common import run_bg
+        try:
+            cli_v = self.cli.version().split("+")[0]
+        except Exception:  # noqa: BLE001
+            return
+        key = f"{VERSION}/{cli_v}"
+        if self.settings.selftest_for == key:
+            return
+        self.settings.selftest_for = key
+        self.settings.save()
+        self.manager.log("info", "", _("Self-test started"), _("Checks Kluis and the Proton Drive CLI in its own "
+                                                              "test folder; nothing else is touched."))
+
+        def work():
+            from .selftest import SelfTest
+            t = SelfTest(self.cli, out=lambda line: log.info("selftest %s", line))
+            try:
+                t.run()
+                return True, f"{t.steps} checks"
+            except Exception as e:  # noqa: BLE001
+                return False, str(e)
+            finally:
+                t.cleanup()
+
+        def done(r):
+            ok, detail = r
+            if ok:
+                self.manager.log("ok", "", _("Self-test passed"), detail)
+            else:
+                self.manager.set_paused(True)
+                self.manager.log("error", "", _("Self-test failed — syncing stays paused"), detail)
+                self.notify(_("Kluis self-test failed"), _("Syncing stays paused. Open Kluis → Activity."),
+                            problem=True)
+            self.refresh_all()
+        run_bg(work, done)
+
     # ---------- root folder (§3.8.1, invariant 6) ----------
     def move_root(self, dest, parent, done=None):
         from . import rootmove
@@ -515,6 +557,7 @@ class KluisApp(Gtk.Application):
         self.manager.set_paused(True)
         j = rootmove.start(src, dest)
         dlg = Gtk.MessageDialog(transient_for=parent, modal=True, text=_("Moving your Proton Drive folder…"))
+        dlg.get_style_context().add_class("kluis")
         bar = Gtk.ProgressBar(show_text=True)
         dlg.get_message_area().pack_start(bar, False, False, 0)
         cancel = {"v": False}

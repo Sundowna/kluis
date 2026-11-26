@@ -109,6 +109,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._toast_src = 0
         self._toast_handler = None
         self.toast_text = ""
+        self.toast_history: list[str] = []
 
         # drag a folder anywhere on the window to add it
         self.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new("text/uri-list", 0, 0)], Gdk.DragAction.COPY)
@@ -380,6 +381,7 @@ class MainWindow(Gtk.ApplicationWindow):
     # ---------- toast ----------
     def toast(self, text, action=None):
         self.toast_text = text
+        self.toast_history.append(text)
         self.toast_lbl.set_text(text)
         acc = self.toast_lbl.get_accessible()
         if acc:

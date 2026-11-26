@@ -28,6 +28,10 @@ class Env:
     def __init__(self, theme="dark", size=(1440, 900), desktop="X-Cinnamon", vpn="", onboarded=True,
                  config=None):
         self.tmp = harness.setup("kluis-gui-")
+        real_home = os.path.expanduser("~")
+        # never let a test find (and use) the real, signed-in proton-drive of this machine
+        os.environ["PATH"] = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)
+                                             if not p.startswith(real_home) and p != "/usr/local/bin")
         self.home = os.path.join(self.tmp, "home")
         os.makedirs(self.home, exist_ok=True)
         os.environ["HOME"] = self.home
@@ -98,27 +102,30 @@ class Driver:
     def all_widgets(self, root=None):
         from gi.repository import Gtk
         roots = [root] if root else [t for t in Gtk.Window.list_toplevels() if t.get_visible()]
-        seen, stack, out = set(), list(roots), []
+        seen, stack, out = set(), list(reversed(roots)), []
         while stack:
             w = stack.pop()
             if id(w) in seen:
                 continue
             seen.add(id(w))
             out.append(w)
-            stack.extend(self._children(w))
+            stack.extend(reversed(self._children(w)))      # pre-order: document order
         return out
 
     def find(self, name, root=None, visible=True, cls=None, exact=True):
-        for w in self.all_widgets(root):
-            n = getattr(w, "kluis_name", None)
-            if n is None:
-                acc = w.get_accessible()
-                n = acc.get_name() if acc else None
-            if not n:
-                continue
-            if (n == name if exact else name in n) and (not visible or w.is_visible()) and (cls is None or
-                                                                                           isinstance(w, cls)):
-                return w
+        """Controls named with a11y() first; plain ATK names (e.g. a label's text) only as a fallback."""
+        widgets = self.all_widgets(root)
+        for pass_ in (0, 1):
+            for w in widgets:
+                n = getattr(w, "kluis_name", None)
+                if n is None and pass_ == 1:
+                    acc = w.get_accessible()
+                    n = acc.get_name() if acc else None
+                if not n:
+                    continue
+                if (n == name if exact else name in n) and (not visible or w.is_visible()) and \
+                        (cls is None or isinstance(w, cls)):
+                    return w
         return None
 
     def get(self, name, **kw):
@@ -155,6 +162,31 @@ class Driver:
             raise FlowFailed(f"{getattr(w, 'kluis_name', w)} is disabled")
         w.clicked()
 
+    def later(self, fn, settle=0.4):
+        """Run fn from its own main-loop callback and wait until it has started (+ settle time).
+
+        Needed for anything that opens a modal dialog: dialog.run() spins a nested main loop, and the
+        flow's own tick can only continue inside it when the dialog wasn't opened from within the tick."""
+        from gi.repository import GLib
+        started = {}
+
+        def go():
+            started["t"] = time.monotonic()
+            fn()
+            return False
+        GLib.idle_add(go)
+        return until(lambda: "t" in started and time.monotonic() - started["t"] >= settle, 15, "action to start")
+
+    def act(self, name, **kw):
+        """Deferred click (for buttons that open dialogs): `yield d.act("Rename")`."""
+        w = self.get(name, **kw) if isinstance(name, str) else name
+        if not w.is_sensitive():
+            raise FlowFailed(f"{getattr(w, 'kluis_name', w)} is disabled")
+        return self.later(w.clicked)
+
+    def act_key(self, accel):
+        return self.later(lambda: self.press(accel))
+
     def press(self, accel):
         """Activate an application/window shortcut, e.g. '<Ctrl>3'."""
         app = self.app
@@ -167,7 +199,11 @@ class Driver:
 
     # ---------- screenshots ----------
     def shot(self, note=""):
-        from gi.repository import Gdk
+        from gi.repository import Gdk, Gtk
+        for _i in range(200):           # let GTK draw what the last action changed
+            if not Gtk.events_pending():
+                break
+            Gtk.main_iteration_do(False)
         self.step += 1
         root = Gdk.get_default_root_window()
         w, h = self.env.size

@@ -145,6 +145,8 @@ def run(j: dict, progress: Callable[[int, int, str], None] | None = None,
     stage = os.path.join(dest, STAGE)
     if os.path.isdir(stage) and not os.listdir(stage):
         os.rmdir(stage)
+    if os.path.isdir(src) and not os.listdir(src):
+        os.rmdir(src)                                     # the old, now empty folder (never a non-empty one)
     if progress:
         progress(total, total, "")
     try:
