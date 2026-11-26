@@ -1,5 +1,5 @@
 name: Release
-# Every push and pull request: all test suites + the GUI flows F1–F19 (light/dark, 1440x900 and 1024x640)
+# Every push and pull request: all test suites + the GUI flows F1–F21 (light/dark, 1440x900 and 1024x640)
 # on Mint-like Ubuntu (Cinnamon session variables) and on Arch (KDE session variables), then both packages
 # are built, installed, started and uninstalled. A push to main with a new VERSION publishes vX.Y.Z once.
 on:
@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q python3-gi python3-gi-cairo librsvg2-common gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 xvfb dbus-x11 \
-            imagemagick tzdata libsecret-1-0 at-spi2-core
+            imagemagick tzdata libsecret-1-0 gir1.2-secret-1 at-spi2-core
       - name: Unit, engine, photo and safety tests
         run: |
           python3 tests/test_lint.py
@@ -33,7 +33,7 @@ jobs:
           python3 tests/test_photos.py
           python3 tests/test_safety.py
           python3 tests/test_units.py
-      - name: GUI flows F1–F19 (Cinnamon)
+      - name: GUI flows F1–F21 (Cinnamon)
         if: matrix.ubuntu == '24.04'
         run: TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-mint X-Cinnamon
       - name: Photos with 50'000 items (frame time, memory)
@@ -71,7 +71,7 @@ jobs:
           python3 tests/test_photos.py
           python3 tests/test_safety.py
           python3 tests/test_units.py
-      - name: GUI flows F1–F19 (KDE)
+      - name: GUI flows F1–F21 (KDE)
         run: |
           useradd -m tester && chown -R tester "$PWD"
           su tester -c "TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-kde KDE"

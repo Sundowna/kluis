@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlparse
 from gi.repository import Atk, Gdk, Gio, GLib, Gtk
 
 from ..i18n import _
+from .accounts import AccountButton
 from .activity import ActivityPage
 from .browser import BrowserPage
 from .common import (WEB_URL, a11y, button, clear, hbox, label, open_uri, popover_menu, set_button_text, set_class,
@@ -240,6 +241,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.qs_header_btn = self._qs_button()
         self.qs_header_btn.get_child().show_all()     # no_show_all below would otherwise keep its icons hidden
         self.qs_header_btn.set_no_show_all(True)
+        self.account_btn = AccountButton(self.app)
+        row.pack_end(self.account_btn, False, False, 0)
         row.pack_end(self.qs_header_btn, False, False, 0)
         row.pack_end(self.pause_btn, False, False, 0)
         row.pack_end(self.sync_btn, False, False, 0)

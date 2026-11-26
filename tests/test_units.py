@@ -165,5 +165,63 @@ for theme, t in variants.items():
     r = ratio(t["on_accent"], t["accent"])
     check(r >= 4.5, f"{theme}: text on accent buttons {r:.1f}:1")
 
+print("Proton accounts (decisions D30)")
+import dataclasses  # noqa: E402
+
+from kluis import accounts  # noqa: E402
+from kluis.config import FolderPair  # noqa: E402
+
+check(accounts.initials("lindi.kirsten@pm.me") == "LK" and accounts.initials("walter@agriland.com.na") == "WA",
+      "F-002 initials like Proton's avatar")
+check(accounts.display_name("lindi.kirsten@pm.me") == "lindi.kirsten", "F-002 account name from the email")
+home = os.path.expanduser("~")
+for n in ("AccDocs", "AccLindi"):
+    os.makedirs(os.path.join(home, n), exist_ok=True)
+st = Settings()
+st.folders = [FolderPair(local=os.path.join(home, "AccDocs"), remote="/my-files/AccDocs", id="docs")]
+check(accounts.adopt(st, "walter@agriland.com.na") is False and st.account == "walter@agriland.com.na"
+      and [f.id for f in st.folders] == ["docs"], "F-006 an existing install's folders belong to the first account")
+first = accounts.record(st, "walter@agriland.com.na")
+check(first["cache"] == "" and accounts.state_path(first) == str(accounts.STATE_DB),
+      "F-006 the first account keeps the CLI's default cache and Kluis's original sync history")
+check(accounts.adopt(st, "WALTER@agriland.com.na") is False, "same account in other letter case: no switch")
+check(accounts.adopt(st, "lindi.kirsten@pm.me") is True and st.account == "lindi.kirsten@pm.me"
+      and st.folders == [], "F-004 signing in as another account shows that account's (empty) folder list")
+lindi = accounts.record(st, "lindi.kirsten@pm.me")
+check(bool(lindi["cache"]) and lindi["cache"] != first["cache"]
+      and accounts.state_path(lindi) != accounts.state_path(first),
+      "F-006 the second account gets its own CLI cache and sync history")
+check(validate_local(st, os.path.join(home, "AccDocs")) ==
+      "Your other Proton account walter@agriland.com.na already syncs AccDocs",
+      "F-007 a folder the other account syncs is refused, with the account named")
+check(st.overlaps(os.path.join(home, "AccDocs", "sub")) is not None, "F-007 also a folder inside it")
+st.folders.append(FolderPair(local=os.path.join(home, "AccLindi"), remote="/my-files/AccLindi", id="lindi"))
+st.photos.download = True
+accounts.swap_profile(st, "walter@agriland.com.na")
+check(st.account == "walter@agriland.com.na" and [f.id for f in st.folders] == ["docs"]
+      and not st.photos.download, "F-003 switching back brings back exactly that account's folders and photo settings")
+again = Settings.from_dict(json.loads(json.dumps(dataclasses.asdict(st))))
+accounts.swap_profile(again, "lindi.kirsten@pm.me")
+check([f.id for f in again.folders] == ["lindi"] and again.photos.download,
+      "F-003 the other account's folders survive a save and reload")
+check([r["email"] for r in accounts.others(again)] == ["walter@agriland.com.na"], "F-002 other accounts list")
+accounts.forget(again, "walter@agriland.com.na")
+check(not accounts.others(again) and again.account == "lindi.kirsten@pm.me", "F-009 remove an account from Kluis")
+v = accounts.FileVault(os.path.join(TMP, "v"), os.path.join(TMP, "v-slot"))
+check(v.read_live() is None, "F-003 empty keyring slot")
+v.write_live({"secret": "lindi.kirsten@pm.me"})
+v.save("Lindi.Kirsten@pm.me", v.read_live())
+v.clear_live()
+check(v.read_live() is None and v.load("lindi.kirsten@pm.me") == {"secret": "lindi.kirsten@pm.me"},
+      "F-003 a kept session comes back for its account (any letter case)")
+v.forget("lindi.kirsten@pm.me")
+check(v.load("lindi.kirsten@pm.me") is None, "F-008 a signed-out account's kept session is deleted")
+check(accounts.Vault().available is False and accounts.Vault().load("x") is None,
+      "F-005 without a keyring switching falls back to the browser sign-in")
+
+diag = diagnostics.collect(st, "1.0")
+check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
+      "F-006 Copy diagnostics names no account email and no other account's folders")
+
 print(f"\n{check.passed} checks passed")
 harness.cleanup(TMP)

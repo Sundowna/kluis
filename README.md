@@ -91,6 +91,11 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
   Closing the window keeps Kluis syncing in the background.
 - **Drive browser:** open folders, download, upload (drag files in), create, rename, and trash with Undo.
   Folder sizes and file counts, resizable columns.
+- **More than one Proton account**, switched like on proton.me: the account button at the top right opens a menu
+  with your account, *Sign out*, and *Other accounts*. Add another account once (Proton's browser sign-in), then
+  switch with one click. Each account keeps its own folders, photo settings and sync history, and only the active
+  account syncs. Two accounts can't sync the same folder. If Proton no longer accepts a kept session, Kluis asks
+  for that account's browser sign-in.
 - **Drag a folder onto the window** to start syncing it.
 - **Activity log** and desktop notifications (all, problems only, or off).
 - **Quick settings** column and **Settings:** your Proton Drive folder (move it safely), start at login,
@@ -116,7 +121,9 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 | Where | What |
 |---|---|
 | `~/.config/kluis/config.json` | settings and folder list |
-| `~/.local/share/kluis/state.sqlite` | last-synced state |
+| `~/.local/share/kluis/state.sqlite` | last-synced state (first Proton account) |
+| `~/.local/share/kluis/accounts/<id>/` | each further account's sync state and Proton CLI cache |
+| keyring: "Kluis: Proton session for …" | each signed-in account's Proton session, while another one is active |
 | `~/.local/state/kluis/` | `kluis.log`, activity log |
 | `~/.local/bin/proton-drive` | the official CLI (if Kluis downloaded it) |
 
@@ -130,6 +137,9 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 - **Always the newest CLI, but only if it passes the capability self-test.** If Proton changes command flags,
   Kluis keeps the previous CLI and says "Proton changed its Drive tool. Kluis needs an update for it."
   `kluis/cli.py` and `kluis/capabilities.py` are the files to adjust. See `docs/cli-capabilities.md`.
+- **One account syncs at a time.** Proton's CLI holds one session per Linux user, so the other accounts' folders
+  wait until you switch to them. Switching needs a desktop keyring (GNOME Keyring or KWallet's Secret Service);
+  without one, every switch is a browser sign-in.
 - **No storage figure.** The CLI has no quota command, so Kluis shows no "space used" (never a guess).
 - When Proton ships its own Linux app, compare the two. Kluis's settings never touch Proton's.
 
@@ -141,7 +151,7 @@ python3 tests/test_photos.py        # Proton Photos scenarios
 python3 tests/test_safety.py        # one test per safety rule (HANDOVER §7)
 python3 tests/test_units.py         # status text, ring mapping, migration, contrast …
 python3 tests/test_lint.py          # static checks + every module imports
-tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F20 under Xvfb, light/dark × 1440x900/1024x640
+tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F21 under Xvfb, light/dark × 1440x900/1024x640
 KLUIS_DEBUG=1 python3 -m kluis      # run from the source folder with debug logs
 python3 -m kluis --selftest         # real account, own test folder only
 packaging/build-deb.sh              # build dist/kluis_<version>_all.deb

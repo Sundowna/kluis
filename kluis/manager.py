@@ -64,6 +64,7 @@ class SyncManager:
         self.unread = 0
         self.logged_in: bool | None = None
         self.email = ""
+        self.switching = False              # a Proton account switch is under way: start nothing
         self.current: str | None = None
         self.last_run = 0.0
         self.last_remote_check = 0.0
@@ -159,7 +160,7 @@ class SyncManager:
     def request(self, fid: str | None = None, reason: str = "manual"):
         if self.settings.paused:
             return          # paused: new changes wait on this computer until resume (§4.2)
-        if self.logged_in is False or self.hold:
+        if self.logged_in is False or self.hold or self.switching:
             return
         ids = [fid] if fid else [f.id for f in self.settings.folders if f.enabled]
         if not fid and self.settings.photos.active:
@@ -200,6 +201,21 @@ class SyncManager:
                     else self._photo_status()
         self._notify("global")
         return done, total
+
+    def use_account(self, store_path: str):
+        """After a Proton account switch: that account's sync history, folder status and watchers."""
+        self._queue.clear()
+        self._again.clear()
+        self.store = StateStore(store_path)
+        self.engine.store = self.store
+        self.photos.store = self.store
+        self.hold = None
+        self.guard_counts.clear()
+        self._allow_trash.clear()
+        self.status = {f.id: self._initial_status(f) for f in self.settings.folders}
+        self.status[PHOTOS_ID] = self._photo_status()
+        self.rewatch()
+        self._notify("global")
 
     def set_paused(self, paused: bool):
         if self.settings.paused == paused:
@@ -405,7 +421,7 @@ class SyncManager:
         while not self._stop:
             self._wake.wait(timeout=5)
             self._wake.clear()
-            while self._queue and not self._stop and not self.settings.paused and not self.hold:
+            while self._queue and not self._stop and not self.settings.paused and not self.hold                     and not self.switching:
                 fid = self._queue.popleft()
                 if fid == PHOTOS_ID:
                     self._run_photos()
@@ -560,6 +576,8 @@ class SyncManager:
 
     def _tick(self):
         now = time.time()
+        if self.switching:
+            return True
         if self.hold and now >= self.hold["until"]:
             threading.Thread(target=self._probe_hold, daemon=True).start()
         for f in self.settings.folders:

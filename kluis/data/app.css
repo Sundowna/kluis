@@ -74,6 +74,12 @@
 .kluis .k-inline-error { color: @k_error; font-size: 13px; }
 .kluis .k-skeleton { background-color: alpha(@k_line, 0.35); border-radius: 6px; min-height: 14px; }
 .kluis .k-cardhead { padding: 0; }
+.kluis .k-avatar { background-color: @k_accent_soft; border: 1px solid @k_line; border-radius: 8px; }
+.kluis .k-avatar .k-avatar-text { color: @k_text; font-weight: 700; font-size: 13px; }
+.kluis .k-avatar-big { border-radius: 12px; }
+.kluis .k-avatar-big .k-avatar-text { font-size: 22px; }
+.kluis button.k-account-btn { padding: 2px 8px 2px 2px; }
+.kluis button.k-account-row { padding: 6px; }
 .kluis .k-section-head { font-size: 12px; font-weight: 700; color: @k_muted; }
 .kluis menu, .kluis .k-menu { padding: 6px; }
 .kluis modelbutton { min-height: 32px; padding: 0 10px; border-radius: 6px; }
