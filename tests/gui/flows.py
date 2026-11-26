@@ -1438,6 +1438,8 @@ def f21(d, env, app):
     yield until(lambda: dialog_with_text(d, f"Sign out of {LINDI}?"), 5, "sign-out question")
     d.expect(dialog_with_text(d, f"Kluis switches to {ME}") is not None, "says which account takes over")
     d.click("Sign out", root=dialog_with_text(d, f"Sign out of {LINDI}?"))
+    # "Sign in as …" may still be on the (hidden) sign-in page from before: wait for the sign-out itself
+    yield until(lambda: app.vault.load(LINDI) is None and not app.manager.logged_in, 20, "sign-out done")
     yield until(lambda: d.has_text(f"Sign in as {ME}"), 20, "the other account (session gone) asks for a sign-in")
     d.expect(app.vault.load(LINDI) is None, "the signed-out account's kept session is deleted")
     next_login(env, ME)
