@@ -359,6 +359,25 @@ class MainWindow(Gtk.ApplicationWindow):
         self.stack.set_visible_child_name("browse")
         self.browser.go(path)
 
+    def account_changed(self):
+        """Another Proton account is active: Browse, Shared with me and Photos showed the previous one's Drive.
+        Forget it; the visible tab loads again now, the others when they are next opened (decisions D30)."""
+        b = self.browser
+        b.path = "/my-files"
+        b.nodes = []
+        b.stats.cache.clear()
+        b.loaded_once = False
+        self.shared.loaded = False
+        self.shared.items = []
+        self.app.shared_cache = []
+        self.photos.loaded = False
+        self.photos.album = ""
+        self.photos._local = None
+        self.folders.rebuild()
+        page = self.stack.get_visible_child()
+        if self.root.get_visible_child_name() == "main" and hasattr(page, "on_shown"):
+            page.on_shown()
+
     def _page_changed(self, *_a):
         key = self.stack.get_visible_child_name()
         self.tab_title.set_text(dict(TABS).get(key, ""))

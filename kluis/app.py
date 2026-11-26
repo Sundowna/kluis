@@ -535,6 +535,7 @@ class KluisApp(Gtk.Application):
             r = accounts.record(self.settings, who)
             self.manager.email = who
             self.manager.use_account(accounts.state_path(r))
+            self.window.account_changed()
             self._pending_cache = None
             if kind == "ok":
                 self.switch_back = ""
@@ -623,6 +624,8 @@ class KluisApp(Gtk.Application):
             self.cli.cache_dir = rec.get("cache", "")
         if changed:
             self.manager.use_account(accounts.state_path(rec))
+            if self.window:
+                self.window.account_changed()
             self.manager.log("info", "", _("Signed in as {e}").format(e=email))
         self.switch_back = ""
         self.manager.switching = False

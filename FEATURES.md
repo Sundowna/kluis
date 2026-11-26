@@ -25,5 +25,6 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-008 *Sign out* (asks first) ends the active account's session, deletes its kept copy and hands over to the next account; the account stays listed as signed out — `tests/gui/flows.py: F21`, `tests/test_units.py: Proton accounts`
 - F-009 ✕ next to another account removes it from Kluis (asks first); its files stay on this computer and in Proton Drive — `tests/gui/flows.py: F21`, `tests/test_units.py: Proton accounts`
 - F-010 Settings → *Other accounts* lists the kept accounts with *Switch*, and *Add…* for another one — `tests/gui/flows.py: F21`
+- F-011 After adding or switching accounts, Browse, Shared with me and Photos show the active account's Proton Drive, never the previous account's — `tests/gui/flows.py: F21`
 
 ## Removed

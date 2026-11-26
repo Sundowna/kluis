@@ -1253,6 +1253,10 @@ def next_login(env, email):
         fh.write(email)
 
 
+def browse_names(app):
+    return sorted(n.name for n in app.window.browser.nodes)
+
+
 def live_slot(env):
     try:
         return open(os.path.join(env.cloud, ".logged_in")).read().strip() or ME
@@ -1281,6 +1285,9 @@ def f21(d, env, app):
     d.expect(d.has_text("Other accounts", root=pop) and d.find("More account actions", root=pop) is not None,
              "Other accounts heading with its ⋮ menu")
     d.shot("account menu, one account")
+    pop.popdown()
+    d.press("<Primary>3")
+    yield until(lambda: browse_names(app) == ["Documents"], 20, "Browse lists the first account's Drive")
 
     # F-004: add a second account through Proton's browser sign-in
     next_login(env, LINDI)
@@ -1316,6 +1323,10 @@ def f21(d, env, app):
     yield until(lambda: os.path.exists(os.path.join(lindi_cloud, "Lindi", "l1.txt")), 20, "upload to the 2nd account")
     d.expect(not os.path.exists(os.path.join(env.cloud, "my-files", "Lindi")), "nothing went to the first account")
     d.expect(d.find(f"Account: {LINDI}") is not None, "header shows the second account")
+    d.press("<Primary>3")
+    yield until(lambda: browse_names(app) == ["Lindi"], 20,
+                "F-011 Browse lists the second account's own Drive (not what it showed for the first)")
+    d.shot("browse: second account's Drive")
 
     # F-002 / F-003: the menu lists the other account; one click switches, no browser
     pop = open_account_menu(app)
@@ -1327,6 +1338,7 @@ def f21(d, env, app):
     yield until(toast_has(app, f"Switched to {ME}"), 20, "switched to the first account")
     yield main_ready(app)
     d.expect([f.id for f in app.settings.folders] == ["documents"], "the first account's folders are back")
+    yield until(lambda: browse_names(app) == ["Documents"], 20, "F-011 the open Browse tab reloads for the account")
     d.expect(live_slot(env) == ME and app.vault.load(LINDI) is not None,
              "the CLI uses the first account's session; the second one's is kept")
     d.expect(d.find(f"Account: {ME}") is not None, "header shows the first account again")
