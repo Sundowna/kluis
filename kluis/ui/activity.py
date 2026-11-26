@@ -159,6 +159,7 @@ class ActivityPage(Gtk.Box):
                 continue
             self.list.add(self._row(a))
         self.list.show_all()
+        self.refresh_big()          # paused big items from before a restart show at once
 
     def prepend(self, a):
         if self.filter.get_active_id() == "problems" and a.level not in ("error", "warning"):

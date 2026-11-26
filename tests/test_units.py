@@ -390,6 +390,8 @@ check(Settings.from_dict({"resume_paused_after": 7, "folders": [{"local": "/x", 
       == 5, "an unknown resume time falls back to 5 min")
 check(Settings.from_dict({"folders": [{"local": "/x", "remote": "/my-files/x", "held": ["ok.zip", 3, "/"]}]})
       .folders[0].held == ["ok.zip"], "only sensible paused paths are loaded")
+fb.held = ["Belastingaangifte-2025.zip"]
+check("Belastingaangifte" not in diagnostics.collect(sb, "1.0"), "F-037 Copy diagnostics names no paused file")
 mb.lane.shutdown()
 
 diag = diagnostics.collect(st, "1.0")

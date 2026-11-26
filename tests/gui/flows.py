@@ -1683,6 +1683,7 @@ def f25(d, env, app):
     d.expect(not os.path.exists(os.path.join(cloud, "SLOW-second.zip")), "F-037 the paused file stays paused")
     d.click("Resume SLOW-second.zip")
     yield until(lambda: m.lane.current is not None, 20, "F-037 Resume sends it to the lane again")
+    yield 0.8
     d.expect(not f.held and d.find("Pause SLOW-second.zip"), "F-037 the row says it is uploading again")
     yield until(lambda: os.path.exists(os.path.join(cloud, "SLOW-second.zip")), 30, "F-037 and it uploads")
     yield until(lambda: not act.big.get_visible(), 15, "the Big items card to go away when empty")

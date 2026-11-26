@@ -68,6 +68,7 @@ def collect(settings, cli_version: str) -> str:
     cfg.pop("window", None)
     for f in cfg.get("folders", []):
         f.pop("ignore", None)
+        f["held"] = len(f.get("held") or [])      # paused big items: how many, not their names
     cfg["cli_path"] = "<path>" if cfg.get("cli_path") else ""
     cfg["root_dir"] = "<path>"
     cfg["account"] = "<email>" if cfg.get("account") else ""
