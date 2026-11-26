@@ -66,7 +66,7 @@ class Onboarding(Gtk.Box):
         saved = max(1, min(3, self.app.settings.onboarding_step or 1))
         if account_state == "checking":
             self.cli_state = "busy"
-            self.show_step(1)
+            self.show_step(1, persist=False)   # only a placeholder: never overwrite the step to resume at
             return
         if account_state == "no-cli":
             if self.cli_state != "error":
@@ -82,10 +82,11 @@ class Onboarding(Gtk.Box):
             self.sign_state = "done"
             self.show_step(saved)
 
-    def show_step(self, n: int):
+    def show_step(self, n: int, persist=True):
         self.step = n
-        self.app.settings.onboarding_step = n
-        self.app.settings.save()
+        if persist:
+            self.app.settings.onboarding_step = n
+            self.app.settings.save()
         clear(self.bars)
         for i, name in enumerate(STEPS, 1):
             bar = Gtk.Box()

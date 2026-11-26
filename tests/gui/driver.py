@@ -270,7 +270,7 @@ def until(cond, timeout=15, what="condition"):
     return (cond, timeout, what)
 
 
-def run_flow(flow_id, fn, theme, size, shots_dir, desktop="X-Cinnamon", setup=None, env_kw=None):
+def run_flow(flow_id, fn, theme, size, shots_dir, desktop="X-Cinnamon", setup=None, env_kw=None, hidden=False):
     env = Env(theme=theme, size=size, desktop=desktop, **(env_kw or {}))
     if setup:
         setup(env)
@@ -279,9 +279,15 @@ def run_flow(flow_id, fn, theme, size, shots_dir, desktop="X-Cinnamon", setup=No
     from kluis.app import KluisApp
     import kluis.app as kapp
     kapp.KluisApp.sent_notifications = []
-    app = KluisApp()
+    app = KluisApp(hidden=hidden)
     d = Driver(env, flow_id, shots_dir, label)
-    app.connect("activate", lambda *_: GLib.idle_add(lambda: (d.run(fn, app), False)[1]))
+    started = {}
+
+    def on_activate(*_a):
+        if not started:                 # a later activation (launching again) must not restart the flow
+            started["v"] = True
+            GLib.idle_add(lambda: (d.run(fn, app), False)[1])
+    app.connect("activate", on_activate)
     app.run([])
     ok = d.result == "PASS"
     with open(os.path.join(d.shots, f"log-{label}.txt"), "w") as fh:

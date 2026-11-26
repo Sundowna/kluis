@@ -46,6 +46,7 @@ def _footer(d, *buttons):
 def confirm(parent, title, text, ok, cancel, destructive=False, default="cancel") -> bool:
     """default: 'cancel' (Enter and Esc keep), 'ok', or 'none' (no default; Esc keeps)."""
     d, area = _dialog(parent, title, 480)
+    d.set_title("Kluis")              # the question is the dialog's body (and its accessible name)
     area.pack_start(label(title, "k-h2", wrap=True, max_chars=50), False, False, 0)
     if text:
         area.pack_start(label(text, "k-muted", wrap=True, max_chars=60), False, False, 0)

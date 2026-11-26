@@ -87,7 +87,7 @@ def setup_f1(env):
     os.makedirs(os.path.dirname(newbin))
     shutil.copy(harness.MOCK, newbin)
     with open(newbin, "ab") as fh:
-        fh.write(b"\n# " + b"x" * 400000 + b"\n")           # a few hundred KB so progress is visible
+        fh.write(b"\n# " + b"x" * 1500000 + b"\n")          # ~1.5 MB: about 1.5 s at the throttled rate
     write_manifest(env, newbin)
     env.write("Documents/report.txt", "r")
     env.write("Pictures/p.jpg", "p")
@@ -96,12 +96,40 @@ def setup_f1(env):
     os.environ["MOCK_DELAY"] = "0.3"
 
 
+_SERVER = {}
+
+
+def serve(path):
+    """Serve one file from 127.0.0.1, throttled (~1 MB/s), so download progress is observable."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            data = open(_SERVER["path"], "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            for i in range(0, len(data), 65536):
+                self.wfile.write(data[i:i + 65536])
+                time.sleep(0.06)
+
+        def log_message(self, *a):
+            pass
+    _SERVER["path"] = path
+    if "srv" not in _SERVER:
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        _SERVER["srv"] = srv
+    return f"http://127.0.0.1:{_SERVER['srv'].server_address[1]}/proton-drive"
+
+
 def write_manifest(env, path, sha=None, version="0.9.0"):
     from kluis.cli import platform_key
     sha = sha or hashlib.sha512(open(path, "rb").read()).hexdigest()
     mf = os.path.join(env.tmp, "version.json")
     json.dump({"Releases": [{"Version": version, "CategoryName": "Stable",
-                             "Files": [{"Platform": platform_key(), "Url": "file://" + path,
+                             "Files": [{"Platform": platform_key(), "Url": serve(path),
                                         "Sha512CheckSum": sha}]}]}, open(mf, "w"))
     os.environ["KLUIS_TEST_MANIFEST"] = "file://" + mf
 
@@ -113,7 +141,8 @@ def f1(d, env, app):
     d.shot("Welcome · Step 1 of 3")
     d.expect(not d.get("Back").is_sensitive() and not d.get("Next").is_sensitive(), "Back and Next disabled")
     d.click("Download from proton.me")
-    yield until(lambda: d.has_text("Downloading…") or d.has_text(" MB"), 2, "Downloading… shows")
+    yield until(lambda: d.has_text("Downloading…") and d.has_text(" MB"), 1, "Downloading… and x of y MB")
+    d.expect(d.get("Download from proton.me").get_allocated_width() >= 240, "button keeps its width")
     d.shot("downloading")
     yield until(lambda: d.has_text("SHA-512 checksum matches"), 20, "download verified")
     d.expect(d.has_text("✓ Downloaded · proton-drive 0.9.0 · SHA-512 checksum matches"), "✓ Downloaded text")
@@ -907,8 +936,9 @@ def f14(d, env, app):
     app.manager.request()
     yield until(lambda: app.manager.logged_in is False, 20, "session expired")
     yield 0.5
-    d.expect(app.window.home.banner.get_visible() and any("Sign in" in t for t, _b in app.sent_notifications),
-             "notification + Home banner “Sign in again”")
+    d.expect(app.window.home.banner.get_visible(), "Home banner “Sign in again”")
+    yield until(lambda: any("Sign in" in t for t, _b in app.sent_notifications), 40,
+                "notification (at most one per 30 s, so it may wait)")
     d.shot("sign in again banner")
     open(os.path.join(env.cloud, ".logged_in"), "w").close()
     app.manager.check_account()
@@ -927,11 +957,7 @@ def f14(d, env, app):
     d.expect(d.has_text("Kluis is about to move 400 files from Docs to the trash.", root=dlg), "guard text")
     d.expect(focused(d.get("Keep everything and pause", root=dlg)), "default keeps everything")
     d.shot("mass deletion guard")
-    from gi.repository import Gdk
-    ev = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
-    ev.key.keyval = Gdk.KEY_Escape
-    ev.key.window = dlg.get_window()
-    dlg.event(ev)
+    dlg.emit("close")                     # what GtkDialog's Esc key binding does
     yield until(lambda: dialog_with_text(d, "Kluis is about to move") is None, 5, "Esc closes")
     d.expect(len(os.listdir(os.path.join(env.cloud, "my-files", "Docs"))) >= 400 and
              app.settings.folder("docs").hold == "guard", "Esc keeps everything and pauses")
@@ -1157,7 +1183,7 @@ FLOWS = {
     "F8": (f8, setup_f8, {}), "F9": (f9, setup_f9, {}), "F10": (f10, setup_f10, {}), "F11": (f11, setup_f11, {}),
     "F12": (f12, setup_f12, {}), "F13": (f13, None, {}), "F14": (f14, setup_f14, {}),
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
-    "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
+    "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
 }
 
 
@@ -1170,7 +1196,7 @@ def main():
     w, h = (int(x) for x in size.split("x"))
     fn, setup, kw = FLOWS[flow]
     ok, res, log = run_flow(flow, fn, theme, (w, h), out, desktop=desktop, setup=setup,
-                            env_kw={"onboarded": kw.get("onboarded", True)})
+                            env_kw={"onboarded": kw.get("onboarded", True)}, hidden=kw.get("hidden", False))
     print(f"{flow} {theme} {size} {desktop}: {res}")
     if not ok:
         print("\n".join(log[-12:]))

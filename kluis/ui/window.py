@@ -193,8 +193,8 @@ class MainWindow(Gtk.ApplicationWindow):
             dot = Gtk.Box(valign=Gtk.Align.START, margin_top=4)
             styled(dot, "k-timeline-dot", TL_COLORS.get(a.level, ""))
             v = vbox(hbox(label(time.strftime("%H:%M", time.localtime(a.ts)), "k-muted", "k-s12", "k-num"),
-                          label(a.folder or "Kluis", "k-s12", "k-bold", ellipsize="end"), spacing=6),
-                     label(a.text, "k-muted", "k-s12", ellipsize="end"), spacing=0)
+                          label(a.folder or "Kluis", "k-s12", "k-bold", ellipsize="end", max_chars=24), spacing=6),
+                     label(a.text, "k-muted", "k-s12", ellipsize="end", max_chars=30), spacing=0)
             self.timeline.pack_start(hbox(dot, v, spacing=10), False, False, 0)
         self.timeline.show_all()
 
