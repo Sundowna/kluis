@@ -23,6 +23,7 @@ from .cli import CliError, CliMissing, ProtonDriveCli
 from .config import PART_DIR, PHOTOS_ID, FolderPair, Settings
 from .engine import SyncEngine, SyncResult
 from .errors import DISK_FULL, SIGNED_OUT, STATUS_TEXT, backoff_delay, classify
+from .lane import BigLane
 from .paths import ACTIVITY_FILE, STATE_DIR
 from .photos import PhotoSync
 from .state import StateStore
@@ -59,6 +60,16 @@ class SyncManager:
         self.store = store or StateStore()
         self.engine = SyncEngine(cli, self.store, self._engine_event)
         self.photos = PhotoSync(cli, self.store, self._engine_event)
+        # big files and big folders sync in their own lane, next to everything else (kluis/lane.py)
+        self.lane = BigLane(settings, lambda: self.cli.sibling(), lambda: self.store,
+                            may_run=self._lane_may_run, on_change=lambda: self._notify("lane"),
+                            on_event=self._engine_event, on_log=self.log, on_hold=self.set_hold,
+                            on_quiet=lambda fid: self._quiet_until.__setitem__(fid, time.time() + 4),
+                            on_done=lambda fid: GLib.idle_add(lambda: (self.request(fid, reason="lane"), False)[1]),
+                            start_thread=start_thread)
+        self.engine.defer = self.lane.add
+        self.engine.held = self.lane.held
+        self.quiet_since = time.time()      # last time anything synced: paused big items resume after a while
         self.status: dict[str, FolderStatus] = {}
         self.activity: collections.deque[Activity] = collections.deque(maxlen=500)
         self.unread = 0
@@ -195,6 +206,7 @@ class SyncManager:
         self._again.clear()
         self.engine.cancel()
         self.photos.cancel()
+        self.lane.cancel_all()
         for k, st in self.status.items():
             if st.state == "queued":
                 self.status[k] = self._initial_status(self.settings.folder(k)) if k != PHOTOS_ID \
@@ -206,6 +218,8 @@ class SyncManager:
         """After a Proton account switch: that account's sync history, folder status and watchers."""
         self._queue.clear()
         self._again.clear()
+        self.lane.cancel_all()
+        self.lane.paused.clear()
         self.store = StateStore(store_path)
         self.engine.store = self.store
         self.photos.store = self.store
@@ -242,6 +256,7 @@ class SyncManager:
             self._queue.remove(fid)
         if self.current == fid:
             self.engine.cancel()
+        self.lane.forget_folder(fid)
         self.rewatch()
         self._notify("global")
 
@@ -290,6 +305,38 @@ class SyncManager:
         self.log("warning", fid, "Kept everything; this folder is paused until you check it")
         self._notify("folder", fid)
         self._notify("global")
+
+    # ---------- big items (kluis/lane.py) ----------
+    def _lane_may_run(self) -> bool:
+        return not (self._stop or self.settings.paused or self.hold or self.switching or self.logged_in is False)
+
+    def pause_item(self, key: tuple) -> bool:
+        """Leave a big item out until resumed (or until things are quiet for a while). True if it restarts."""
+        self.quiet_since = time.time()
+        return self.lane.pause(key)
+
+    def resume_item(self, fid: str, path: str):
+        if self.lane.resume(fid, path):
+            self.log("info", fid, f"Resumed {path.rstrip('/')}")
+            self.request(fid)
+
+    def send_first(self, key: tuple) -> bool:
+        return self.lane.send_first(key)
+
+    def _auto_resume(self, now: float):
+        """Paused big items go again once nothing else has synced for Settings.resume_paused_after minutes."""
+        mins = self.settings.resume_paused_after
+        held = [(f, p) for f in self.settings.folders for p in f.held]
+        if not mins or not held or self.settings.paused or self.switching or self.hold:
+            return
+        if now - self.quiet_since < mins * 60:
+            return
+        for f, p in held:
+            self.lane.resume(f.id, p)
+        self.log("info", "", f"Resumed {len(held)} paused big item(s)",
+                 f"Nothing else synced for {mins} min.")
+        for fid in dict.fromkeys(f.id for f, _p in held):
+            self.request(fid)
 
     # ---------- account ----------
     def check_account(self, then=None):
@@ -413,6 +460,7 @@ class SyncManager:
         self._stop = True
         self.engine.cancel()
         self.photos.cancel()
+        self.lane.shutdown()
         self._wake.set()
         self._save_today()
 
@@ -567,7 +615,9 @@ class SyncManager:
             down += p[1]
             p[2] -= 1
         self._pending_bytes = [p for p in self._pending_bytes if p[2] > 0]
-        if self.settings.paused or not self.busy:
+        if self.busy or self.lane.busy or self._debounce:
+            self.quiet_since = time.time()
+        if self.settings.paused or not (self.busy or self.lane.busy):
             up = down = 0.0
             self._pending_bytes.clear()
         self.samples.append((up, down))
@@ -589,6 +639,7 @@ class SyncManager:
         if not self.settings.paused and self.logged_in and not self.busy and not self.hold:
             if now - self.last_run >= self.settings.interval_minutes * 60:
                 self.request(reason="schedule")
+        self._auto_resume(now)
         self._roll_today()
         self._notify("tick")
         return True

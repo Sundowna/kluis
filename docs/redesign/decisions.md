@@ -140,3 +140,19 @@ Each account has its own `PROTON_DRIVE_CACHE_DIR` (the CLI's caches are encrypte
 so existing installs change nothing. Only the active account syncs. A local folder synced by one account is refused
 for the others. *Sign out* ends the active session (`auth logout`) and hands over to the next kept account.
 Tests: `tests/test_units.py` (accounts) and GUI flow F21; FEATURES.md F-001…F-009.
+
+**D31 · Big items get their own lane (Walter's request, 2026-11-26).** Backups of several hundred GB, and folders of
+photos of many GB, held up every other change for hours, because Kluis synced one folder at a time and one CLI call
+at a time. Proton's CLI copes with more than one process (its caches are SQLite in WAL mode with a busy timeout;
+only one process holds `events.lock` and listens for events, the others just don't), so a second copy now runs
+next to the normal sync: the big-items lane (`kluis/lane.py`). A sync run hands it every file of at least 1 GB and,
+deepest folder first, every folder with at least 1 GB still to transfer (files directly in the synced folder only
+go as big files, so the lane never swallows a whole folder). The lane does one item at a time with the engine's
+own upload/verify and download/stage/verify code, staging under `.kluis-part/lane`, which a normal run leaves
+alone. While an item waits or runs, and while the user has paused it (`FolderPair.held`, kept over restarts),
+the normal sync leaves its paths out of the plan entirely, trashes included. Pausing a running item stops its CLI
+process; the CLI can't resume, so that file starts over later (said in the toast and the README's known limits).
+*Send first* never interrupts the running item, for the same reason. Paused items resume by themselves after
+`resume_paused_after` minutes (default 5) without other syncing, so a forgotten pause doesn't keep a backup out of
+Proton Drive. Photos timeline sync (`kluis/photos.py`) is not part of the lane.
+Tests: `tests/test_lane.py`, `tests/test_units.py` (big items), GUI flow F25; FEATURES.md F-036…F-039.

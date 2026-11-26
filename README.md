@@ -105,6 +105,10 @@ isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and l
   switch with one click. Each account keeps its own folders, photo settings and sync history, and only the active
   account syncs. Two accounts can't sync the same folder. If Proton no longer accepts a kept session, Kluis asks
   for that account's browser sign-in.
+- **Big files and big folders don't block the rest:** a file of 1 GB or more, or a folder with 1 GB or more to
+  transfer (a holiday's photos, a backup), syncs in its own lane next to everything else. In *Activity* you can
+  pause a big item, resume it or send it first. Paused items continue by themselves once nothing else has synced
+  for 5 minutes (or 15, 30, 60, or never: Settings).
 - **Drag a folder onto the window** to start syncing it.
 - **Activity log** and desktop notifications (all, problems only, or off).
 - **Quick settings** column and **Settings:** your Proton Drive folder (move it safely), start at login,
@@ -158,6 +162,9 @@ sessions are in Credential Manager ("dev.kluis.Kluis/account/…"), and deleted 
   to `notes.txt`). Kluis leaves such items out, never deletes them, and says so in Activity; rename them on the web
   (or on Linux/Mac) to sync them. On drives without a Recycle Bin (USB sticks, network shares) Kluis never deletes
   local files for a deletion in Proton Drive; it leaves them and says so.
+- **A paused big file starts over.** Proton's CLI can't continue an upload or download where it stopped, so a
+  big file paused halfway is transferred from the beginning when it continues. A big folder keeps the files that
+  were done. There is no percentage for a single big file: the CLI reports bytes only when it is finished.
 - **No storage figure.** The CLI has no quota command, so Kluis shows no "space used" (never a guess).
 - When Proton ships its own Linux app, compare the two. Kluis's settings never touch Proton's.
 
@@ -165,11 +172,12 @@ sessions are in Credential Manager ("dev.kluis.Kluis/account/…"), and deleted 
 
 ```bash
 python3 tests/test_engine.py        # folder-sync scenarios
+python3 tests/test_lane.py          # big files and folders: own lane, pause, resume, send first
 python3 tests/test_photos.py        # Proton Photos scenarios
 python3 tests/test_safety.py        # one test per safety rule (HANDOVER §7)
 python3 tests/test_units.py         # status text, ring mapping, migration, contrast …
 python3 tests/test_lint.py          # static checks + every module imports
-tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F24 under Xvfb, light/dark × 1440x900/1024x640
+tests/gui/run_all.sh /tmp/flows     # GUI flows F1–F25 under Xvfb, light/dark × 1440x900/1024x640
 python tests/gui/run_windows.py out # the same flows on Windows (MSYS2 UCRT64 Python with GTK 3)
 KLUIS_DEBUG=1 python3 -m kluis      # run from the source folder with debug logs
 python3 -m kluis --selftest         # real account, own test folder only

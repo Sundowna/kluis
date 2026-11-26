@@ -24,6 +24,7 @@ MODES = {
     "mirror": ("↓", "Mirror down", "Keeps a local copy of a Proton Drive folder. Never changes Proton Drive."),
 }
 INTERVALS = (5, 15, 30, 60)
+RESUME_AFTER = (5, 15, 30, 60, 0)   # minutes of quiet before paused big items resume; 0 = never
 NOTIFY_LEVELS = ("all", "problems", "off")
 PART_DIR = ".kluis-part"          # staging folder for downloads, never synced
 
@@ -44,6 +45,7 @@ class FolderPair:
     ignore: list = field(default_factory=lambda: list(DEFAULT_IGNORES))
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     hold: str = ""                   # "" | "guard" | "missing": paused by a safety guard
+    held: list = field(default_factory=list)   # big items the user paused (kluis/lane.py): "a.zip", "photos/2023/"
     # runtime info persisted for display
     last_sync: float = 0.0
     last_result: str = ""            # "ok" | "error" | "conflict" | ""
@@ -103,6 +105,7 @@ class Settings:
     accent: str = "green"              # green | purple
     skip_thumbnails: bool = False
     paused: bool = False
+    resume_paused_after: int = 5       # minutes without other syncing before paused big items resume; 0 = never
     onboarded: bool = False
     onboarding_step: int = 1
     root_dir: str = field(default_factory=default_root)
@@ -221,6 +224,10 @@ def migrate(raw: dict) -> dict:
     for f in raw.get("folders", []) or []:
         if isinstance(f, dict) and "mode" in f and f["mode"] not in MODES:
             f["mode"] = "backup"          # unknown mode: the one that never deletes or changes local files
+        if isinstance(f, dict):
+            f["held"] = [h for h in f.get("held") or [] if isinstance(h, str) and h.strip("/")]
+    if raw.get("resume_paused_after", 5) not in RESUME_AFTER:
+        raw["resume_paused_after"] = 5
     raw["config_version"] = CONFIG_VERSION
     return raw
 

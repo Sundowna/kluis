@@ -1,4 +1,5 @@
-"""End-to-end flows F1–F23 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
+"""End-to-end flows F1–F25 (HANDOVER §12; F21 = Proton accounts, F22 = Computers, F25 = big items; see FEATURES.md),
+against the mock CLI.
 
 Run one: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/flows.py F4 dark 1440x900 OUT
 All:     tests/gui/run_all.sh OUT
@@ -1639,6 +1640,68 @@ def f24(d, env, app):
     d.shot("tray")
 
 
+# ------------------------------------------------------------------ F25
+def setup_f25(env):
+    os.environ["KLUIS_BIG_BYTES"] = "1000"        # "big" = 1000 bytes here
+    os.environ["MOCK_SLOW_DELAY"] = "6"           # files named SLOW… take 6 s in the mock CLI
+    cfg = folders_cfg(env, "Backups")
+    set_cfg(env, folders=cfg)
+    d = cfg[0]["local"]
+    for name, size in (("SLOW-backup.zip", 3000), ("SLOW-second.zip", 3000), ("notes.txt", 20)):
+        with open(os.path.join(d, name), "w") as fh:
+            fh.write("x" * size)
+
+
+def f25(d, env, app):
+    """F-036 big files sync in their own lane next to everything else; F-037 pause / resume; F-038 send first;
+    the Big items card in Activity."""
+    yield main_ready(app)
+    cloud = os.path.join(env.cloud, "my-files", "Backups")
+    m = app.manager
+    d.press("<Primary>6")
+    yield until(lambda: m.lane.current is not None and len(m.lane.items) == 2, 30, "the lane to start")
+    yield until(lambda: os.path.exists(os.path.join(cloud, "notes.txt")), 15, "the small file")
+    d.expect(m.lane.current.rel == "SLOW-backup.zip" and not os.path.exists(os.path.join(cloud, "SLOW-backup.zip")),
+             "F-036 notes.txt is uploaded while the big backup is still uploading")
+    yield 1.2
+    act = app.window.activity
+    d.expect(act.big.get_visible() and d.find("Pause SLOW-backup.zip") and d.find("Send SLOW-second.zip first")
+             and not d.find("Send SLOW-backup.zip first", visible=False),
+             "Activity shows both big items: Pause for each, Send first only for the waiting one")
+    st = app.status()
+    d.expect(st.kind == "syncing" and st.title == "Uploading SLOW-backup.zip" and
+             "Everything else is up to date" in st.subtitle, f"F-036 the status names the big item ({st.title})")
+    d.shot("big items")
+    d.click("Pause SLOW-second.zip")
+    yield until(lambda: d.find("Resume SLOW-second.zip"), 10, "a Resume button")
+    f = app.settings.folders[0]
+    d.expect(f.held == ["SLOW-second.zip"] and len(m.lane.items) == 1, "F-037 Pause takes it out of the lane")
+    d.expect("1 paused" in app.status().subtitle, "F-037 the status counts it")
+    d.shot("paused")
+    yield until(lambda: os.path.exists(os.path.join(cloud, "SLOW-backup.zip")), 30, "the first big file")
+    yield until(lambda: not m.lane.busy and not m.busy, 20, "everything else to finish")
+    d.expect(not os.path.exists(os.path.join(cloud, "SLOW-second.zip")), "F-037 the paused file stays paused")
+    d.click("Resume SLOW-second.zip")
+    yield until(lambda: m.lane.current is not None, 20, "F-037 Resume sends it to the lane again")
+    d.expect(not f.held and d.find("Pause SLOW-second.zip"), "F-037 the row says it is uploading again")
+    yield until(lambda: os.path.exists(os.path.join(cloud, "SLOW-second.zip")), 30, "F-037 and it uploads")
+    yield until(lambda: not act.big.get_visible(), 15, "the Big items card to go away when empty")
+    # F-038: Send first, with two waiting behind a running one
+    for name in ("SLOW-c.zip", "SLOW-d.zip", "SLOW-e.zip"):
+        with open(os.path.join(f.local, name), "w") as fh:
+            fh.write("y" * 2000)
+    m.request(f.id)
+    yield until(lambda: m.lane.current is not None and len(m.lane.items) == 3, 30, "three big items")
+    first = m.lane.current.rel
+    last = m.lane.items[-1].rel
+    yield 1.2
+    d.click(f"Send {last} first")
+    yield until(lambda: m.lane.items[1].rel == last, 5, "F-038 Send first moves it next in line")
+    d.expect(m.lane.current.rel == first, "F-038 the one being uploaded keeps going")
+    m.cancel()
+    yield until(lambda: not m.lane.busy, 15, "Stop to empty the lane")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1649,6 +1712,7 @@ FLOWS = {
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
     "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}),
+    "F25": (f25, setup_f25, {}),
 }
 
 

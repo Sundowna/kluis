@@ -34,6 +34,59 @@ log = logging.getLogger("kluis.engine")
 BATCH = 40  # paths per CLI call
 GUARD_FILES = 50        # §7.8: more than 50 files …
 GUARD_SHARE = 0.10      # … or more than 10 % of the folder in one run asks first
+# Big items (a file this size, or a folder with this much to transfer) go to their own lane (kluis/lane.py),
+# so they don't hold up everything else. Tests set KLUIS_BIG_BYTES to a few bytes.
+BIG_BYTES = int(os.environ.get("KLUIS_BIG_BYTES") or 1 << 30)
+LANE_DIR = "lane"       # <folder>/.kluis-part/lane: the big-items lane's staging, kept while a run clears its own
+
+
+def is_held(rel: str, held) -> bool:
+    """`held`: paths of files ("a/b.zip") and folders ("photos/2023/", trailing slash = everything in it)."""
+    for h in held:
+        if h.endswith("/"):
+            if rel == h[:-1] or rel.startswith(h) or h == "/":
+                return True
+        elif rel == h:
+            return True
+    return False
+
+
+def holds_inside(rel: str, held) -> bool:
+    """Is a held item inside the folder `rel` (so the folder must not go to a trash)?"""
+    return any(h.rstrip("/").startswith(rel + "/") for h in held)
+
+
+def split_big(files: list, size_of, big: int = 0):
+    """Splits transfers into (small, items). An item is (rel, is_folder, [files], bytes): every file of at least
+    `big` bytes on its own; then, deepest folder first, a folder whose files still left (its own and its
+    subfolders' not taken yet) add up to `big`. Files directly in the synced folder itself only go as big files."""
+    big = big or int(os.environ.get("KLUIS_BIG_BYTES") or BIG_BYTES)
+    items, rest = [], []
+    for r in files:
+        s = size_of(r) or 0
+        if s >= big:
+            items.append((r, False, [r], s))
+        else:
+            rest.append(r)
+    pending = defaultdict(list)
+    dirs = set()
+    for r in rest:
+        d = posixpath.dirname(r)
+        pending[d].append(r)
+        while d:
+            dirs.add(d)
+            d = posixpath.dirname(d)
+    taken = set()
+    for d in sorted(dirs, key=lambda x: (-x.count("/"), x)):
+        n = sum(size_of(r) or 0 for r in pending[d])
+        if n >= big:
+            items.append((d, True, list(pending[d]), n))
+            taken.update(pending[d])
+            pending[d] = []
+        pending[posixpath.dirname(d)].extend(pending.pop(d, []))
+    big_files = {it[0] for it in items if not it[1]}
+    small = [r for r in files if r not in taken and r not in big_files]
+    return small, items
 
 
 def _win_case(name: str) -> str:
@@ -97,6 +150,8 @@ class SyncResult:
     downloaded: int = 0
     conflicts: int = 0
     trashed: int = 0
+    deferred: int = 0           # big items handed to the big-items lane this run
+    held: int = 0               # transfers left out: paused by the user, or already in the lane
     errors: list = field(default_factory=list)
 
 
@@ -131,6 +186,10 @@ class SyncEngine:
         self._cancel = False
         self.windows = IS_WINDOWS          # names Windows can't store (fit_windows_names); tests switch it on
         self._told: set = set()            # (folder id, rel) of skipped names already logged this session
+        # Big-items lane (kluis/lane.py), set by the manager. defer(f, direction, item, local, remote) takes a big
+        # item; held(folder id) lists paths to leave alone this run (paused, or being transferred by the lane).
+        self.defer: Callable | None = None
+        self.held: Callable[[str], list] | None = None
 
     # ---------------- public ----------------
     def cancel(self):
@@ -165,6 +224,7 @@ class SyncEngine:
                 if self.windows:
                     remote, local = self.fit_windows_names(f, local, remote, state)
             plan = self.make_plan(f, local, remote, state)
+            res.held = self.drop_held(plan, self.held(f.id) if self.held else [])
             log.info("[%s] plan: %s", f.name, plan.describe())
             if dry_run:
                 res.message = plan.describe()
@@ -221,7 +281,24 @@ class SyncEngine:
             if res.trashed:
                 parts.append(f"{res.trashed} moved to trash")
             res.message = ", ".join(parts) or "Up to date"
+            if res.deferred:
+                res.message += f" · {res.deferred} big item(s) in the big-items lane"
         return res
+
+    @staticmethod
+    def drop_held(p: Plan, held) -> int:
+        """Leaves paused items and items the big-items lane is transferring out of this run. Returns how many."""
+        if not held:
+            return 0
+        n = 0
+        for name in ("upload", "download", "conflicts", "record", "forget"):
+            keep = [r for r in getattr(p, name) if not is_held(r, held)]
+            if name in ("upload", "download", "conflicts"):
+                n += len(getattr(p, name)) - len(keep)
+            setattr(p, name, keep)
+        for name in ("trash_remote", "trash_local"):
+            setattr(p, name, [r for r in getattr(p, name) if not is_held(r, held) and not holds_inside(r, held)])
+        return n
 
     # ---------------- guards ----------------
     def effective(self, f: FolderPair) -> FolderPair:
@@ -267,11 +344,33 @@ class SyncEngine:
                 n += 1
         return n
 
-    def _clear_parts(self, f: FolderPair):
-        """Remove Kluis's own staging folder (only ever holds partial downloads Kluis made)."""
+    def _clear_parts(self, f: FolderPair, lane: bool = False):
+        """Remove Kluis's own staging folder (only ever holds partial downloads Kluis made). The big-items lane's
+        part (.kluis-part/lane) stays while the lane may be using it; `lane=True` clears only that part."""
         d = os.path.join(f.local, PART_DIR)
-        if os.path.isdir(d) and not os.path.islink(d):
+        if not os.path.isdir(d) or os.path.islink(d):
+            return
+        if lane:
+            shutil.rmtree(os.path.join(d, LANE_DIR), ignore_errors=True)
+            try:
+                os.rmdir(d)          # only when empty: a normal run may be staging there
+            except OSError:
+                pass
+            return
+        if self.defer is None:
             shutil.rmtree(d, ignore_errors=True)
+            return
+        for name in os.listdir(d):
+            if name != LANE_DIR:
+                p = os.path.join(d, name)
+                try:
+                    shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.unlink(p)
+                except OSError:
+                    pass
+        try:
+            os.rmdir(d)          # only when empty
+        except OSError:
+            pass
 
     @staticmethod
     def _hold_if_fatal(e):
@@ -573,7 +672,9 @@ class SyncEngine:
         def step(label: str, n: int = 1):
             nonlocal done
             done += n
+            self._prog = (min(done, total), total)
             self._emit(f, "progress", done=min(done, total), total=total, text=label)
+        self._prog = (0, total)
 
         # 0. bookkeeping that needs no network
         for rel in p.forget:
@@ -651,16 +752,35 @@ class SyncEngine:
             os.makedirs(os.path.join(f.local, rel), exist_ok=True)
             self.store.put(fid, Entry(rel, True))
 
-        # 4. uploads, grouped by folder
+        # 4.–6. uploads, then downloads; big items go to the big-items lane (kluis/lane.py) when there is one
+        ups, downs = list(p.upload), list(p.download)
+        if self.defer is not None:
+            ups, up_items = split_big(ups, lambda r: local[r].size if r in local else 0)
+            downs, down_items = split_big(downs, lambda r: (remote or {})[r].size if r in (remote or {}) else 0)
+            for direction, items in (("up", up_items), ("down", down_items)):
+                for it in items:
+                    self.defer(f, direction, it, local, remote)
+                    res.deferred += 1
+                    total -= len(it[2])
+            total = max(total, 1)
+            self._prog = (min(done, total), total)
+        self.upload_files(f, ups, local, res, step)
+        self.download_files(f, downs, local, remote, res, step,
+                            os.path.join(f.local, PART_DIR, f"{os.getpid()}-{time.time_ns()}"))
+
+    def upload_files(self, f: FolderPair, rels: list, local: dict, res: SyncResult, step, done_of=None):
+        """Uploads `rels`, grouped by folder, then checks each against Proton Drive and records it (invariant 3).
+        `done_of(rels)` is told which files are confirmed (the big-items lane counts them)."""
+        fid = f.id
         by_dir = defaultdict(list)
-        for rel in p.upload:
+        for rel in rels:
             by_dir[posixpath.dirname(rel)].append(rel)
         touched_remote_dirs = set()
         for d in sorted(by_dir, key=lambda r: r.count("/")):
             for chunk in _chunks(by_dir[d], BATCH):
                 self._check()
                 label = f"Uploading {d or f.name} ({len(chunk)} file(s))"
-                self._emit(f, "progress", done=done, total=total, text=label)
+                self._emit(f, "progress", text=label, **self._progress())
                 target = rjoin(f.remote, d)
                 t0 = time.monotonic()
                 try:
@@ -676,7 +796,7 @@ class SyncEngine:
                 touched_remote_dirs.add(d)
                 step(label, len(chunk))
 
-        # 5. verify uploads against Proton Drive and record the new revisions (invariant 3)
+        # verify uploads against Proton Drive and record the new revisions (invariant 3)
         for d in touched_remote_dirs:
             self._check()
             try:
@@ -685,6 +805,7 @@ class SyncEngine:
                 self._hold_if_fatal(e)
                 res.errors.append(f"Could not verify {d or f.name}: {e}")
                 continue
+            confirmed = []
             for rel in by_dir[d]:
                 li = local.get(rel)
                 n = nodes.get(posixpath.basename(rel))
@@ -698,19 +819,24 @@ class SyncEngine:
                     continue      # Proton reports no SHA-1 (decisions D15): size must match at least
                 self.store.put(fid, Entry(rel, False, li.size, li.mtime, n.revision, lsha))
                 res.uploaded += 1
+                confirmed.append(rel)
+            if done_of and confirmed:
+                done_of(confirmed)
 
-        # 6. downloads: into <folder>/.kluis-part, verified, then renamed into place (invariant 7)
+    def download_files(self, f: FolderPair, rels: list, local: dict, remote: dict | None, res: SyncResult, step,
+                       stage_root: str, done_of=None):
+        """Downloads `rels` into `stage_root` inside <folder>/.kluis-part, verified, then renamed into place
+        (invariant 7)."""
         by_ldir = defaultdict(list)
-        for rel in p.download:
+        for rel in rels:
             by_ldir[posixpath.dirname(rel)].append(rel)
-        stage_root = os.path.join(f.local, PART_DIR, f"{os.getpid()}-{time.time_ns()}")
         for d in sorted(by_ldir, key=lambda r: r.count("/")):
             ldir = os.path.join(f.local, d)
             os.makedirs(ldir, exist_ok=True)
             for chunk in _chunks(by_ldir[d], BATCH):
                 self._check()
                 label = f"Downloading {d or f.name} ({len(chunk)} file(s))"
-                self._emit(f, "progress", done=done, total=total, text=label)
+                self._emit(f, "progress", text=label, **self._progress())
                 stage = os.path.join(stage_root, d)
                 os.makedirs(stage, exist_ok=True)
                 t0 = time.monotonic()
@@ -725,10 +851,20 @@ class SyncEngine:
                         raise Cancelled()
                     self._hold_if_fatal(e)
                     res.errors.append(f"Download into {d or f.name} failed: {e}")
+                placed = []
                 for rel in chunk:
                     self._check()
+                    before = res.downloaded
                     self._place_download(f, rel, stage, local, remote, res)
+                    if res.downloaded > before:
+                        placed.append(rel)
+                if done_of and placed:
+                    done_of(placed)
                 step(label, len(chunk))
+
+    def _progress(self) -> dict:
+        p = getattr(self, "_prog", None)
+        return {"done": p[0], "total": p[1]} if p else {}
 
     # ---------------- helpers ----------------
     def _place_download(self, f, rel, stage, local, remote, res):

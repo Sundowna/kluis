@@ -325,6 +325,8 @@ def main():
                 summary["failures"].append({"name": os.path.basename(src), "error": "Simulated failure"})
                 return
             time.sleep(float(os.environ.get("MOCK_UPLOAD_DELAY", "0")))
+            if "SLOW" in os.path.basename(src):           # a big transfer (the big-items lane tests)
+                time.sleep(float(os.environ.get("MOCK_SLOW_DELAY", "3")))
             shutil.copyfile(src, t + ".mock-upload")   # a cut connection never leaves a half file
             os.replace(t + ".mock-upload", t)
             summary["transferredItems"] += 1
@@ -360,6 +362,8 @@ def main():
                     summary["failures"].append({"name": os.path.basename(src), "error": "Name conflict"})
                     return
             dd = float(os.environ.get("MOCK_DOWNLOAD_DELAY", "0"))
+            if "SLOW" in os.path.basename(src):
+                dd = dd or float(os.environ.get("MOCK_SLOW_DELAY", "3"))
             if dd:
                 data = open(src, "rb").read()
                 with open(t, "wb") as out:          # writes half, waits, writes the rest

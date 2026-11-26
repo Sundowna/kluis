@@ -25,7 +25,8 @@ def setup(prefix="kluis-test-"):
     os.environ["KLUIS_TEST_VAULT"] = os.path.join(tmp, "vault")
     os.environ["KLUIS_TEST_VAULT_SLOT"] = os.path.join(tmp, "cloud", ".logged_in")
     os.environ.pop("PROTON_DRIVE_CACHE_DIR", None)
-    for k in ("MOCK_DELAY", "MOCK_BAD_SHA1", "MOCK_DOWNLOAD_DELAY", "MOCK_UPLOAD_DELAY", "MOCK_INCOMPATIBLE"):
+    for k in ("MOCK_DELAY", "MOCK_BAD_SHA1", "MOCK_DOWNLOAD_DELAY", "MOCK_UPLOAD_DELAY", "MOCK_INCOMPATIBLE",
+              "MOCK_SLOW_DELAY"):
         os.environ.pop(k, None)
     os.makedirs(os.path.join(tmp, "cloud", "my-files"), exist_ok=True)
     open(os.path.join(tmp, "cloud", ".logged_in"), "w").close()

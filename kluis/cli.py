@@ -39,7 +39,9 @@ NOT_LOGGED_IN_MARKERS = ("need to login", "need to log in", "not logged in", "lo
 # A PROTON_DRIVE_CACHE_DIR the user set themselves stays the first account's cache.
 _USER_CACHE_DIR = os.environ.get("PROTON_DRIVE_CACHE_DIR", "")
 
-# The CLI keeps a local sqlite cache and an events lock: run one process at a time.
+# One CLI process at a time per ProtonDriveCli. The CLI itself copes with several processes (its cache is
+# SQLite in WAL mode with a busy timeout; only one process holds events.lock and listens for events), so the
+# big-items lane (kluis/lane.py) runs its own copy next to the normal sync: sibling().
 _CLI_LOCK = threading.RLock()
 
 
@@ -333,9 +335,10 @@ def cli_version_of(text: str) -> str:
 
 
 class ProtonDriveCli:
-    def __init__(self, path: str | None, skip_thumbnails: bool = False):
+    def __init__(self, path: str | None, skip_thumbnails: bool = False, lock=None):
         self.path = path
         self.skip_thumbnails = skip_thumbnails
+        self._lock = lock or _CLI_LOCK
         self._current: subprocess.Popen | None = None
         self._cancelled = False
         self._cache_dir = ""
@@ -357,6 +360,12 @@ class ProtonDriveCli:
         else:
             os.environ.pop("PROTON_DRIVE_CACHE_DIR", None)
 
+    def sibling(self) -> "ProtonDriveCli":
+        """Another CLI for the same account that runs next to this one (its own lock)."""
+        other = ProtonDriveCli(self.path, self.skip_thumbnails, lock=threading.RLock())
+        other._cache_dir = self._cache_dir
+        return other
+
     def env(self) -> dict:
         env = dict(os.environ)
         env.setdefault("PROTON_DRIVE_LOG_LEVEL", "INFO")
@@ -373,7 +382,7 @@ class ProtonDriveCli:
         cmd = [*command_for(self.path), *args] + (["--json"] if json_out else [])
         log.debug("run %s", cmd)
         env = self.env()
-        with _CLI_LOCK:
+        with self._lock:
             self._cancelled = False
             proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",

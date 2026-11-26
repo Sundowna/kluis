@@ -63,4 +63,11 @@ Same window, tabs and behaviour as on Linux; these lines are what Windows does d
 - F-034 Updating Proton's CLI works while `proton-drive.exe` is still running: the running one is moved aside, the new one takes its place — `tests/test_windows.py: updating proton-drive.exe`
 - F-035 A junction (Windows' link to another folder) inside a synced folder is not followed: nothing behind it is uploaded — `tests/test_windows.py: junctions`
 
+## Big items (Kluis 1.2)
+
+- F-036 Big files (1 GB or more) and big folders (1 GB or more still to transfer, e.g. a folder of photos) sync in their own lane, one at a time, next to everything else: small files and other folders don't wait for them, uploads and downloads alike; Activity, the folder's result and the status line say so — `tests/test_lane.py`, `tests/test_units.py: big items`, `tests/gui/flows.py: F25`
+- F-037 *Pause* on a big item in Activity leaves it out of every sync (also after a restart) and never trashes it on either side; *Resume* takes it back. A paused file that was being transferred starts again from the beginning (Proton's CLI can't continue a transfer); a paused folder keeps the files already done — `tests/test_lane.py`, `tests/gui/flows.py: F25`
+- F-038 *Send first* puts a waiting big item next in line; the one being transferred keeps going — `tests/test_lane.py`, `tests/gui/flows.py: F25`
+- F-039 Paused big items resume by themselves once nothing else has synced for 5 minutes (Settings: 5, 15, 30, 60 min or Never); Activity says so — `tests/test_units.py: big items`
+
 ## Removed

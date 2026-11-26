@@ -1,4 +1,5 @@
-"""Activity (HANDOVER §3.7): filter, open log folder, clear with Undo, coloured icons, empty state."""
+"""Activity (HANDOVER §3.7): filter, open log folder, clear with Undo, coloured icons, empty state.
+Above the log: the big-items lane (kluis/lane.py), each item with Pause / Resume / Send first."""
 from __future__ import annotations
 
 import time
@@ -6,6 +7,7 @@ import time
 from gi.repository import Gtk
 
 from ..i18n import _
+from ..status import duration_text, human_bytes
 from .common import a11y, button, clear, combo, label, styled, vbox
 
 ICONS = {"ok": ("✓", "k-ok"), "info": ("i", "k-muted"), "warning": ("!", "k-warn"), "error": ("✕", "k-error")}
@@ -22,6 +24,7 @@ class ActivityPage(Gtk.Box):
         for wdg in (button(_("Clear"), self._clear), button(_("Open log folder"), app.open_logs), self.filter):
             wdg.set_valign(Gtk.Align.CENTER)                # side by side (Walter, 2026-11-26)
             bar.pack_end(wdg, False, False, 0)
+        self.pack_start(self._big_card(), False, False, 0)
         self.pack_start(bar, False, False, 0)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         a11y(self.list, _("Activity"))
@@ -33,6 +36,98 @@ class ActivityPage(Gtk.Box):
         styled(sw, "k-card")
         sw.add(self.list)
         self.pack_start(sw, True, True, 0)
+
+    # ---------- big items ----------
+    def _big_card(self):
+        self.big = vbox(spacing=6)
+        styled(self.big, "k-card")
+        self.big.set_no_show_all(True)
+        a11y(self.big, _("Big items"))
+        self.big_title = label(_("Big items"), "k-h3")
+        self.big_hint = label("", "k-muted", "k-s12", wrap=True)
+        self.big_list = vbox(spacing=4)
+        for w in (self.big_title, self.big_hint, self.big_list):
+            self.big.pack_start(w, False, False, 0)
+        self._big_sig = None
+        return self.big
+
+    def refresh_big(self):
+        """Rebuilds the big-items card when the items or their states changed; else updates the times only."""
+        m = self.app.manager
+        lane = m.lane
+        running = lane.current
+        rows = [(it, "running" if it is running else "waiting", None) for it in list(lane.items)]
+        rows += [(it, "paused", (f, path)) for f, path, it in lane.paused_list()]
+        sig = tuple((r[0].key if r[0] else r[2], r[1]) for r in rows)
+        if sig != self._big_sig:
+            self._big_sig = sig
+            clear(self.big_list)
+            self._big_rows = []
+            for it, state, where in rows:
+                row, detail = self._big_row(it, state, where)
+                self.big_list.pack_start(row, False, False, 0)
+                self._big_rows.append((it, state, where, detail))
+        for it, state, where, detail in self._big_rows:
+            detail.set_text(self._big_detail(it, state, where))
+        mins = self.app.settings.resume_paused_after
+        self.big_hint.set_text(_("Big files and folders sync next to everything else, one at a time.") + " " + (
+            _("Paused items continue by themselves after {n} min without other syncing.").format(n=mins) if mins
+            else _("Paused items wait until you resume them.")))
+        if rows:
+            self.big.set_no_show_all(False)
+            self.big.show_all()
+        else:
+            self.big.hide()
+            self.big.set_no_show_all(True)
+
+    def _big_row(self, it, state, where):
+        row = Gtk.Box(spacing=10)
+        up = (it.direction if it else "up") == "up"
+        ic = label("↑" if up else "↓", "k-iconbox", "k-muted", xalign=0.5)
+        ic.set_size_request(28, 28)
+        row.pack_start(ic, False, False, 0)
+        name = (it.rel if it else where[1].rstrip("/"))
+        folder = self.app.manager.name_of(it.fid if it else where[0].id)
+        title = label(f"{folder} · {name}", ellipsize="middle")
+        title.set_tooltip_text(name)
+        detail = label("", "k-muted", "k-s12", ellipsize="end")
+        row.pack_start(vbox(title, detail, spacing=2), True, True, 0)
+        m = self.app.manager
+        if state == "paused":
+            fid, path = where[0].id, where[1]
+            b = button(_("Resume"), lambda: m.resume_item(fid, path), name=_("Resume {n}").format(n=name))
+            b.set_valign(Gtk.Align.CENTER)
+            row.pack_end(b, False, False, 0)
+        else:
+            key = it.key
+            b = button(_("Pause"), lambda: self._pause(key), name=_("Pause {n}").format(n=name))
+            b.set_valign(Gtk.Align.CENTER)
+            row.pack_end(b, False, False, 0)
+            if state == "waiting":
+                b2 = button(_("Send first"), lambda: m.send_first(key), name=_("Send {n} first").format(n=name),
+                            tooltip=_("Next in line. The item being transferred now keeps going."))
+                b2.set_valign(Gtk.Align.CENTER)
+                row.pack_end(b2, False, False, 0)
+        a11y(row, f"{state}: {folder} · {name}")
+        row.kluis_state = state
+        return row, detail
+
+    def _big_detail(self, it, state, where) -> str:
+        if it is None:
+            return _("Paused")
+        size = human_bytes(it.bytes)
+        files = _(" · {n} files").format(n=len(it.files)) if it.is_folder else ""
+        if state == "running":
+            verb = _("Uploading") if it.direction == "up" else _("Downloading")
+            done = _(" · {d} of {n} done").format(d=it.done_files, n=len(it.files)) if it.is_folder else ""
+            return f"{verb} · {size}{done} · {duration_text(time.time() - it.started)}"
+        if state == "waiting":
+            return f"{_('Waiting')} · {size}{files}"
+        return f"{_('Paused')} · {size}{files}"
+
+    def _pause(self, key):
+        if self.app.manager.pause_item(key):
+            self.app.toast(_("Paused. A paused file starts again from the beginning when it continues."))
 
     def _row(self, a):
         row = Gtk.ListBoxRow()

@@ -332,6 +332,66 @@ def _alive(pid):
 
 check(not _alive(_child), "F-029 a force-quit Kluis leaves no CLI process running (no orphan downloads)")
 
+print("big items (kluis/lane.py)")
+s_big = compute(Snapshot(folders=2, big_name="backup.zip", big_up=True, big_waiting=1, big_paused=2))
+check(s_big.kind == "syncing" and s_big.title == "Uploading backup.zip" and
+      s_big.subtitle == "Everything else is up to date · 1 more big item waiting · 2 paused",
+      f"F-036 while only a big item transfers, the status names it and says the rest is up to date ({s_big})")
+s_both = compute(Snapshot(syncing=True, total=3, done=1, big_name="Vakantie", big_up=False, folders=1))
+check(s_both.title == "Syncing 1 of 3 files" and "big item next to it: Vakantie" in s_both.subtitle,
+      "F-036 a normal run names the big item running next to it")
+check(compute(Snapshot(folders=1, big_paused=1)).subtitle.startswith("1 big item paused"),
+      "F-037 the up-to-date status counts paused big items")
+check(compute(Snapshot(paused=True, big_name="x")).kind == "paused", "Pause all still wins")
+
+from kluis.manager import SyncManager  # noqa: E402
+from kluis.cli import ProtonDriveCli  # noqa: E402
+import time as _t  # noqa: E402
+sb = Settings()
+fb = FolderPair(local=os.path.join(TMP, "BigOnes"), remote="/my-files/BigOnes", held=["backup.zip", "photos/"])
+os.makedirs(fb.local, exist_ok=True)
+sb.folders = [fb]
+mb = SyncManager(sb, ProtonDriveCli(harness.MOCK), store=StateStore(os.path.join(TMP, "big.sqlite")),
+                 start_thread=False)
+mb.logged_in = True
+asked = []
+mb.request = lambda fid=None, reason="": asked.append(fid)
+now = _t.time()
+mb.quiet_since = now - 4 * 60
+mb._auto_resume(now)
+check(fb.held == ["backup.zip", "photos/"] and not asked, "F-039 paused big items wait while it was quiet for < 5 min")
+mb._queue.append("x")
+mb._second()
+check(mb.quiet_since >= now, "F-039 anything else syncing restarts the quiet time")
+mb._queue.clear()
+mb.quiet_since = now - 5 * 60 - 1
+mb._auto_resume(now)
+check(fb.held == [] and asked == [fb.id] and any("Resumed 2 paused big item" in a.text for a in mb.activity),
+      "F-039 after 5 min without other syncing they resume by themselves, and Activity says so")
+fb.held = ["backup.zip"]
+sb.resume_paused_after = 0
+asked.clear()
+mb.quiet_since = now - 24 * 3600
+mb._auto_resume(now)
+check(fb.held == ["backup.zip"] and not asked, "F-039 'Never' keeps them paused until resumed by hand")
+sb.resume_paused_after = 15
+mb.quiet_since = now - 10 * 60
+mb._auto_resume(now)
+check(fb.held == ["backup.zip"], "F-039 the 15-minute setting waits 15 minutes")
+sb.paused = True
+mb.quiet_since = now - 3600
+mb._auto_resume(now)
+check(fb.held == ["backup.zip"], "F-039 nothing resumes while all syncing is paused")
+sb.paused = False
+mb.pause_item(("nope", "up", "x"))
+check(mb.quiet_since >= now, "F-039 pausing an item starts the quiet time again")
+check(Settings.from_dict({"resume_paused_after": 7, "folders": [{"local": "/x", "remote": "/my-files/x",
+                                                               "held": ["ok.zip", 3, "/"]}]}).resume_paused_after
+      == 5, "an unknown resume time falls back to 5 min")
+check(Settings.from_dict({"folders": [{"local": "/x", "remote": "/my-files/x", "held": ["ok.zip", 3, "/"]}]})
+      .folders[0].held == ["ok.zip"], "only sensible paused paths are loaded")
+mb.lane.shutdown()
+
 diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
       "F-006 Copy diagnostics names no account email and no other account's folders")

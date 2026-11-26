@@ -27,6 +27,10 @@ class Snapshot:
     remote_checked: float = 0.0
     signed_out: bool = False
     hold_text: str = ""
+    big_name: str = ""          # the big item the big-items lane is transferring (kluis/lane.py)
+    big_up: bool = True
+    big_waiting: int = 0
+    big_paused: int = 0
 
 
 @dataclass
@@ -72,7 +76,20 @@ def compute(snap: Snapshot) -> Status:
         sub = _("From {city} via VPN to Proton Drive").format(city=origin) if snap.via_vpn \
             else _("From {city} to Proton Drive").format(city=origin)
         eta = eta_text(snap.eta_s)
-        return Status("syncing", title, f"{sub} · {eta}" if eta else sub, "sync")
+        if eta:
+            sub = f"{sub} · {eta}"
+        if snap.big_name:
+            sub = f"{sub} · " + _("big item next to it: {n}").format(n=snap.big_name)
+        return Status("syncing", title, sub, "sync")
+    if snap.big_name and not snap.signed_out and not snap.hold_text:
+        title = (_("Uploading {n}") if snap.big_up else _("Downloading {n}")).format(n=snap.big_name)
+        parts = [_("Everything else is up to date")]
+        if snap.big_waiting:
+            parts.append(ngettext("{n} more big item waiting", "{n} more big items waiting",
+                                  snap.big_waiting).format(n=snap.big_waiting))
+        if snap.big_paused:
+            parts.append(ngettext("{n} paused", "{n} paused", snap.big_paused).format(n=snap.big_paused))
+        return Status("syncing", title, " · ".join(parts), "sync")
     if snap.signed_out:
         return Status("problems", _("Sign in to keep syncing"),
                       _("Your Proton Drive session ended. Your files are safe."), "error")
@@ -88,6 +105,9 @@ def compute(snap: Snapshot) -> Status:
         ngettext("Up to date · {n} with conflict copies", "Up to date · {n} with conflict copies",
                  snap.conflicts).format(n=snap.conflicts)
     parts = [_("Watching {w} of {m} folders").format(w=snap.watching, m=snap.folders)]
+    if snap.big_paused:
+        parts.insert(0, ngettext("{n} big item paused", "{n} big items paused", snap.big_paused).format(
+            n=snap.big_paused))
     if snap.watching:
         parts.append(_("local edits sync ~10 s after you save"))
     if snap.remote_checked:

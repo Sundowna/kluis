@@ -216,7 +216,10 @@ class KluisApp(Gtk.Application):
         conflicts = sum(1 for f in enabled if m.status.get(f.id) and m.status[f.id].state == "conflict")
         place, vpn_on, known = self.location()
         hold = m.hold
+        big = m.lane.current
         snap = Snapshot(paused=s.paused, syncing=m.busy and not s.paused, done=m.run_done, total=m.run_total,
+                        big_name=big.name if big and not s.paused else "", big_up=bool(big and big.direction == "up"),
+                        big_waiting=len(m.lane.waiting()), big_paused=sum(len(f.held) for f in s.folders),
                         eta_s=self.eta(), city=place[0] if place else "", via_vpn=vpn_on and known,
                         problems=problems, folders=len(s.folders), enabled=len(enabled), watching=m.watching(),
                         conflicts=conflicts, remote_checked=m.last_remote_check,
@@ -423,6 +426,10 @@ class KluisApp(Gtk.Application):
             self._write_autostart()
         elif key == "skip_thumbnails":
             self.cli.skip_thumbnails = value
+        elif key == "resume_paused_after":
+            self.manager.quiet_since = time.time()
+            if self.window:
+                self.window.activity.refresh_big()
         elif key in ("beta", "app_updates") and value:
             s.app_last_check = 0
             GLib.idle_add(lambda: (self._hourly(), False)[1])
@@ -486,13 +493,13 @@ class KluisApp(Gtk.Application):
     # ---------- more than one Proton account (kluis/accounts.py, decisions D30) ----------
     def _stop_for_switch(self):
         self.manager.switching = True
-        if self.manager.busy:
+        if self.manager.busy or self.manager.lane.busy:
             self.manager.cancel()
 
     def _wait_idle(self, limit=60.0):
         """Worker thread only: the current folder run stops at its next file."""
         end = time.time() + limit
-        while self.manager.current is not None and time.time() < end:
+        while (self.manager.current is not None or self.manager.lane.current is not None) and time.time() < end:
             time.sleep(0.1)
 
     def _keep_live_session(self, email):
@@ -950,6 +957,10 @@ class KluisApp(Gtk.Application):
         elif kind in ("global", "tick"):
             if kind == "tick":
                 w.folders.refresh_all()
+                w.activity.refresh_big()
+            self.refresh_all()
+        elif kind == "lane":
+            w.activity.refresh_big()
             self.refresh_all()
         elif kind == "activity":
             if payload is None:

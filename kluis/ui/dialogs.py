@@ -8,7 +8,7 @@ from gi.repository import Gdk, GLib, Gtk
 
 from .. import VERSION
 from ..cli import CliError, rjoin
-from ..config import DEFAULT_IGNORES, INTERVALS, MODES, FolderPair, validate_local
+from ..config import DEFAULT_IGNORES, INTERVALS, MODES, RESUME_AFTER, FolderPair, validate_local
 from ..i18n import _, complete_languages
 from .common import (a11y, button, clear, combo, hbox, label, run_bg, short_path, styled, switch, vbox)
 
@@ -436,6 +436,9 @@ class SettingsDialog:
         self.hidden = switch(s.start_minimized, lambda v: app.set_setting("start_minimized", v), _("Start hidden"))
         self.interval = combo([(str(i), _("Every {n} min").format(n=i)) for i in INTERVALS], str(s.interval_minutes),
                               lambda v: app.set_setting("interval_minutes", int(v)), _("Check Proton Drive"))
+        self.resume = combo([(str(i), _("After {n} min of quiet").format(n=i) if i else _("Never, I resume them"))
+                             for i in RESUME_AFTER], str(s.resume_paused_after),
+                            lambda v: app.set_setting("resume_paused_after", int(v)), _("Resume paused big items"))
         self.theme = combo([("system", _("System")), ("light", _("Light")), ("dark", _("Dark"))], s.theme,
                            lambda v: app.set_setting("theme", v), _("Theme"))
         self.accent = combo([("green", _("Green")), ("purple", _("Purple"))], s.accent,
@@ -451,6 +454,7 @@ class SettingsDialog:
             (_("Start hidden"), _("Only the Kluis icon in the notification area shows at sign-in.") if os.name == "nt"
              else _("Only the panel icon shows at login."), self.hidden),
             (_("Check Proton Drive"), _("Local changes are watched instantly."), self.interval),
+            (_("Resume paused big items"), _("When nothing else has synced for that long."), self.resume),
             (_("Theme"), None, self.theme),
             (_("Accent colour"), _("Purple matches other Proton apps."), self.accent),
             (_("Notifications"), None, self.notify),

@@ -1,5 +1,5 @@
 name: Release
-# Every push and pull request: all test suites + the GUI flows F1–F24 (light/dark, 1440x900 and 1024x640)
+# Every push and pull request: all test suites + the GUI flows F1–F25 (light/dark, 1440x900 and 1024x640)
 # on Mint-like Ubuntu (Cinnamon session variables), on Arch (KDE session variables) and on Windows; then the
 # .deb, the pacman package and the Windows installer are built, installed, started and uninstalled.
 # A push to main with a new VERSION publishes vX.Y.Z once.
@@ -31,9 +31,9 @@ jobs:
         run: |
           # every suite runs, also after one failed: every result in one run
           rc=0
-          for t in lint engine photos safety units windows; do python3 tests/test_$t.py || rc=1; done
+          for t in lint engine lane photos safety units windows; do python3 tests/test_$t.py || rc=1; done
           exit $rc
-      - name: GUI flows F1–F24 (Cinnamon)
+      - name: GUI flows F1–F25 (Cinnamon)
         if: ${{ !cancelled() && matrix.ubuntu == '24.04' }}     # also when a test suite failed
         run: TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-mint X-Cinnamon
       - name: Photos with 50'000 items (frame time, memory)
@@ -68,9 +68,9 @@ jobs:
         run: |
           # every suite runs, also after one failed: every result in one run
           rc=0
-          for t in lint engine photos safety units windows; do python3 tests/test_$t.py || rc=1; done
+          for t in lint engine lane photos safety units windows; do python3 tests/test_$t.py || rc=1; done
           exit $rc
-      - name: GUI flows F1–F24 (KDE)
+      - name: GUI flows F1–F25 (KDE)
         if: ${{ !cancelled() }}         # also when a test suite failed: every result in one run
         run: |
           useradd -m tester && chown -R tester "$PWD"
@@ -123,7 +123,7 @@ jobs:
           python --version
           # every suite runs, also after one failed: every result in one run
           rc=0
-          for t in lint engine photos safety units windows; do python tests/test_$t.py || rc=1; done
+          for t in lint engine lane photos safety units windows; do python tests/test_$t.py || rc=1; done
           exit $rc
       - name: Screen of 1920x1080 (the flows use windows of 1440x900)
         if: ${{ !cancelled() }}
@@ -132,7 +132,7 @@ jobs:
           Set-DisplayResolution -Width 1920 -Height 1080 -Force
           Add-Type -AssemblyName System.Windows.Forms
           [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-      - name: GUI flows F1–F24 (on the runner's Windows desktop)
+      - name: GUI flows F1–F25 (on the runner's Windows desktop)
         if: ${{ !cancelled() }}         # also when a test suite failed: every result in one run
         run: python tests/gui/run_windows.py dist/flows-windows
       - name: Build the installer

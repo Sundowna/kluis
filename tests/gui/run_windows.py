@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ALL = "F1 F2 F3 F3b F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F14b F15 F16 F17 F17b F18 F19 F20 F21 F22 F23 F24".split()
+ALL = "F1 F2 F3 F3b F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F14b F15 F16 F17 F17b F18 F19 F20 F21 F22 F23 F24 F25".split()
 
 
 def one(job):
