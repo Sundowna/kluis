@@ -27,10 +27,12 @@ class Tray:
         self.sync_item.connect("activate", lambda *_: app.manager.request())
         self.menu.append(self.sync_item)
         self.pause_item = Gtk.MenuItem(label="Pause syncing")
-        self.pause_item.connect("activate", lambda *_: app.manager.set_paused(not app.settings.paused))
+        self.pause_item_cb = lambda: app.set_paused(not app.settings.paused)
+        self.pause_item.connect("activate", lambda *_: self.pause_item_cb())
         self.menu.append(self.pause_item)
         self.menu.append(Gtk.SeparatorMenuItem())
         open_item = Gtk.MenuItem(label="Open Kluis")
+        self.open_item = open_item
         open_item.connect("activate", lambda *_: app.present_window())
         self.menu.append(open_item)
         web = Gtk.MenuItem(label="Proton Drive on the web")
@@ -86,9 +88,20 @@ class Tray:
             ind.set_status(mod.IndicatorStatus.ACTIVE)
             ind.set_menu(self.menu)
             ind.set_title("Kluis")
-            self.icon, self.kind = ind, "indicator"
+            self.icon, self.kind, self._mod = ind, "indicator", mod
             return True
         return False
+
+    def close(self):
+        if not self.icon:
+            return
+        try:
+            if self.kind == "xapp":
+                self.icon.set_visible(False)
+            else:
+                self.icon.set_status(self._mod.IndicatorStatus.PASSIVE)
+        except Exception:  # noqa: BLE001 - quitting anyway
+            pass
 
     @property
     def available(self) -> bool:
@@ -100,7 +113,9 @@ class Tray:
 
     def update(self, state: str, text: str):
         """state: idle | sync | error | paused"""
+        self.state = state
         self.status_item.set_label(text)
+        self.sync_item.set_sensitive(not self.app.settings.paused)
         self.pause_item.set_label("Resume syncing" if self.app.settings.paused else "Pause syncing")
         if not self.icon:
             return

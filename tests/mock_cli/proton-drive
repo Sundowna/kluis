@@ -180,6 +180,7 @@ def main():
                 if os.path.exists(e["stored"]):
                     n = node(e["stored"])
                     n["uid"], n["name"]["value"], n["trashTime"] = uid, os.path.basename(e["orig"]), e["time"]
+                    n["parentUid"] = "uid-" + hashlib.md5(os.path.dirname(e["orig"]).encode()).hexdigest()[:10]
                     out.append(n)
             print(json.dumps(out))
             return
