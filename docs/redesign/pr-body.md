@@ -42,8 +42,8 @@ offline / disk full / signed out, atomic config with `.bak`, viewer shares alway
 | photos | 12 passed |
 | safety (§7) | 48 passed |
 | units (status, ETA, ring mapping, migration, contrast for 2 themes × 2 accents) | 104 passed |
-| GUI flows F1–F20 × light/dark × 1440×900/1024×640, Mint Cinnamon | RESULT_MINT |
-| GUI flows, Arch/EndeavourOS KDE container | RESULT_KDE |
+| GUI flows F1–F20 × light/dark × 1440×900/1024×640, Mint Cinnamon | 92 of 92 passed (local, Ubuntu/Noto fonts) · CI Ubuntu 24.04 green (DejaVu fonts) |
+| GUI flows, Arch/EndeavourOS KDE container | 92 of 92 passed (local container) · CI Arch/EndeavourOS KDE green |
 | 50,000-photo gallery | 5.7 ms/frame avg, 184 MB peak |
 | `kluis --selftest` on the real account | PASS (18 checks) |
 

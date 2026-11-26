@@ -128,3 +128,11 @@ dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k
 .kluis check:checked { -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); }
 .kluis radio:checked { -gtk-icon-source: -gtk-icontheme("media-record-symbolic"); }
 .kluis checkbutton label, .kluis radiobutton label { color: @k_text; }
+/* Mode cards ("How should it sync?") are radio buttons: exactly two looks, never a half-selected tint */
+.kluis radiobutton.k-modecard, .kluis button.k-modecard, .kluis .k-modecard:hover, .kluis .k-modecard:active,
+.kluis .k-modecard:backdrop, .kluis .k-modecard:focus {
+    background-image: none; background-color: @k_surface; border: 1px solid @k_line; box-shadow: none; }
+.kluis .k-modecard:hover { border-color: @k_muted; }
+.kluis .k-modecard:checked, .kluis .k-modecard:checked:hover, .kluis .k-modecard:checked:active,
+.kluis .k-modecard:checked:backdrop, .kluis .k-modecard:checked:focus {
+    background-color: @k_accent_soft; border: 2px solid @k_accent; }

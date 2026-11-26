@@ -39,7 +39,7 @@ Branch `redesign-1.0`, small commits, full suite after each.
 ## E. Tests and release
 - [x] Mock CLI: restore, size, shared-with-me, offline/disk-full/expire switches, manifest + corrupt binary
 - [x] GUI flows F1–F19, screenshots light/dark × 1440×900/1024×640
-- [ ] `kluis --selftest` (§8 D) + run against Walter's account
-- [ ] .deb build + install here; pacman build + flows in Arch/KDE container (podman)
+- [x] `kluis --selftest` (§8 D) + run against Walter's account
+- [x] .deb build + install here; pacman build + flows in Arch/KDE container (podman)
 - [x] CI: tests on PRs, release on main
 - [ ] Version 1.0.0, release notes, release checklist, PR with screenshots

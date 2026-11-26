@@ -281,6 +281,9 @@ def f4(d, env, app):
     d.expect(d.has_text("Proton Drive/Startup", root=dlg) and d.get("⇄ Two-way", root=dlg).get_active(),
              "Proton folder prefilled <root>/Startup; Two-way selected")
     d.get("↑ Back up", root=dlg).set_active(True)
+    yield 0.3
+    d.expect(d.get("↑ Back up", root=dlg).get_active() and not d.get("⇄ Two-way", root=dlg).get_active(),
+             "exactly one mode card selected")
     d.shot("back up chosen")
     d.click("Start syncing", root=dlg)
     yield until(lambda: d.dialog("Add a folder") is None, 5, "dialog closes")
