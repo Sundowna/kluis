@@ -132,6 +132,7 @@ class StatusPanel(Gtk.Box):
         self.line_box.pack_start(self.mini, True, True, 0)
         self.line_rates = label("", "k-num", "k-s12")
         self.line_box.pack_start(self.line_rates, False, False, 0)
+        self.line_box.connect("size-allocate", self._line_room)
         for wdg in (self.line, self.line_title, self.mini, self.line_rates):
             wdg.show()                # the box's no_show_all also stops show_all() inside it
         self.line_box.set_no_show_all(True)
@@ -139,6 +140,17 @@ class StatusPanel(Gtk.Box):
         # §6: the CLI has no quota command, so "Space used" is hidden (never faked)
         self.cells["space"][0].set_no_show_all(True)
         self.cells["space"][0].hide()
+
+    def _line_room(self, box, alloc):
+        """The facts come first: the graph's title steps aside when they would otherwise be shortened with …"""
+        def text_w(lb):                 # an ellipsizing label reports less than its full text as its width
+            lay = lb.create_pango_layout(None)
+            lay.set_markup(lb.get_label(), -1) if lb.get_use_markup() else lay.set_text(lb.get_text(), -1)
+            return lay.get_pixel_size()[0]
+        need = text_w(self.line) + text_w(self.line_rates) + 60 + 3 * 12
+        want_title = alloc.width >= need + text_w(self.line_title) + 12
+        if self.line_title.get_visible() != want_title:
+            GLib.idle_add(lambda: (self.line_title.set_visible(want_title), False)[1])
 
     # ---------- compact line ----------
     def set_tab(self, key):
@@ -178,6 +190,7 @@ class StatusPanel(Gtk.Box):
             _box, t, v, _pb = self.cells[key]
             parts.append(f"<span alpha='75%' size='small'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
         self.line.set_markup("   ".join(parts))
+        self.line_box.queue_resize()            # _line_room decides again whether the graph's title fits
         self.line_rates.set_text(self.rates.get_text())
 
     def refresh(self, st):

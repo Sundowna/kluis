@@ -1489,7 +1489,7 @@ def f22(d, env, app):
     def row_y(w):
         return w.translate_coordinates(app.window, 0, 0)[1] + w.get_allocated_height() // 2
 
-    parts = [sp.line, sp.line_title, sp.mini, sp.line_rates]
+    parts = [sp.line, sp.mini, sp.line_rates]          # the graph's title steps aside on a tight line
     d.expect(sp.compact and sp.get_allocated_height() < full_h * 0.6,
              f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
     text = sp.line.get_text()

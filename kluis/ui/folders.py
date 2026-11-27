@@ -570,7 +570,10 @@ class FoldersPage(Gtk.Box):
             self.render()
 
     def render(self):
-        """Coalesce bursts (stats, listings, manager events) into one rebuild."""
+        """Coalesce bursts (stats, listings, manager events) into one rebuild. Nothing is read from Proton Drive
+        before the tab is first opened: an unvisited tab must not slow down the first sync."""
+        if not self.shown_once:
+            return
         if not self._render_src:
             self._render_src = GLib.idle_add(self._render)
 

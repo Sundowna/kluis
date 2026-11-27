@@ -239,8 +239,9 @@ class BrowserPage(Gtk.Box):
         self.tr_btn = button(_("Move to trash"), self._trash_selected, "k-danger")
         self.refresh_btn = button("↻", self.load, tooltip=_("Reload this folder"), name=_("Reload"))
         from .common import wrapbar
-        self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.sync_btn, self.rn_btn, self.tr_btn, self.refresh_btn),
-                        False, False, 0)
+        # two per row at the least: seven buttons must still fit a 960 px window with wide fonts (F-020)
+        self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.sync_btn, self.rn_btn, self.tr_btn,
+                                self.refresh_btn, per_line=2), False, False, 0)
 
         # list
         self.store = Gtk.ListStore(GObject.TYPE_PYOBJECT, bool, str, str, str, str, str)
