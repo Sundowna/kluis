@@ -256,7 +256,9 @@ class FoldersPage(Gtk.Box):
         self._render_waiting = False
         self.rows: dict[str, Row] = {}               # remote -> its row, for the tests and jump_to
 
-        self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+        # AUTOMATIC, not NEVER: the one-line table must not set the window's minimum width. With NEVER a maximized
+        # window couldn't be snapped to half a screen (it needed 1094 px), so the table never got to wrap.
+        self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC, vexpand=True)
         self.pack_start(self.scroller, True, True, 0)
         body = vbox(spacing=12)
         self.scroller.add(body)
