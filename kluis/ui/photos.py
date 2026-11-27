@@ -13,7 +13,9 @@ import time
 from gi.repository import Gdk, GLib, Gtk
 
 from .. import scrubber
+from ..cli import PhotoItem
 from ..config import PHOTOS_ID
+from ..listcache import fetch, shared_lists
 from ..i18n import _, ngettext
 from ..photos import captured_dt
 from ..thumbs import Thumbnailer
@@ -155,7 +157,7 @@ class Gallery(Gtk.Box):
         self._anim = 0
 
     # ---------- data ----------
-    def set_photos(self, items):
+    def set_photos(self, items, keep_scroll=False):
         groups = collections.OrderedDict()
         for p in items:
             dt = captured_dt(p)
@@ -169,8 +171,9 @@ class Gallery(Gtk.Box):
         self.months = months
         self.flat = [p for m in months for p in m["items"]]
         self.sel = {u for u in self.sel if any(p.uid == u for p in self.flat)}
-        self.adj.set_value(0)
+        top = self.adj.get_value()
         self.relayout()
+        self.adj.set_value(min(top, self.adj.get_upper()) if keep_scroll else 0)
         self.page.sel_changed()
 
     def relayout(self):
@@ -518,7 +521,11 @@ class PhotosPage(Gtk.Box):
         self.prev_sw = switch(ps.remote_previews, self._toggle_previews, _("Previews for all photos"),
                               tooltip=_("Photos not saved on this computer are fetched once; a small preview is kept "
                                         "and the original deleted. Videos over 60 MB are skipped."))
-        bar = wrapbar(label(_("Gallery"), "k-h3"), self.album_combo, self.sel_lbl, self.open_btn, self.dl_btn)
+        # the timeline on screen may be the kept one: say quietly that Kluis is checking, or since when it's offline
+        self.fresh_lbl = label("", "k-muted", "k-s12", ellipsize="end")
+        a11y(self.fresh_lbl, _("Timeline freshness"))
+        bar = wrapbar(label(_("Gallery"), "k-h3"), self.album_combo, self.sel_lbl, self.open_btn, self.dl_btn,
+                      self.fresh_lbl)
         self.pack_start(bar, False, False, 0)
 
         # --- gallery
@@ -669,45 +676,63 @@ class PhotosPage(Gtk.Box):
             self.load()
 
     def load(self):
+        """The kept timeline (or album) at once, then Proton's answer in the background (kluis/listcache.py)."""
         self.loaded = True
-        self.wait.set_text(_("Reading your timeline…"))
-        self.gstack.set_visible_child_name("loading")
         album = self.album
+        key = f"album:{album}" if album else "timeline"
+        lc = shared_lists(self.app)
+        if lc.get(key, PhotoItem) is None:
+            self.wait.set_text(_("Reading your timeline…"))
+            self.gstack.set_visible_child_name("loading")
+        shown = {"any": False}
 
-        def work():
-            items = self.app.cli.album_photos(album) if album else self.app.cli.photo_timeline()
-            albums = self.app.cli.albums() if not album else None
-            return items, albums
-
-        def done(r):
-            items, albums = r
+        def show(items, kept):
             if album != self.album:
                 return
-            if albums is not None:
-                cur = self.album_combo.get_active_id() or ""
-                self._suspend = True
-                self.album_combo.remove_all()
-                self.album_combo.append("", _("All photos"))
-                for a in albums:
-                    if a.type == "album":
-                        self.album_combo.append(a.uid, a.name)
-                self._suspend = True
-                self.album_combo.set_active_id(cur)
-                self._suspend = False
-            self.thumbs.reset()
-            self.gallery.pix.clear()
+            self.fresh_lbl.set_text(_("Checking Proton Drive…") if kept else "")
+            if items is None:
+                return
+            first = not shown["any"]
+            shown["any"] = True
+            if first:
+                self.thumbs.reset()
+                self.gallery.pix.clear()
             photos = [p for p in items if p.type == "photo"]
             if not photos:
                 self.gmsg.set_text(_("No photos here yet."))
                 self.gstack.set_visible_child_name("msg")
                 return
             self.gstack.set_visible_child_name("gallery")
-            self.gallery.set_photos(photos)
+            self.gallery.set_photos(photos, keep_scroll=not first)
 
-        def fail(e):
+        def fail(e, kept_shown):
+            if album != self.album:
+                return
+            if kept_shown:
+                self.fresh_lbl.set_text(_("Couldn't check Proton Drive · timeline from {t}").format(
+                    t=time.strftime("%d.%m. %H:%M", time.localtime(when))))
+                return
+            self.fresh_lbl.set_text("")
             self.gmsg.set_text(_("Couldn't read your photos: {e}").format(e=e))
             self.gstack.set_visible_child_name("msg")
-        run_bg(work, done, fail)
+
+        def show_albums(albums, _kept):
+            if albums is None or album != self.album:
+                return
+            cur = self.album_combo.get_active_id() or ""
+            self._suspend = True
+            self.album_combo.remove_all()
+            self.album_combo.append("", _("All photos"))
+            for a in albums:
+                if a.type == "album":
+                    self.album_combo.append(a.uid, a.name)
+            self.album_combo.set_active_id(cur)
+            self._suspend = False
+
+        when = fetch(self.app, key, PhotoItem,
+                     (lambda: self.app.cli.album_photos(album)) if album else self.app.cli.photo_timeline, show, fail)
+        if not album:
+            fetch(self.app, "albums", PhotoItem, self.app.cli.albums, show_albums, lambda _e, _k: None)
 
     def _album_changed(self, aid):
         if getattr(self, "_suspend", False):

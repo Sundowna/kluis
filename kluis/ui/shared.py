@@ -8,7 +8,9 @@ import os
 
 from gi.repository import Gdk, GObject, Gtk, Pango
 
+from ..cli import RemoteNode
 from ..config import FolderPair, validate_local
+from ..listcache import fetch, shared_lists
 from ..i18n import _, ngettext
 from .common import a11y, button, iso_date, label, open_path, run_bg, short_path, styled, vbox
 from .dialogs import choose_local_folder
@@ -129,19 +131,30 @@ class SharedPage(Gtk.Box):
             self.load()
 
     def load(self):
+        """The kept list at once, then Proton's answer in the background (kluis/listcache.py)."""
         self.loaded = True
-        self.stack.set_visible_child_name("loading")
+        if shared_lists(self.app).get("shared", RemoteNode) is None:
+            self.stack.set_visible_child_name("loading")
 
-        def done(items):
-            self.items = items
-            self.app.shared_cache = items
-            self._fill()
-            self.stack.set_visible_child_name("list")
+        def show(items, kept):
+            if items is not None:
+                self.items = items
+                self.app.shared_cache = items
+                self._fill()
+                self.stack.set_visible_child_name("list")
+            elif not kept:
+                self._fill()                # unchanged: only the "checking" note goes
+            if kept:
+                self.count.set_text(self.count.get_text() + " · " + _("checking Proton Drive…"))
 
-        def fail(e):
+        def fail(e, kept_shown):
+            if kept_shown:
+                self._fill()
+                self.count.set_text(self.count.get_text() + " · " + _("couldn't check Proton Drive"))
+                return
             self.msg.set_text(_("Couldn't load the items shared with you: {e}").format(e=e))
             self.stack.set_visible_child_name("msg")
-        run_bg(self.app.cli.shared_with_me, done, fail)
+        fetch(self.app, "shared", RemoteNode, self.app.cli.shared_with_me, show, fail)
 
     def target_for(self, n) -> str:
         fid = self.app.settings.shares.get(n.uid)

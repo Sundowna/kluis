@@ -158,3 +158,6 @@ dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k
 /* the sidebar collapsed to an icon rail (Ctrl+B) */
 .kluis .k-side.k-side-rail { padding: 12px 6px; }
 .kluis .k-side.k-side-rail .k-nav button { padding: 0 6px; }
+/* Sync Center: the drop spot left of "+ Add from this computer…", as big as the button */
+.kluis .k-dropspot { border: 1px dashed @k_muted; border-radius: 8px; padding: 0 14px; min-height: 34px; }
+.kluis .k-dropspot.k-drag-over { border: 1px solid @k_accent; background-color: alpha(@k_accent, 0.12); }
