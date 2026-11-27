@@ -48,6 +48,11 @@ install anything missing with apt or pacman. Remove it with `./uninstall.sh` (`-
 **Sign-in on KDE:** Proton's CLI keeps your session in the system keyring. On KDE that is KWallet. If sign-in
 isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and log out and in once.
 
+**Automatic login:** your keyring unlocks with the password you type when you log in. With automatic
+login nobody types it, so the keyring stays locked and the CLI can't read your saved session. Kluis then
+says **Unlock your keyring to keep syncing** (not *Sign in*). Click **Unlock keyring** and enter your login
+password, and syncing carries on with no new sign-in. To skip this at every start, turn off automatic login.
+
 ## Features
 
 - **A list of synced folders**, each with its own mode:

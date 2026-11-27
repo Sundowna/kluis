@@ -7,7 +7,8 @@ OFFLINE = "offline"
 DISK_FULL = "disk-full"
 SIGNED_OUT = "signed-out"
 RATE_LIMIT = "rate-limit"
-HOLD_KINDS = (OFFLINE, DISK_FULL, SIGNED_OUT, RATE_LIMIT)
+KEYRING_LOCKED = "keyring-locked"   # signed in, but the keyring holding the session is locked
+HOLD_KINDS = (OFFLINE, DISK_FULL, SIGNED_OUT, RATE_LIMIT, KEYRING_LOCKED)
 
 _MARKERS = {
     SIGNED_OUT: ("need to login", "need to log in", "not logged in", "login first", "session expired",
@@ -24,7 +25,10 @@ STATUS_TEXT = {
     DISK_FULL: "Disk full on this computer",
     SIGNED_OUT: "Sign in to keep syncing",
     RATE_LIMIT: "Proton Drive asked Kluis to slow down — will continue shortly",
+    KEYRING_LOCKED: "Unlock your keyring to keep syncing",
 }
+
+KEYRING_RETRY = 10          # seconds: unlocking is up to the user, so look again soon (the next tick)
 
 BACKOFF_START = 30          # seconds
 BACKOFF_MAX = 15 * 60       # §7.10: max 15 min

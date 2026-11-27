@@ -172,6 +172,12 @@ class Vault:
     def forget(self, email: str) -> None:
         pass
 
+    def is_locked(self) -> bool:               # the keyring holding the CLI's session is locked
+        return False
+
+    def unlock(self) -> bool:                  # asks the desktop to show its unlock prompt
+        return False
+
 
 class FileVault(Vault):
     """For the test suites: the mock CLI keeps its session in a file (``KLUIS_TEST_VAULT_SLOT``)."""
@@ -218,6 +224,19 @@ class FileVault(Vault):
             os.remove(self._p(email))
         except OSError:
             pass
+
+    def _lock_flag(self):
+        return self.slot + ".locked"
+
+    def is_locked(self):
+        return os.path.exists(self._lock_flag())
+
+    def unlock(self):
+        try:
+            os.remove(self._lock_flag())
+        except OSError:
+            pass
+        return True
 
 
 class SecretVault(Vault):
@@ -283,6 +302,36 @@ class SecretVault(Vault):
 
     def forget(self, email):
         self.S.password_clear_sync(self.stash_schema, {"kluis-account": email.lower()}, None)
+
+    def _locked_targets(self, svc) -> list:
+        """What has to be unlocked before the CLI can read its session: the CLI's own items if the
+        keyring lists them (it does, even while locked), else the default collection the CLI writes to."""
+        S = self.S
+        items = svc.search_sync(None, {"service": CLI_SERVICE}, S.SearchFlags.ALL, None) or []
+        if items:
+            return [i for i in items if i.get_locked()]
+        default = S.Collection.for_alias_sync(svc, S.COLLECTION_DEFAULT, S.CollectionFlags.NONE, None)
+        return [default] if default is not None and default.get_locked() else []
+
+    def is_locked(self):
+        """After an automatic login the desktop never gets a password, so GNOME Keyring stays locked
+        until someone unlocks it. The CLI then can't read its session and says it isn't signed in,
+        although the session is still stored."""
+        try:
+            return bool(self._locked_targets(self._service()))
+        except Exception as e:  # noqa: BLE001  (no Secret Service: nothing Kluis could unlock)
+            log.debug("keyring lock check failed: %s", e)
+            return False
+
+    def unlock(self):
+        """Shows the desktop's own "Unlock keyring" prompt; Kluis never sees the password.
+        Blocks until the prompt closes: call it off the GTK thread."""
+        svc = self._service()
+        targets = self._locked_targets(svc)
+        if not targets:
+            return True
+        n, _unlocked = svc.unlock_sync(targets, None)
+        return n == len(targets)
 
 
 def open_vault() -> Vault:

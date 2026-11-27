@@ -18,7 +18,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import APP_ID, APP_NAME, VERSION, accounts, geo  # noqa: E402
 from .cli import ProtonDriveCli, find_cli  # noqa: E402
 from .config import MODES, PHOTOS_ID, FolderPair, Settings  # noqa: E402
-from .errors import DISK_FULL, SIGNED_OUT  # noqa: E402
+from .errors import DISK_FULL, KEYRING_LOCKED, SIGNED_OUT  # noqa: E402
 from .i18n import _, ngettext  # noqa: E402
 from .manager import SyncManager  # noqa: E402
 from .state import StateStore  # noqa: E402
@@ -73,6 +73,7 @@ class KluisApp(Gtk.Application):
         self.cli.cache_dir = (rec or {}).get("cache", "")
         self.vault = accounts.open_vault()
         self.manager = SyncManager(self.settings, self.cli, StateStore(accounts.state_path(rec)))
+        self.manager.keyring_locked = self.vault.is_locked
         self.manager.listeners.append(self._on_manager)
         icons = Gtk.IconTheme.get_default()
         icons.append_search_path(os.path.join(DATA, "icons"))
@@ -131,6 +132,12 @@ class KluisApp(Gtk.Application):
         elif state == "offline" and self.settings.onboarded:
             self.window.show_main()
             self.manager.set_hold("offline")
+        elif state == "keyring-locked":
+            if self.settings.onboarded:
+                self.window.show_main()
+            else:
+                self.window.show_onboarding("signed-out")
+            self.manager.set_hold(KEYRING_LOCKED)
         elif not self.settings.onboarded:
             self.window.show_onboarding(state if state != "offline" else "ok")
         elif state in ("no-cli", "signed-out"):
@@ -215,7 +222,8 @@ class KluisApp(Gtk.Application):
                         problems=problems, folders=len(s.folders), enabled=len(enabled), watching=m.watching(),
                         conflicts=conflicts, remote_checked=m.last_remote_check,
                         signed_out=m.logged_in is False and s.onboarded,
-                        hold_text=hold["text"] if hold and hold["kind"] != SIGNED_OUT else "")
+                        keyring_locked=bool(hold) and hold["kind"] == KEYRING_LOCKED,
+                        hold_text=hold["text"] if hold and hold["kind"] not in (SIGNED_OUT, KEYRING_LOCKED) else "")
         st = compute(snap)
         if st.kind != getattr(self, "_last_kind", None):
             self._last_kind = st.kind
@@ -428,6 +436,21 @@ class KluisApp(Gtk.Application):
         self.settings.cli_custom = custom
         self.settings.save()
         self.cli.path = path
+
+    def keyring_locked(self) -> bool:
+        h = self.manager.hold
+        return bool(h) and h["kind"] == KEYRING_LOCKED
+
+    def unlock_keyring(self):
+        """The desktop's own unlock prompt (Kluis never sees the password); then Kluis carries on."""
+        from .ui.common import run_bg
+
+        def done(ok):
+            if ok:
+                self.manager.retry_hold_now()
+            else:
+                self.toast(_("The keyring is still locked."))
+        run_bg(self.vault.unlock, done, lambda e: self.toast(_("Couldn't unlock the keyring: {e}").format(e=e)))
 
     def sign_in_again(self):
         if self.manager.logged_in:
@@ -943,6 +966,11 @@ class KluisApp(Gtk.Application):
                 w.activity.prepend(payload)
             w.refresh_timeline()
             w.refresh_header()
+        elif kind == "account" and payload == "keyring-locked" and self.settings.onboarded:
+            self.notify(_("Unlock your keyring to keep syncing"),
+                        _("Your Proton session is still saved. Kluis continues as soon as it's unlocked."),
+                        problem=True)
+            self.refresh_all()
         elif kind == "account" and payload == "signed-out" and self.settings.onboarded:
             self.notify(_("Sign in to keep syncing"), _("Your Proton Drive session ended."), problem=True)
             self.refresh_all()
