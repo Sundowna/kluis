@@ -146,6 +146,94 @@ check(read(f"{M}/plan.md") == "p2", "mirror picks up remote edits")
 check(not os.path.exists(f"{CLOUD}/Team/local-extra.md"), "mirror never uploads")
 check(eng.sync(fm).message == "Up to date", "mirror stable")
 
+print("an unfinished run continues with the listings it has (RESUME_MAX)")
+from kluis.engine import RESUME_MAX  # noqa: E402
+
+RB = os.path.join(TMP, "home", "Brain")
+for d in ("a", "b", "c", "d"):
+    write(f"{CLOUD}/Brain/{d}/x.md", d)
+    write(f"{CLOUD}/Brain/{d}/sub/y.md", d)
+for i in range(20):                     # enough files that one deletion stays under the §7.8 guard
+    write(f"{CLOUD}/Brain/n{i:02}.md", str(i))
+fr = FolderPair(local=RB, remote="/my-files/Brain", mode="mirror", id="brain")
+_orig_list = cli.list
+listed, stop = [], {"list": 0}
+
+
+def _list(p):
+    listed.append(p)
+    out = _orig_list(p)
+    if stop["list"] and len(listed) >= stop["list"]:
+        eng.cancel()                    # like quitting Kluis halfway through the scan
+    return out
+
+
+cli.list = _list
+stop["list"] = 3
+r = eng.sync(fr)
+kept = len(store.scan_get("brain", fr.remote, RESUME_MAX))
+check(r.status == "cancelled" and kept == len(listed) and 0 < kept < 9,
+      f"a scan stopped halfway keeps the {kept} of 9 folders it listed")
+listed.clear()
+stop["list"] = 0
+r = eng.sync(fr)
+check(r.status == "ok" and len(listed) == 9 - kept and read(f"{RB}/d/sub/y.md") == "d" and r.downloaded == 28,
+      f"the next run lists only the {9 - kept} folders it didn't have, and finishes ({r.message})")
+check(store.scan_get("brain", fr.remote, RESUME_MAX) == {}, "a completed run throws the listings away")
+listed.clear()
+check(eng.sync(fr).message == "Up to date" and len(listed) == 9, "so the next ordinary sync lists every folder")
+
+listed.clear()
+stop["list"] = 2
+eng.sync(fr)
+with store._lock, store._db:
+    store._db.execute("UPDATE scan_cache SET ts = ts - ?", (RESUME_MAX + 1,))
+listed.clear()
+stop["list"] = 0
+eng.sync(fr)
+check(len(listed) == 9, "listings older than RESUME_MAX are never used")
+
+listed.clear()
+stop["list"] = 1                        # only the top folder listed, then stopped
+eng.sync(fr)
+write(f"{CLOUD}/Brain/new.md", "added meanwhile")
+stop["list"] = 0
+r = eng.sync(fr)
+check(r.status == "ok" and not os.path.exists(f"{RB}/new.md"), "a file added after the kept listing waits …")
+r = eng.sync(fr)
+check(read(f"{RB}/new.md") == "added meanwhile", "… for the next run, which lists fresh (never lost)")
+
+listed.clear()
+stop["list"] = 2                        # the top folder and "a" (with x.md) listed, then stopped
+eng.sync(fr)
+check("a" in store.scan_get("brain", fr.remote, RESUME_MAX), "(folder a's listing is kept)")
+os.remove(f"{CLOUD}/Brain/a/x.md")
+stop["list"] = 0
+r = eng.sync(fr)
+check(r.status == "ok" and os.path.exists(f"{RB}/a/x.md"),
+      f"a file deleted after its folder's kept listing stays on this computer for now ({r.message})")
+r = eng.sync(fr)
+check(r.status == "ok" and not os.path.exists(f"{RB}/a/x.md"),
+      f"the fresh listing after it mirrors the deletion as usual ({r.message})")
+
+TW = os.path.join(TMP, "home", "Work2")
+write(f"{TW}/Plan.md", "v1")
+write(f"{TW}/sub/s.md", "s")
+fw = FolderPair(local=TW, remote="/my-files/Work2", mode="two-way", id="work2")
+check(eng.sync(fw).status == "ok", "two-way folder synced")
+listed.clear()
+stop["list"] = 1
+eng.sync(fw)
+check(store.scan_get("work2", fw.remote, RESUME_MAX) == {}, "two-way runs keep no listings")
+write(f"{TW}/Plan.md", "local edit")
+write(f"{CLOUD}/Work2/Plan.md", "edit in Proton Drive meanwhile")
+stop["list"] = 0
+r = eng.sync(fw)
+conf = [n for n in os.listdir(TW) if n.startswith("Plan (conflict ")]
+check(len(conf) == 1 and read(f"{TW}/Plan.md") == "edit in Proton Drive meanwhile",
+      f"so an edit made in Drive during the stop is seen: both copies kept ({r.message})")
+cli.list = _orig_list
+
 print("cancel / logged out")
 cli.logout()
 r = eng.sync(f)

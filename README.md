@@ -145,6 +145,9 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 
 - **Folder counts come from listing.** Files/Size of a Proton Drive folder are counted by listing it to the bottom
   the first time, then kept in `~/.cache/kluis` (per account, mode 600) and refreshed once a day or with ↻.
+- **A long first download survives a restart.** A ↓ Mirror down folder that was still being read or downloaded
+  continues with the folder listings it already has (under 2 hours old) instead of listing every folder again.
+  Two-way folders always list fresh, so an edit made in Proton Drive meanwhile is never missed.
 - **Remote checks list every folder.** The CLI has no change feed, so each check runs one `list`
   per Proton Drive folder. Large trees (thousands of folders) make periodic checks slow. Local
   changes are still picked up instantly.

@@ -1,10 +1,12 @@
 """What each side looked like after the last successful sync (one sqlite db for all folders)."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import asdict, dataclass
 
 from .paths import STATE_DB, ensure_dirs
 
@@ -35,6 +37,10 @@ class StateStore:
                 path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER)""")
             self._db.execute("""CREATE TABLE IF NOT EXISTS hashes(
                 path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER, sha1 TEXT)""")
+            # Proton Drive listings of an unfinished run, one row per folder, so a restart continues the scan
+            # instead of listing every folder again (engine.scan_remote; cleared when a run completes)
+            self._db.execute("""CREATE TABLE IF NOT EXISTS scan_cache(
+                folder TEXT, remote TEXT, dir TEXT, ts REAL, nodes TEXT, PRIMARY KEY(folder, dir))""")
 
     def load(self, folder: str) -> dict[str, Entry]:
         with self._lock:
@@ -55,6 +61,33 @@ class StateStore:
     def forget_folder(self, folder: str):
         with self._lock, self._db:
             self._db.execute("DELETE FROM entries WHERE folder=?", (folder,))
+            self._db.execute("DELETE FROM scan_cache WHERE folder=?", (folder,))
+
+    # ---------- listings of an unfinished run ----------
+    def scan_get(self, folder: str, remote: str, max_age: float) -> dict:
+        """dir (relative, "" = the folder itself) -> its listing, for listings of this remote younger than
+        max_age seconds. Rows don't hold RemoteNode objects; engine rebuilds them."""
+        cutoff = time.time() - max_age
+        with self._lock:
+            rows = self._db.execute("SELECT dir,nodes FROM scan_cache WHERE folder=? AND remote=? AND ts>=?",
+                                    (folder, remote, cutoff)).fetchall()
+        out = {}
+        for d, nodes in rows:
+            try:
+                out[d] = json.loads(nodes)
+            except ValueError:
+                continue
+        return out
+
+    def scan_put(self, folder: str, remote: str, dir_rel: str, nodes: list):
+        data = json.dumps([asdict(n) for n in nodes])
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO scan_cache VALUES(?,?,?,?,?)",
+                             (folder, remote, dir_rel, time.time(), data))
+
+    def scan_clear(self, folder: str):
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM scan_cache WHERE folder=?", (folder,))
 
     # cache of local sha1s so unchanged files are never re-hashed
     def cached_sha1(self, path: str, size: int, mtime: int) -> str | None:
