@@ -49,6 +49,7 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 ## Window
 
 - F-016 On Sync Center, Browse and Photos the bottom status panel is one line (status, Encryption, Last run, Total today, a slim graph and ↓/↑ side by side); its chevron opens the full card, which that tab then keeps — `tests/gui/flows.py: F22`
+- F-031 The left sidebar collapses to a 56 px icon rail (its ▯ button or Ctrl+B, remembered): one icon per tab with its tooltip and the Activity badge, a search icon (Ctrl+F opens the sidebar), Settings; Sync Center's one-line table never sets the window's minimum width, so a maximized Kluis snaps to half a screen — `tests/gui/flows.py: F23, F25`
 - F-015 Collapsing or expanding Quick settings doesn't move *Sync now*, *Pause* or the account button — `tests/gui/flows.py: F13`
 - F-018 Quick settings opens and closes with a small icon button at the far right of the header; its column starts level with the page content — `tests/gui/flows.py: F13`
 - F-019 Activity: *Show*, *Open log folder* and *Clear* sit side by side in one row — `tests/gui/flows.py: F22`

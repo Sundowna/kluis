@@ -1593,6 +1593,31 @@ def f23(d, env, app):
     win.resize(960, 640)
     yield 1
     d.shot("960 px wide")
+    # F-031: the sidebar collapses to an icon rail (button, Ctrl+B); every tab still one click away
+    d.press("<Primary>2")
+    yield 0.5
+    main = win.root.get_child_by_name("main")
+    full = main.get_preferred_width()[0]
+    d.click("Collapse the sidebar")
+    yield 0.6
+    d.expect(app.settings.side_collapsed and win.side.get_allocated_width() <= 72
+             and main.get_preferred_width()[0] <= full - 150,
+             f"F-031 the sidebar becomes a rail ({win.side.get_allocated_width()} px; content needs {full} → "
+             f"{main.get_preferred_width()[0]} px)")
+    d.expect(all(b.is_visible() and b.get_mapped() for b in win.nav.values()) and not win.search.get_visible()
+             and d.find("Search files") and d.find("Expand the sidebar"), "F-031 six tab icons, search icon, toggle")
+    d.click("Browse")
+    yield 0.4
+    d.expect(win.stack.get_visible_child_name() == "browse", "F-031 a rail icon opens its tab")
+    d.shot("sidebar collapsed")
+    d.press("<Primary>f")
+    yield 0.4
+    d.expect(not app.settings.side_collapsed and win.search.get_visible(), "F-031 Ctrl+F opens the sidebar to search")
+    d.press("<Primary>b")
+    yield 0.4
+    d.expect(app.settings.side_collapsed, "F-031 Ctrl+B collapses it again (remembered)")
+    d.press("<Primary>b")
+    yield 0.4
 
 
 # ------------------------------------------------------------------ F24
@@ -1706,6 +1731,14 @@ def f25(d, env, app):
     d.expect(d.get("Include Agriland").get_active() and d.find("Sync Agriland now"), "Agriland ticked, with ↻")
     sp = app.window.status_panel
     d.expect(sp.compact and sp.toggle.get_visible(), "F-016 the status panel is one line on Sync Center")
+    page.wide = True                    # as on a maximized 1920 px window: the one-line table …
+    page._render()
+    yield 0.5
+    d.expect(app.window.get_preferred_width()[0] <= 960,
+             f"F-020 … still lets the window shrink to half a screen ({app.window.get_preferred_width()[0]} px)")
+    page.wide = False
+    page._render()
+    yield 0.3
     d.expect(not d.get("Include Pictures").get_active(), "Pictures not ticked")
     d.shot("everything in Drive")
     d.click("Show folders in 0Proton")

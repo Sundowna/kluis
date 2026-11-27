@@ -155,3 +155,6 @@ dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k
 .kluis .k-sc-note { padding: 8px 16px; }
 .kluis button.k-sc-chev { min-width: 26px; min-height: 26px; padding: 0; }
 .kluis .k-sc-pending.k-card { border-color: @k_warn; box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08); }
+/* the sidebar collapsed to an icon rail (Ctrl+B) */
+.kluis .k-side.k-side-rail { padding: 12px 6px; }
+.kluis .k-side.k-side-rail .k-nav button { padding: 0 6px; }
