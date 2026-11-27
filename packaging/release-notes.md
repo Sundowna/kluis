@@ -1,13 +1,17 @@
-## Kluis 1.2.1: folder sizes keep coming while you sync
+## Kluis 1.2.2: every subfolder's size, kept
 
 **Install**
-- Linux Mint / Ubuntu: download `kluis_1.2.1_all.deb` and double-click it.
+- Linux Mint / Ubuntu: download `kluis_1.2.2_all.deb` and double-click it.
 - EndeavourOS / Arch: `curl -LO https://github.com/Sundowna/kluis/releases/latest/download/kluis-latest-any.pkg.tar.zst && sudo pacman -U kluis-latest-any.pkg.tar.zst`
 
-### Fixed
-- **Folder sizes keep counting while a folder downloads.** Files/Size counts in Sync Center and Browse now run in a lane of their own, next to the sync instead of waiting behind it. Before, every count had to queue behind each download batch, so the other folders' sizes barely moved until the sync finished.
-- **Small folders don't wait for big ones.** Folders being counted take turns, so a folder with a few subfolders gets its size in seconds, even while one with thousands of subfolders is still being counted.
+### Improved
+- **Sizes all the way down.** When Kluis counts a folder's files and size, it now keeps the count of every subfolder it passes through as well, so opening a subfolder in Browse or Sync Center shows its size at once instead of counting again. Counts are kept on this computer (per account, readable only by you) and refreshed once a day.
+- **Less listing.** A subfolder that was counted recently isn't listed again when a folder above it is counted.
+- **A restart doesn't start a count over.** Each subfolder's size is kept as soon as everything inside it is counted, so if Kluis quits halfway through a big folder, it carries on from there.
+- After updating, the sizes from 1.2.1 still show straight away while Kluis counts them again with their subfolders.
+
+### From 1.2.1
+- Folder sizes keep counting while a folder downloads (a CLI lane of their own), and small folders don't wait for big ones.
 
 ### Notes
-- The counting lane keeps a cache of its own next to the Proton Drive CLI's (`~/.cache/proton-drive-cli.lane-count`, readable only by you). You stay signed in once: both lanes use the same Proton sign-in.
 - Not affiliated with Proton AG.

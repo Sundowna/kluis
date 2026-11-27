@@ -330,10 +330,16 @@ _settle(s2)
 check(cli2.calls == 2 and any(n == "b.jpg" for _p, n in s2.names["/my-files/Pics"]),
       "a search reads the names (they stay in memory only)")
 check("b.jpg" not in open(cache_file).read(), "file names never go into the cache file")
+check(s2.get("/my-files/Pics/trip") == (1, 5), "every subfolder on the way down gets its own count")
 s2.when["/my-files/Pics"] -= 2 * s2.MAX_AGE
 s2.want(["/my-files/Pics"])
 _settle(s2)
-check(cli2.calls == 4, "a count older than a day is counted again")
+check(cli2.calls == 3, "a subfolder's fresh count is reused when the folder above is counted again")
+for _k in s2.when:
+    s2.when[_k] -= 2 * s2.MAX_AGE
+s2.want(["/my-files/Pics"])
+_settle(s2)
+check(cli2.calls == 5 and s2.get("/my-files/Pics") == (2, 15), "a count older than a day is counted again")
 app2.settings.account = "lindi@pm.me"
 s2.unload()
 check(s2.get("/my-files/Pics") is None, "another account starts from its own (empty) cache")
@@ -391,8 +397,72 @@ _rr = FolderStats(_TreeCli())
 _rr.listeners.append(_order.append)
 _rr.want(["/my-files/Big", "/my-files/Small"])
 _settle(_rr)
-check(_order == ["/my-files/Small", "/my-files/Big"] and _rr.get("/my-files/Small") == (2, 7)
+_big_done = max(i for i, x in enumerate(_order) if x == "/my-files/Big")
+check(_order.index("/my-files/Small") < _big_done and _rr.get("/my-files/Small") == (2, 7)
       and _rr.get("/my-files/Big") == (40, 40), f"a small folder isn't stuck behind a big one ({_order})")
+check(_rr.get("/my-files/Big/d7") == (1, 1) and _rr.get("/my-files/Small/s") == (1, 4),
+      "the subfolders' counts are kept too")
+_rr.cache.pop("/my-files/Big")
+_rr.when.pop("/my-files/Big")
+_calls = []
+_rr.cli.list = lambda p, _l=_rr.cli.list: (_calls.append(p), _l(p))[1]
+_rr.want(["/my-files/Big"])
+_settle(_rr)
+check(_calls == ["/my-files/Big"] and _rr.get("/my-files/Big") == (40, 40),
+      f"only the folder itself is listed when its subfolders' counts are fresh ({len(_calls)} listings)")
+_deep = FolderStats(_TreeCli())
+_deep.cli.tree["/my-files/Big/d1"] = [RemoteNode("deep", "folder")]
+_deep.cli.tree["/my-files/Big/d1/deep"] = [RemoteNode("z", "file", size=9), RemoteNode("z2", "file", size=1)]
+_deep.want(["/my-files/Big"])
+_settle(_deep)
+check(_deep.get("/my-files/Big/d1/deep") == (2, 10) and _deep.get("/my-files/Big/d1") == (2, 10)
+      and _deep.get("/my-files/Big") == (41, 49), "counts add up all the way down")
+_deep.want(["/my-files/Big/d1"], names=True)
+check(not _deep.busy, "a search in a subfolder uses the names read for the folder above it")
+
+
+class _CutCli(_TreeCli):
+    """Proton stops answering at d0 (the last subfolder listed), like Kluis quitting in the middle."""
+    def __init__(self):
+        super().__init__()
+        self.cut, self.calls = True, []
+
+    def list(self, p):
+        self.calls.append(p)
+        if self.cut and p == "/my-files/Big/d0":
+            raise _clim.CliError("offline")
+        return super().list(p)
+
+
+_cut = FolderStats(_CutCli())
+_cut.want(["/my-files/Big"])
+_settle(_cut)
+_kept = [k for k in _cut.cache if k.startswith("/my-files/Big/")]
+check(_cut.get("/my-files/Big") is None and len(_kept) == 39,
+      f"a count cut off in the middle keeps every subfolder already counted ({len(_kept)} of 40)")
+_cut.cli.cut, _cut.cli.calls = False, []
+_cut.want(["/my-files/Big"])
+_settle(_cut)
+check(_cut.cli.calls == ["/my-files/Big", "/my-files/Big/d0"] and _cut.get("/my-files/Big") == (40, 40),
+      f"counting again goes on from there ({len(_cut.cli.calls)} listings)")
+_heard = []
+_cut.listeners.append(_heard.append)
+_cut.cache.clear()
+_cut.when.clear()
+_cut.want(["/my-files/Big"])
+_settle(_cut, 3)
+_t1 = _time.time() + 1.5
+while _time.time() < _t1:
+    GLib.MainContext.default().iteration(False)
+    _time.sleep(0.02)
+check(len(_heard) <= 3, f"views hear of subfolders counted on the way at most once a second ({len(_heard)} calls)")
+
+_v1 = os.path.join(TMP, "counts-v1.json")
+with open(_v1, "w") as _fh:
+    json.dump({"v": 1, "counts": {"/my-files/Old": [7, 70, _time.time()]}}, _fh)
+_old = FolderStats(_TreeCli(), store=lambda: _v1)
+check(_old.get("/my-files/Old") == (7, 70) and not _old.fresh("/my-files/Old"),
+      "counts kept by 1.2.1 are shown at once and counted again (with their subfolders)")
 
 _flaky = os.path.join(TMP, "flaky-cli")
 with open(_flaky, "w") as _fh:
