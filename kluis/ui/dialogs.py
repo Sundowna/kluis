@@ -432,7 +432,12 @@ class SettingsDialog:
         self._refresh_root()
 
         # 2. General
-        self.autostart = switch(s.autostart, lambda v: app.set_setting("autostart", v), _("Start at login"))
+        self.autostart = switch(s.autostart, lambda v: (app.set_setting("autostart", v),
+                                                        self._sync_unlock_switch()), _("Start at login"))
+        self.unlock_at_login = switch(s.unlock_keyring_at_login,
+                                      lambda v: (app.set_setting("unlock_keyring_at_login", v),
+                                                 self.autostart.set_active(app.settings.autostart)),
+                                      _("Unlock the keyring at login"))
         self.hidden = switch(s.start_minimized, lambda v: app.set_setting("start_minimized", v), _("Start hidden"))
         self.interval = combo([(str(i), _("Every {n} min").format(n=i)) for i in INTERVALS], str(s.interval_minutes),
                               lambda v: app.set_setting("interval_minutes", int(v)), _("Check Proton Drive"))
@@ -448,6 +453,9 @@ class SettingsDialog:
         self.home = self._home_combo()
         rows = [
             (_("Start at login"), None, self.autostart),
+            (_("Unlock the keyring at login"),
+             _("If your keyring is still locked when you log in (for example with automatic login), Kluis asks "
+               "for your login password once, then syncs. Needs Start at login."), self.unlock_at_login),
             (_("Start hidden"), _("Only the panel icon shows at login."), self.hidden),
             (_("Check Proton Drive"), _("Local changes are watched instantly."), self.interval),
             (_("Theme"), None, self.theme),
@@ -512,6 +520,11 @@ class SettingsDialog:
         body.pack_start(label(_("Kluis {v} · not affiliated with Proton AG").format(v=VERSION), "k-muted", "k-s12"),
                         False, False, 0)
         self.dialog.connect("key-press-event", self._key)
+
+    def _sync_unlock_switch(self):
+        sw = getattr(self, "unlock_at_login", None)
+        if sw is not None:
+            sw.set_active(self.app.settings.unlock_keyring_at_login)
 
     def _key(self, _w, ev):
         if ev.keyval == Gdk.KEY_Escape:

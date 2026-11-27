@@ -97,6 +97,7 @@ class Settings:
     interval_minutes: int = 15
     start_minimized: bool = False
     autostart: bool = True
+    unlock_keyring_at_login: bool = True  # a locked keyring at start: Kluis asks for the password, then syncs
     notifications: str = "problems"    # all | problems | off
     theme: str = "system"              # system | light | dark
     accent: str = "green"              # green | purple

@@ -153,7 +153,7 @@ def main():
         if os.path.exists(LOGGED):
             os.remove(LOGGED)
         return
-    if not os.path.exists(LOGGED):
+    if not os.path.exists(LOGGED) or os.path.exists(LOGGED + ".locked"):   # .locked: the keyring is locked
         fail("You need to login first")
     time.sleep(DELAY)
     pos, o = opts(rest, {"file-conflict-strategy", "folder-conflict-strategy", "type", "conflict-strategy"})
