@@ -43,7 +43,8 @@ def file_icon(n) -> str:
 class FolderStats:
     """Files/Size of Proton Drive folders, from a recursive listing of active items (decisions D4).
 
-    Counted lazily for visible folders, one at a time in the background. The counts are kept on disk per Proton
+    Counted lazily for visible folders in the background, in a CLI lane of its own (so never behind a download),
+    the folders taking turns (so a small one isn't stuck behind a big one). The counts are kept on disk per Proton
     account (~/.cache/kluis/folder-counts-<id>.json, only this user can read it), so Browse and Sync Center show
     them at once on the next start; a count older than a day is shown and quietly counted again. ↻ counts again
     now. The names found while counting (for search in subfolders) stay in memory only; a search asks for them.
@@ -62,6 +63,8 @@ class FolderStats:
         self.names: dict[str, list[tuple[str, str]]] = {}
         self._q: collections.deque[str] = collections.deque()
         self._busy = False
+        self._active: set[str] = set()      # folders being counted now
+        self._gen = 0                       # +1 when another account becomes active
         self._lock = threading.Lock()
         self._loaded_from = None
         self._save_src = 0
@@ -125,7 +128,7 @@ class FolderStats:
         with self._lock:
             for p in paths:
                 need = p not in self.names if names else not self.fresh(p)
-                if need and p not in self._q:
+                if need and p not in self._q and p not in self._active:
                     self._q.append(p)
             if self._busy or not self._q:
                 return
@@ -153,35 +156,49 @@ class FolderStats:
         """Another Proton account is active: the next get() reads that account's file."""
         with self._lock:
             self._q.clear()
+            self._gen += 1
         self._loaded_from = None
         self.cache, self.when, self.names = {}, {}, {}
 
     @property
     def busy(self) -> bool:
-        return self._busy or bool(self._q)
+        return self._busy or bool(self._q) or bool(self._active)
 
     def _work(self):
-        source = self._loaded_from
+        """Folders take turns, one listing each, so a small folder is counted in seconds while a big one
+        (thousands of subfolders) is still being counted."""
+        gen = self._gen
+        jobs: dict[str, list] = {}              # folder -> [folders left to list, files, size, names, account file]
         while True:
             with self._lock:
-                if not self._q:
+                if gen != self._gen:
+                    jobs.clear()                # another account: its own queue starts afresh
+                    gen = self._gen
+                while self._q:
+                    p = self._q.popleft()
+                    jobs.setdefault(p, [[p], 0, 0, [], self._loaded_from])
+                self._active = set(jobs)
+                if not jobs:
                     self._busy = False
                     return
-                path = self._q.popleft()
+            path = next(iter(jobs))
+            job = jobs.pop(path)
+            stack = job[0]
+            p = stack.pop()
             try:
-                files, size, stack, found = 0, 0, [path], []
-                while stack:
-                    p = stack.pop()
-                    for n in self.cli.list(p):
-                        found.append((rjoin(p, n.name), n.name))
-                        if n.is_folder:
-                            stack.append(rjoin(p, n.name))
-                        elif n.type == "file":
-                            files += 1
-                            size += n.size or 0
-                GLib.idle_add(self._done, path, files, size, found, source)
+                for n in self.cli.list(p):
+                    job[3].append((rjoin(p, n.name), n.name))
+                    if n.is_folder:
+                        stack.append(rjoin(p, n.name))
+                    elif n.type == "file":
+                        job[1] += 1
+                        job[2] += n.size or 0
             except CliError:
-                continue
+                continue                        # this folder can't be counted now; the others go on
+            if stack:
+                jobs[path] = job                # back of the line
+            else:
+                GLib.idle_add(self._done, path, job[1], job[2], job[3], job[4])
 
     def _done(self, path, files, size, found, source):
         if source != self._loaded_from:         # counted for the previous account
@@ -203,7 +220,7 @@ def shared_stats(app) -> FolderStats:
             acct = (app.settings.account or "").strip().lower()
             key = hashlib.sha1(acct.encode()).hexdigest()[:12] if acct else "default"
             return os.path.join(GLib.get_user_cache_dir(), "kluis", f"folder-counts-{key}.json")
-        st = FolderStats(app.cli, store=store)
+        st = FolderStats(app.cli.lane("count"), store=store)    # a lane of its own: never behind a download
         app.folder_stats = st
     return st
 

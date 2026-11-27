@@ -289,6 +289,9 @@ class _CountCli:
         self.calls += 1
         return self.tree.get(p, [])
 
+    def lane(self, _name):
+        return self
+
 
 def _settle(stats, t=5.0):
     import time as _t
@@ -339,6 +342,75 @@ s2.unload()
 s2.clear()
 _settle(s2)
 check(s2.get("/my-files/Pics") is None and json.load(open(cache_file))["counts"] == {}, "↻ counts everything again")
+
+print("folder counts: a lane of their own, folders take turns")
+import threading as _th  # noqa: E402
+
+import kluis.cli as _clim  # noqa: E402
+from kluis.cli import ProtonDriveCli  # noqa: E402
+from kluis.ui.browser import FolderStats  # noqa: E402
+
+_main = ProtonDriveCli(harness.MOCK)
+_main.cache_dir = os.path.join(TMP, "acct", "cli")
+_lane = _main.lane("count")
+check(_main.lane("count") is _lane and _lane.folder == _main.cache_dir + ".lane-count",
+      "the counting lane has its own CLI cache folder, next to the account's")
+os.makedirs(os.path.join(os.environ["MOCK_ROOT"], "my-files", "Lane", "sub"), exist_ok=True)
+with open(os.path.join(os.environ["MOCK_ROOT"], "my-files", "Lane", "big.bin"), "wb") as _fh:
+    _fh.write(b"x" * 1000)
+os.environ["MOCK_DOWNLOAD_DELAY"] = "4"
+_dl = _th.Thread(target=lambda: _main.download(["/my-files/Lane/big.bin"], os.path.join(TMP, "dl")), daemon=True)
+os.makedirs(os.path.join(TMP, "dl"), exist_ok=True)
+_dl.start()
+_time.sleep(0.8)
+_t0 = _time.monotonic()
+_names = [n.name for n in _lane.list("/my-files/Lane")]
+_took = _time.monotonic() - _t0
+check(_dl.is_alive() and "sub" in _names and _took < 2.5,
+      f"a count lists while a download holds the main lane ({_took:.1f} s)")
+check(oct(os.stat(_lane.folder).st_mode & 0o777) == "0o700", "the lane's cache folder is this user's only")
+_dl.join(10)
+_main.cache_dir = ""
+del os.environ["MOCK_DOWNLOAD_DELAY"]
+
+
+class _TreeCli:
+    """Big: 40 subfolders; Small: 1. Each listing takes a moment, like the CLI."""
+    def __init__(self):
+        self.tree = {"/my-files/Big": [RemoteNode(f"d{i}", "folder") for i in range(40)],
+                     "/my-files/Small": [RemoteNode("x.txt", "file", size=3), RemoteNode("s", "folder")],
+                     "/my-files/Small/s": [RemoteNode("y.txt", "file", size=4)]}
+
+    def list(self, p):
+        _time.sleep(0.01)
+        return self.tree.get(p, [RemoteNode("f", "file", size=1)])
+
+
+_order = []
+_rr = FolderStats(_TreeCli())
+_rr.listeners.append(_order.append)
+_rr.want(["/my-files/Big", "/my-files/Small"])
+_settle(_rr)
+check(_order == ["/my-files/Small", "/my-files/Big"] and _rr.get("/my-files/Small") == (2, 7)
+      and _rr.get("/my-files/Big") == (40, 40), f"a small folder isn't stuck behind a big one ({_order})")
+
+_flaky = os.path.join(TMP, "flaky-cli")
+with open(_flaky, "w") as _fh:
+    _fh.write("#!/bin/sh\nif [ -e \"$0.once\" ]; then echo '[]'; exit 0; fi\n"
+              "touch \"$0.once\"; echo 'Failed to refresh session' >&2; exit 1\n")
+os.chmod(_flaky, 0o755)
+_fc = ProtonDriveCli(_flaky)
+_clim._running += 1                 # as if another lane's CLI process were running
+try:
+    check(_fc.list("/my-files") == [], "a sign-in hiccup while another lane ran is tried once more")
+finally:
+    _clim._running -= 1
+os.unlink(_flaky + ".once")
+try:
+    _fc.list("/my-files")
+    check(False, "alone, a sign-in failure is reported at once")
+except _clim.CliError:
+    check(True, "alone, a sign-in failure is reported at once")
 
 print("keyring: an item the keyring lists but no longer has doesn't break Kluis")
 from kluis.accounts import SecretVault  # noqa: E402
