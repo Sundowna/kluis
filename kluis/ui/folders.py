@@ -252,6 +252,8 @@ class FoldersPage(Gtk.Box):
         self.stats.listeners.append(lambda _p: self.render())
         self.shown_once = False
         self._render_src = 0
+        self._menus_open = 0                         # a rebuild waits while a line's ⋯ menu is open
+        self._render_waiting = False
         self.rows: dict[str, Row] = {}               # remote -> its row, for the tests and jump_to
 
         self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
@@ -574,6 +576,9 @@ class FoldersPage(Gtk.Box):
         before the tab is first opened: an unvisited tab must not slow down the first sync."""
         if not self.shown_once:
             return
+        if self._menus_open:                 # rebuilding now would close the menu under the pointer
+            self._render_waiting = True
+            return
         if not self._render_src:
             self._render_src = GLib.idle_add(self._render)
 
@@ -835,6 +840,9 @@ class FoldersPage(Gtk.Box):
             None,
             (_("Stop syncing this folder…"), lambda: self.app.remove_folder(f.id), True),
         ]))
+        pop = more.get_popover()
+        pop.connect("show", lambda *_a: self._menu_shown(True))
+        pop.connect("closed", lambda *_a: self._menu_shown(False))
         r.c_more.pack_start(sync_btn, False, False, 0)
         r.c_more.pack_start(more, False, False, 0)
 
@@ -876,6 +884,12 @@ class FoldersPage(Gtk.Box):
                                       ellipsize="middle", max_chars=40), False, False, 0)
             r.c_warn.pack_start(button(_("Download again"), lambda: (setattr(st, "use_copy", ""), self.render()),
                                        "k-link"), False, False, 0)
+
+    def _menu_shown(self, on):
+        self._menus_open = max(0, self._menus_open + (1 if on else -1))
+        if not self._menus_open and self._render_waiting:
+            self._render_waiting = False
+            self.render()
 
     def _pending_bar(self):
         adds, stops = len(self.staged), len([i for i in self.unstaged if self.app.settings.folder(i)])

@@ -299,7 +299,7 @@ def f4(d, env, app):
 def menu_item(d, folder, item):
     """Open a Sync Center line's ⋯ menu and pick an item (its callback runs from an idle)."""
     d.get(f"More for {folder}").set_active(True)
-    yield 0.3
+    yield until(lambda: d.find(item) is not None, 5, f"⋯ menu shows {item}")
     d.click(item)
     yield 0.4
 
