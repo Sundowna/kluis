@@ -10,13 +10,14 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass
+from urllib.parse import unquote, urlparse
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from ..cli import RemoteNode, rjoin
-from ..listcache import fetch
 from ..config import MODES, FolderPair, validate_local
 from ..i18n import _, ngettext
+from ..listcache import fetch
 from .browser import ROOT_NAMES, shared_stats
 from .common import (WEB_URL, a11y, ago, button, clear, hbox, human_size, label, open_path, open_uri, popover_menu,
                      run_bg, set_class, short_path, styled, vbox)
@@ -164,11 +165,41 @@ class StatusCard(Gtk.Box):
         self.sub = label("", "k-muted", ellipsize="end")
         a11y(self.title, _("Sync Center status"))
         self.pack_start(vbox(self.title, self.sub, spacing=4, valign=Gtk.Align.CENTER), True, True, 0)
+        self.drop = None
         if with_add:
             add = button(_("+ Add from this computer…"), app.add_folder_dialog,
                          tooltip=_("Sync a folder that starts on this computer (Ctrl+N)"))
             add.set_valign(Gtk.Align.CENTER)
             self.pack_end(add, False, False, 0)
+            # a drop spot as big as the button, on its left (Walter, 2026-11-27); the button is the keyboard way
+            drop = Gtk.EventBox(visible_window=False)
+            inner = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+            inner.pack_start(Gtk.Image.new_from_icon_name("kluis-folder-symbolic", Gtk.IconSize.BUTTON), False,
+                             False, 0)
+            inner.pack_start(label(_("Drop a folder here"), "k-muted"), False, False, 0)
+            frame = Gtk.Box()
+            styled(frame, "k-dropspot")
+            frame.pack_start(inner, True, True, 0)
+            drop.add(frame)
+            drop.set_valign(Gtk.Align.CENTER)
+            a11y(drop, _("Drop zone"), _("Drop a folder here to sync it"))
+            sg = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.BOTH)
+            sg.add_widget(drop)
+            sg.add_widget(add)
+            drop.drag_dest_set(Gtk.DestDefaults.ALL, [Gtk.TargetEntry.new("text/uri-list", 0, 0)],
+                               Gdk.DragAction.COPY)
+            drop.connect("drag-motion", lambda *_a: set_class(frame, "k-drag-over", True) or False)
+            drop.connect("drag-leave", lambda *_a: set_class(frame, "k-drag-over", False))
+            drop.connect("drag-data-received", self._dropped, app, frame)
+            self.pack_end(drop, False, False, 0)
+            self.drop = frame
+            self._sizes = sg
+
+    @staticmethod
+    def _dropped(_w, _ctx, _x, _y, data, _info, _time, app, frame):
+        set_class(frame, "k-drag-over", False)
+        paths = [unquote(urlparse(u).path) for u in data.get_uris() if u.startswith("file://")]
+        app.window.handle_drop(paths)
 
     def refresh(self, st):
         icons = {"paused": "⏸", "syncing": "↻", "problems": "!", "empty": "☁", "ok": "✓"}
@@ -301,10 +332,7 @@ class FoldersPage(Gtk.Box):
         self.pending.set_no_show_all(True)
         self.pack_end(self.pending, False, False, 0)          # stays in view however long the list is
 
-        self.drop = vbox(label(_("Drag a folder onto this window to start syncing it"), "k-muted", xalign=0.5))
-        styled(self.drop, "k-card", "k-drop")
-        a11y(self.drop, _("Drop zone"))
-        body.pack_start(self.drop, False, False, 0)
+        self.drop = self.status.drop                 # dragging anywhere on the window lights it up
         legend = vbox(*[label(t, "k-muted", "k-s12") for t in (
             _("⇄ Two-way: edits, new files and deletions travel both ways"),
             _("↑ Back up: uploads only, never deletes in Proton Drive"),

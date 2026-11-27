@@ -1728,6 +1728,12 @@ def f25(d, env, app):
     d.press("<Primary>2")
     yield until(lambda: "/my-files/0Proton" in page.rows, 15, "My files read")
     d.expect(app.window.tab_title.get_text() == "Sync Center", "the tab is called Sync Center")
+    add, spot = d.get("+ Add from this computer…"), d.get("Drop zone")
+    ax, sx = add.translate_coordinates(app.window, 0, 0)[0], spot.translate_coordinates(app.window, 0, 0)[0]
+    d.expect(sx < ax and abs(spot.get_allocated_width() - add.get_allocated_width()) <= 2
+             and abs(spot.get_allocated_height() - add.get_allocated_height()) <= 2,
+             f"drop spot left of “+ Add from this computer…”, the same size ({spot.get_allocated_width()}×"
+             f"{spot.get_allocated_height()} vs {add.get_allocated_width()}×{add.get_allocated_height()})")
     d.expect(d.get("Include Agriland").get_active() and d.find("Sync Agriland now"), "Agriland ticked, with ↻")
     sp = app.window.status_panel
     d.expect(sp.compact and sp.toggle.get_visible(), "F-016 the status panel is one line on Sync Center")
