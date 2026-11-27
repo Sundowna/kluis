@@ -51,7 +51,7 @@ class FolderStats:
     One instance per app (shared_stats), so Browse and Sync Center never write the file over each other."""
 
     MAX_AGE = 24 * 3600
-    VERSION = 1
+    VERSION = 2                             # 2: every subfolder has its own count (1 had only the folders asked for)
 
     def __init__(self, cli, on_ready=None, store=None):
         self.cli = cli
@@ -65,6 +65,9 @@ class FolderStats:
         self._busy = False
         self._active: set[str] = set()      # folders being counted now
         self._gen = 0                       # +1 when another account becomes active
+        self._want_names: set[str] = set()  # queued folders whose names a search needs
+        self._told: dict = {}
+        self._tell_src = 0
         self._lock = threading.Lock()
         self._loaded_from = None
         self._save_src = 0
@@ -84,11 +87,12 @@ class FolderStats:
         try:
             with open(path) as fh:
                 raw = json.load(fh)
-            if raw.get("v") != self.VERSION:
+            v = raw.get("v")
+            if v not in (1, self.VERSION):
                 return
             for k, (files, size, ts) in raw.get("counts", {}).items():
                 self.cache[k] = (int(files), int(size))
-                self.when[k] = float(ts)
+                self.when[k] = float(ts) if v == self.VERSION else 0.0    # 1.2.1's: shown, counted again
         except (OSError, ValueError, TypeError, AttributeError):
             pass                            # no cache yet, or an unreadable one: count again
 
@@ -127,13 +131,19 @@ class FolderStats:
         self._load()
         with self._lock:
             for p in paths:
-                need = p not in self.names if names else not self.fresh(p)
-                if need and p not in self._q and p not in self._active:
+                need = not self._has_names(p) if names else not self.fresh(p)
+                if need and names:
+                    self._want_names.add(p)     # a count running now without names is done again with them
+                if need and p not in self._q and (p not in self._active or names):
                     self._q.append(p)
             if self._busy or not self._q:
                 return
             self._busy = True
         threading.Thread(target=self._work, daemon=True).start()
+
+    def _has_names(self, path) -> bool:
+        """Names of this folder were read, by its own count or one of a folder above it."""
+        return any(path == k or path.startswith(k + "/") for k in self.names)
 
     def forget(self, path):
         self._load()
@@ -156,6 +166,7 @@ class FolderStats:
         """Another Proton account is active: the next get() reads that account's file."""
         with self._lock:
             self._q.clear()
+            self._want_names.clear()
             self._gen += 1
         self._loaded_from = None
         self.cache, self.when, self.names = {}, {}, {}
@@ -166,9 +177,12 @@ class FolderStats:
 
     def _work(self):
         """Folders take turns, one listing each, so a small folder is counted in seconds while a big one
-        (thousands of subfolders) is still being counted."""
+        (thousands of subfolders) is still being counted. Every subfolder on the way down gets its own count,
+        kept as soon as everything below it is counted, so opening one shows its size at once and a restart
+        in the middle of a big folder goes on from there: a subfolder with a fresh count isn't listed again
+        (unless a search needs its names)."""
         gen = self._gen
-        jobs: dict[str, list] = {}              # folder -> [folders left to list, files, size, names, account file]
+        jobs: dict[str, dict] = {}
         while True:
             with self._lock:
                 if gen != self._gen:
@@ -176,40 +190,101 @@ class FolderStats:
                     gen = self._gen
                 while self._q:
                     p = self._q.popleft()
-                    jobs.setdefault(p, [[p], 0, 0, [], self._loaded_from])
+                    names = p in self._want_names
+                    self._want_names.discard(p)
+                    if p in jobs and not (names and not jobs[p]["names"]):
+                        continue
+                    jobs[p] = {"stack": [p], "own": {}, "kids": {}, "left": {}, "parent": {}, "total": {},
+                               "found": [], "names": names, "reused": False, "source": self._loaded_from}
                 self._active = set(jobs)
                 if not jobs:
                     self._busy = False
                     return
             path = next(iter(jobs))
             job = jobs.pop(path)
-            stack = job[0]
-            p = stack.pop()
+            d = job["stack"].pop()
+            files = size = 0
+            kids, left = [], 0
             try:
-                for n in self.cli.list(p):
-                    job[3].append((rjoin(p, n.name), n.name))
+                for n in self.cli.list(d):
+                    child = rjoin(d, n.name)
+                    job["found"].append((child, n.name))
                     if n.is_folder:
-                        stack.append(rjoin(p, n.name))
+                        kids.append(child)
+                        kept = None if job["names"] else self._fresh_count(child)
+                        if kept:
+                            job["total"][child] = kept
+                            job["reused"] = True
+                        else:
+                            job["stack"].append(child)
+                            job["parent"][child] = d
+                            left += 1
                     elif n.type == "file":
-                        job[1] += 1
-                        job[2] += n.size or 0
+                        files += 1
+                        size += n.size or 0
             except CliError:
                 continue                        # this folder can't be counted now; the others go on
-            if stack:
+            job["own"][d], job["kids"][d], job["left"][d] = (files, size), kids, left
+            ready = _complete(job, d)
+            if job["stack"]:
                 jobs[path] = job                # back of the line
+                if ready:
+                    GLib.idle_add(self._done, None, ready, None, job["source"])
             else:
-                GLib.idle_add(self._done, path, job[1], job[2], job[3], job[4])
+                GLib.idle_add(self._done, path, ready, None if job["reused"] else job["found"], job["source"])
 
-    def _done(self, path, files, size, found, source):
+    def _fresh_count(self, path):
+        c = self.cache.get(path)
+        return c if c and time.time() - self.when.get(path, 0) < self.MAX_AGE else None
+
+    def _done(self, path, totals, found, source):
+        """path: the folder asked for, all counted (None: some of its subfolders are, on the way)."""
         if source != self._loaded_from:         # counted for the previous account
             return False
-        self.cache[path] = (files, size)
-        self.when[path] = time.time()
-        self.names[path] = found
+        now = time.time()
+        for p, c in totals.items():
+            self.cache[p] = c
+            self.when[p] = now
+        if path and found is not None:          # every name below was read (none taken from a kept count)
+            self.names[path] = found
         self._save_soon()
-        for cb in list(self.listeners):
-            cb(path)
+        if path:
+            for cb in list(self.listeners):
+                cb(path)
+        else:
+            self._tell_soon(totals)
         return False
+
+    def _tell_soon(self, totals):
+        """Subfolders counted on the way: views hear of them at most once a second, not once per folder."""
+        self._told.update(totals)
+        if not self._tell_src:
+            self._tell_src = GLib.timeout_add(1000, self._tell)
+
+    def _tell(self):
+        self._tell_src = 0
+        done, self._told = self._told, {}
+        if done:
+            top = os.path.commonpath([os.path.dirname(p.rstrip("/")) for p in done])
+            for cb in list(self.listeners):
+                cb(top)                         # one call: the folder above all of them
+        return False
+
+
+def _complete(job, d) -> dict[str, tuple[int, int]]:
+    """Folders whose whole subtree is now counted, starting at d and going up: their totals."""
+    ready = {}
+    while d is not None and job["left"].get(d) == 0 and d not in ready:
+        files, size = job["own"][d]
+        for k in job["kids"][d]:
+            f, s = job["total"].get(k, (0, 0))
+            files += f
+            size += s
+        job["total"][d] = ready[d] = (files, size)
+        d = job["parent"].get(d)
+        if d is not None:
+            job["left"][d] -= 1
+    return ready
 
 
 def shared_stats(app) -> FolderStats:
@@ -519,7 +594,8 @@ class BrowserPage(Gtk.Box):
         self._sel_changed()
 
     def _stats_ready(self, path):
-        if os.path.dirname(path.rstrip("/")) == self.path.rstrip("/"):
+        here = self.path.rstrip("/")
+        if os.path.dirname(path.rstrip("/")) == here or here == path or here.startswith(path + "/"):
             self._fill(keep_sel=True)
         self.app.window.refresh_search()          # a search may now find more in subfolders
 
