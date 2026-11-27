@@ -543,7 +543,11 @@ def f8(d, env, app):
     d.expect(b.msg.get_text() == "This folder is empty. Drag files here to upload them.", "empty folder text")
     d.shot("empty folder")
     env.flag("offline")
-    b.go("/my-files/Agriland")
+    b.go("/my-files/Agriland")                  # read before: its kept list shows, with how old it is (F-032)
+    yield until(lambda: "Couldn't check Proton Drive (offline)" in b.fresh_lbl.get_text(), 10, "offline note")
+    d.expect(b.stack.get_visible_child_name() == "list" and "Q4 Rechnung.pdf" in rows(app),
+             "offline: Agriland's kept list stays")
+    b.go("/my-files/Never opened")              # nothing kept: the error page with Retry
     yield until(lambda: b.stack.get_visible_child_name() == "msg", 10, "error")
     d.expect(b.msg.get_text() == "Couldn't load this folder: offline" and b.retry.is_visible(), "offline + Retry")
     d.shot("offline")
