@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from dataclasses import asdict
 
 from .config import FolderPair, PhotoSettings, Settings
@@ -270,6 +271,18 @@ class SecretVault(Vault):
         return self._service().search_sync(None, {"service": CLI_SERVICE}, flags, None) or []
 
     def read_live(self):
+        """At start the CLI rewrites its keyring item while Kluis reads it ("No such secret item"): read again."""
+        from gi.repository import GLib
+        for attempt in range(3):
+            try:
+                return self._read_live_once()
+            except GLib.Error as e:
+                if "No such secret item" not in str(e) or attempt == 2:
+                    raise
+                time.sleep(2)
+        return None
+
+    def _read_live_once(self):
         for item in self._live_items():
             secret = item.get_secret()
             if secret is None:
