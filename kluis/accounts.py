@@ -232,6 +232,13 @@ class FileVault(Vault):
         return os.path.exists(self._lock_flag())
 
     def unlock(self):
+        """The test "prompt": answered with the password unless ``<slot>.decline`` exists."""
+        if not self.is_locked():
+            return True                       # like the real keyring: nothing to unlock, no prompt
+        with open(self.slot + ".prompts", "a") as fh:
+            fh.write("1")
+        if os.path.exists(self.slot + ".decline"):
+            return False
         try:
             os.remove(self._lock_flag())
         except OSError:

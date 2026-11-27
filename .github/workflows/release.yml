@@ -1,5 +1,5 @@
 name: Release
-# Every push and pull request: all test suites + the GUI flows F1–F24 (light/dark, 1440x900 and 1024x640)
+# Every push and pull request: all test suites + the GUI flows F1–F24b (light/dark, 1440x900 and 1024x640)
 # on Mint-like Ubuntu (Cinnamon session variables) and on Arch (KDE session variables), then both packages
 # are built, installed, started and uninstalled. A push to main with a new VERSION publishes vX.Y.Z once.
 on:
@@ -33,7 +33,7 @@ jobs:
           python3 tests/test_photos.py
           python3 tests/test_safety.py
           python3 tests/test_units.py
-      - name: GUI flows F1–F24 (Cinnamon)
+      - name: GUI flows F1–F24b (Cinnamon)
         if: matrix.ubuntu == '24.04'
         run: TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-mint X-Cinnamon
       - name: Photos with 50'000 items (frame time, memory)
@@ -71,7 +71,7 @@ jobs:
           python3 tests/test_photos.py
           python3 tests/test_safety.py
           python3 tests/test_units.py
-      - name: GUI flows F1–F24 (KDE)
+      - name: GUI flows F1–F24b (KDE)
         run: |
           useradd -m tester && chown -R tester "$PWD"
           su tester -c "TZ=Europe/Zurich tests/gui/run_all.sh dist/flows-kde KDE"

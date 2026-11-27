@@ -61,6 +61,7 @@ class KluisApp(Gtk.Application):
         self._removed: dict[str, tuple] = {}
         self.switch_back = ""            # account to go back to when a switch/add ends on the sign-in page
         self._pending_cache = None       # CLI cache folder for an account being added
+        self._unlock_prompt = ""         # "" | open | declined: the keyring password prompt Kluis showed
 
     # ---------- startup ----------
     def do_startup(self):
@@ -123,6 +124,8 @@ class KluisApp(Gtk.Application):
 
     def _account_checked(self, state):
         self.account_state = state
+        if state == "ok":
+            self._unlock_prompt = ""              # a later lock asks for the password again
         if state == "ok" and self.settings.onboarded:
             if self.window.root.get_visible_child_name() != "main":
                 self.window.show_main()
@@ -423,6 +426,13 @@ class KluisApp(Gtk.Application):
             self.theme.apply(s.theme, value)
         elif key == "autostart":
             self._write_autostart()
+            if not value and s.unlock_keyring_at_login:
+                s.unlock_keyring_at_login = False   # it only works when Kluis starts at login
+                s.save()
+        elif key == "unlock_keyring_at_login" and value and not s.autostart:
+            s.autostart = True                      # it only works when Kluis starts at login
+            s.save()
+            self._write_autostart()
         elif key == "skip_thumbnails":
             self.cli.skip_thumbnails = value
         elif key in ("beta", "app_updates") and value:
@@ -441,16 +451,41 @@ class KluisApp(Gtk.Application):
         h = self.manager.hold
         return bool(h) and h["kind"] == KEYRING_LOCKED
 
-    def unlock_keyring(self):
-        """The desktop's own unlock prompt (Kluis never sees the password); then Kluis carries on."""
+    def unlock_keyring(self, auto=False):
+        """The desktop's own "Unlock keyring" password prompt (Kluis never sees the password); then Kluis
+        carries on with the saved session at once. ``auto``: Kluis found the keyring locked by itself (e.g.
+        at start after an automatic login), so the prompt comes up without a click, once per lock."""
         from .ui.common import run_bg
+        if self._unlock_prompt in ("open", "declined") and auto:
+            return
+        if self._unlock_prompt == "open":
+            return
+        self._unlock_prompt = "open"
+
+        def work():
+            if not self.vault.is_locked():    # unlocked meanwhile (e.g. by another app's prompt)
+                return True
+            return self.vault.unlock()
 
         def done(ok):
             if ok:
+                self._unlock_prompt = ""
                 self.manager.retry_hold_now()
+                return
+            self._unlock_prompt = "declined"      # don't ask again by itself; the banner button stays
+            if auto:
+                self.notify(_("Unlock your keyring to keep syncing"),
+                            _("Your Proton session is still saved. Kluis continues as soon as it's unlocked."),
+                            problem=True)
             else:
                 self.toast(_("The keyring is still locked."))
-        run_bg(self.vault.unlock, done, lambda e: self.toast(_("Couldn't unlock the keyring: {e}").format(e=e)))
+            self.refresh_all()
+
+        def fail(e):
+            self._unlock_prompt = "declined"
+            log.warning("keyring unlock: %s", e)
+            self.toast(_("Couldn't unlock the keyring: {e}").format(e=e))
+        run_bg(work, done, fail)
 
     def sign_in_again(self):
         if self.manager.logged_in:
@@ -967,9 +1002,13 @@ class KluisApp(Gtk.Application):
             w.refresh_timeline()
             w.refresh_header()
         elif kind == "account" and payload == "keyring-locked" and self.settings.onboarded:
-            self.notify(_("Unlock your keyring to keep syncing"),
-                        _("Your Proton session is still saved. Kluis continues as soon as it's unlocked."),
-                        problem=True)
+            if self.settings.unlock_keyring_at_login:
+                self.unlock_keyring(auto=True)    # the desktop asks for the password; then syncing starts
+            elif not self._unlock_prompt:
+                self._unlock_prompt = "declined"  # the setting is off: wait for the banner button
+                self.notify(_("Unlock your keyring to keep syncing"),
+                            _("Your Proton session is still saved. Kluis continues as soon as it's unlocked."),
+                            problem=True)
             self.refresh_all()
         elif kind == "account" and payload == "signed-out" and self.settings.onboarded:
             self.notify(_("Sign in to keep syncing"), _("Your Proton Drive session ended."), problem=True)

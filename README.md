@@ -49,9 +49,9 @@ install anything missing with apt or pacman. Remove it with `./uninstall.sh` (`-
 isn't remembered, install `gnome-keyring` (`sudo pacman -S gnome-keyring`) and log out and in once.
 
 **Automatic login:** your keyring unlocks with the password you type when you log in. With automatic
-login nobody types it, so the keyring stays locked and the CLI can't read your saved session. Kluis then
-says **Unlock your keyring to keep syncing** (not *Sign in*). Click **Unlock keyring** and enter your login
-password, and syncing carries on with no new sign-in. To skip this at every start, turn off automatic login.
+login nobody types it, so the keyring stays locked. Kluis then shows your desktop's keyring password prompt
+by itself: type your login password and syncing starts with your saved session, no new sign-in. You can turn
+this off in Settings → General → **Unlock the keyring at login**; Kluis then waits with **Unlock keyring** on Home.
 
 ## Features
 

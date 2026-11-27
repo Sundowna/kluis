@@ -1585,37 +1585,90 @@ def f23(d, env, app):
 
 # ------------------------------------------------------------------ F24
 def setup_f24(env):
-    set_cfg(env, folders=folders_cfg(env, "Documents"))
-    slot = os.path.join(env.cloud, ".logged_in")
-    open(slot + ".locked", "w").close()     # the keyring is locked after an automatic login
-    os.rename(slot, slot + ".hidden")       # so the CLI can't read the session and says "not signed in"
+    set_cfg(env, folders=folders_cfg(env, "Documents"), autostart=True)   # Kluis starts at login
+    open(os.path.join(env.cloud, ".logged_in.locked"), "w").close()   # keyring locked after an automatic login
+
+
+def prompts(env):
+    p = os.path.join(env.cloud, ".logged_in.prompts")
+    return len(open(p).read()) if os.path.exists(p) else 0
 
 
 def f24(d, env, app):
-    """A locked keyring at start-up: Kluis asks to unlock it, never for a new sign-in, and carries on
-    with the saved session once it's unlocked."""
+    """The morning: the keyring is locked at login. Kluis shows the desktop's password prompt by itself;
+    the password is all it takes, and syncing starts with the saved session (no click, no sign-in)."""
+    yield main_ready(app)
+    yield until(lambda: prompts(env) >= 1, 20, "Kluis asks for the keyring password by itself")
+    yield until(lambda: app.manager.logged_in is True and app.manager.hold is None, 30, "syncing after the password")
+    yield idle(app)
+    d.expect(prompts(env) == 1, "one password prompt")
+    d.expect(not app.window.home.banner.get_visible(), "no banner")
+    d.expect(not any("Sign in" in t or "Unlock" in t for t, _b in app.sent_notifications),
+             "no “Sign in” or “Unlock” notification")
+    d.expect(app.settings.onboarded and app.manager.status["documents"].state != "hold", "Documents syncs")
+    d.shot("synced after keyring password")
+    from gi.repository import GLib, Gtk
+    res = {}
+
+    def in_settings():
+        dlg = d.dialog("Settings")
+        if not dlg:
+            return True
+        try:
+            sw = d.get("Unlock the keyring at login", root=dlg)
+            res["found"] = d.has_text("Unlock the keyring at login", root=dlg)
+            res["default_on"] = sw.get_active()
+            d.shot("unlock the keyring at login setting")
+            sw.set_active(False)
+            res["off_keeps_login"] = not app.settings.unlock_keyring_at_login and app.settings.autostart
+            sw.set_active(True)
+            d.get("Start at login", root=dlg).set_active(False)
+            res["login_off_turns_off"] = not app.settings.unlock_keyring_at_login and not sw.get_active()
+            sw.set_active(True)
+            res["on_turns_login_on"] = (app.settings.autostart and app.settings.unlock_keyring_at_login
+                                        and d.get("Start at login", root=dlg).get_active())
+        except Exception as e:  # noqa: BLE001
+            res["err"] = str(e)
+        res["done"] = True
+        dlg.response(Gtk.ResponseType.CLOSE)
+        return False
+    GLib.timeout_add(600, in_settings)
+    yield d.act_key("<Primary>comma")
+    yield until(lambda: "done" in res, 15, "settings handled")
+    d.expect("err" not in res, res.get("err", ""))
+    d.expect(res.get("found") and res.get("default_on"), "Settings: “Unlock the keyring at login”, on by default")
+    d.expect(res.get("off_keeps_login"), "switching it off keeps Start at login")
+    d.expect(res.get("login_off_turns_off"), "Start at login off turns it off (it needs Kluis running at login)")
+    d.expect(res.get("on_turns_login_on"), "turning it on turns on Start at login")
+
+def setup_f24b(env):
+    setup_f24(env)
+    open(os.path.join(env.cloud, ".logged_in.decline"), "w").close()   # the prompt is cancelled
+
+
+def f24b(d, env, app):
+    """Prompt cancelled: Kluis asks only once, waits with “Unlock keyring”, never asks for a new sign-in."""
     slot = os.path.join(env.cloud, ".logged_in")
     yield main_ready(app)
-    yield until(lambda: app.keyring_locked(), 20, "keyring-locked hold")
+    yield until(lambda: prompts(env) >= 1 and app.keyring_locked(), 20, "prompt shown, still locked")
+    yield until(lambda: any("Unlock your keyring" in t for t, _b in app.sent_notifications), 20, "notification")
     yield 0.5
     home = app.window.home
     d.expect(home.banner.get_visible() and home.unlock_btn.get_visible() and not home.banner_btn.get_visible(),
              "Home banner offers “Unlock keyring”, not “Sign in again”")
-    lb = home.banner_lbl
-    d.expect(lb.get_mapped() and "keyring is locked" in lb.get_text() and lb.get_allocated_width() > 100,
-             "the banner says why")
+    d.expect(home.banner_lbl.get_mapped(), "the banner says why")
     d.expect(d.has_text("Unlock your keyring to keep syncing"), "status title asks to unlock")
-    d.expect(app.manager.logged_in is not False, "not treated as signed out")
+    d.expect(app.manager.logged_in is not False and app.settings.onboarded, "not treated as signed out")
     d.expect(not any("Sign in" in t for t, _b in app.sent_notifications), "no “Sign in” notification")
-    d.expect(app.settings.onboarded, "no trip back to the sign-in page")
+    app.manager._probe_hold()
+    yield 1
+    d.expect(prompts(env) == 1, "a cancelled prompt doesn't come back by itself")
     d.shot("keyring locked")
-    os.rename(slot + ".hidden", slot)       # what unlocking gives the CLI back
+    os.remove(slot + ".decline")
     d.click("Unlock keyring")
     yield until(lambda: app.manager.logged_in is True and app.manager.hold is None, 30, "carries on after unlock")
     yield 0.5
     d.expect(not home.banner.get_visible(), "banner gone")
-    d.shot("keyring unlocked")
-
 
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
@@ -1626,7 +1679,7 @@ FLOWS = {
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
-    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}),
+    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}), "F24b": (f24b, setup_f24b, {}),
 }
 
 
