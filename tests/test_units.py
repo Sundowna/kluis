@@ -270,5 +270,75 @@ diag = diagnostics.collect(st, "1.0")
 check("lindi" not in diag and "walter@" not in diag and "AccLindi" not in diag,
       "F-006 Copy diagnostics names no account email and no other account's folders")
 
+print("folder counts kept on disk per account (Browse, Sync Center)")
+from types import SimpleNamespace  # noqa: E402
+
+from gi.repository import GLib  # noqa: E402
+
+from kluis.cli import RemoteNode  # noqa: E402
+from kluis.ui.browser import shared_stats  # noqa: E402
+
+
+class _CountCli:
+    def __init__(self):
+        self.calls = 0
+        self.tree = {"/my-files/Pics": [RemoteNode("a.jpg", "file", size=10), RemoteNode("trip", "folder")],
+                     "/my-files/Pics/trip": [RemoteNode("b.jpg", "file", size=5)]}
+
+    def list(self, p):
+        self.calls += 1
+        return self.tree.get(p, [])
+
+
+def _settle(stats, t=5.0):
+    import time as _t
+    end = _t.time() + t
+    ctx = GLib.MainContext.default()
+    while (stats.busy or stats._save_src) and _t.time() < end:
+        ctx.iteration(False)
+        _t.sleep(0.02)
+    while ctx.pending():
+        ctx.iteration(False)
+    if stats._save_src:                 # write now instead of 1.5 s later
+        GLib.source_remove(stats._save_src)
+        stats._save()
+
+
+cli1 = _CountCli()
+app1 = SimpleNamespace(cli=cli1, settings=SimpleNamespace(account="me@proton.me"))
+s1 = shared_stats(app1)
+check(shared_stats(app1) is s1, "one FolderStats per app, shared by Browse and Sync Center")
+s1.want(["/my-files/Pics"])
+_settle(s1)
+check(s1.get("/my-files/Pics") == (2, 15) and cli1.calls == 2, "counts a folder and its subfolders")
+cache_file = s1._file()
+check(os.path.exists(cache_file) and oct(os.stat(cache_file).st_mode & 0o777) == "0o600",
+      "kept on disk, readable only by this user")
+check("me@proton.me" not in cache_file and "me@proton.me" not in open(cache_file).read(),
+      "the cache file names no account email")
+cli2 = _CountCli()
+app2 = SimpleNamespace(cli=cli2, settings=SimpleNamespace(account="me@proton.me"))
+s2 = shared_stats(app2)
+s2.want(["/my-files/Pics"])
+_settle(s2)
+check(s2.get("/my-files/Pics") == (2, 15) and cli2.calls == 0, "next start: shown from disk, nothing listed again")
+s2.want(["/my-files/Pics"], names=True)
+_settle(s2)
+check(cli2.calls == 2 and any(n == "b.jpg" for _p, n in s2.names["/my-files/Pics"]),
+      "a search reads the names (they stay in memory only)")
+check("b.jpg" not in open(cache_file).read(), "file names never go into the cache file")
+s2.when["/my-files/Pics"] -= 2 * s2.MAX_AGE
+s2.want(["/my-files/Pics"])
+_settle(s2)
+check(cli2.calls == 4, "a count older than a day is counted again")
+app2.settings.account = "lindi@pm.me"
+s2.unload()
+check(s2.get("/my-files/Pics") is None, "another account starts from its own (empty) cache")
+app2.settings.account = "me@proton.me"
+s2.unload()
+s2.clear()
+_settle(s2)
+check(s2.get("/my-files/Pics") is None and json.load(open(cache_file))["counts"] == {}, "↻ counts everything again")
+
 print(f"\n{check.passed} checks passed")
 harness.cleanup(TMP)

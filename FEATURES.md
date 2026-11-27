@@ -36,9 +36,19 @@ yet — untested-in-ledger, not untested. A fresh-eyes audit (`e2e-fresh-eyes-au
 - F-013 Computers (`/devices`) list each computer as a folder; opening one shows the folders it syncs — `tests/gui/flows.py: F22`, `tests/test_units.py: Proton accounts`
 - F-017 Search (Ctrl+F) also finds names in all subfolders of the folder open in Browse (read in the background; "Still reading the subfolders…" until done); a hit opens the folder it is in — `tests/gui/flows.py: F22`
 
+## Sync Center (was Folders)
+
+- F-023 Sync Center (Ctrl+2, the old Folders tab) lists My files, Computers and Shared with me one line per folder, in five columns: In Proton Drive (tick, files · size), Folder on this computer, How it syncs (⇄ ↑ ↓), Status, Warnings; below 1240 px a line wraps into two, so the tab still fits 960 px — `tests/gui/flows.py: F25, F23`
+- F-024 Ticking or unticking a folder only marks the line (amber edge, “Starts/Stops when you apply”); a bar pinned at the bottom says what will change and how much to download, with *Discard changes* and *Apply changes* — `tests/gui/flows.py: F25`
+- F-025 A ticked folder goes to `~/Proton Drive/<its path>` by default (*Change…* picks another place); folders inside a ticked one show as included, with its path and mode — `tests/gui/flows.py: F25`
+- F-026 When `~/Downloads/<name>` holds an earlier one-off download, the line warns “Already here” and *Use that copy* moves it into place on Apply instead of downloading again — `tests/gui/flows.py: F25`
+- F-027 *Show: Everything in Drive / Synced only* (remembered); each synced line keeps what the Folders card had: status and progress, ↻ Sync now, Review…, and in ⋯ Open, Pause/Resume, Edit…, Show in Kluis browser, Open on the web, Check every file again, Stop syncing (with Undo) — `tests/gui/flows.py: F25, F6, F20`
+- F-029 Files/Size counts of Proton Drive folders are kept on disk per account (`~/.cache/kluis/folder-counts-<id>.json`, mode 600, folder paths and numbers only, no email): Browse and Sync Center show them at once after a restart; a count older than a day is counted again in the background; ↻ in Sync Center counts again now; names for search in subfolders are read when you search and stay in memory — `tests/test_units.py: folder counts kept on disk`, `tests/gui/flows.py: F22, F25`
+- F-028 Browse → *⇄ Sync to this computer…* opens Sync Center at the ticked or open folder, ticked and waiting for Apply; *↓ Download* says it is a one-off copy — `tests/gui/flows.py: F25`
+
 ## Window
 
-- F-016 On Browse and Photos the bottom status panel is one line (status, Encryption, Last run, Total today, a slim graph and ↓/↑ side by side); its chevron opens the full card, which that tab then keeps — `tests/gui/flows.py: F22`
+- F-016 On Sync Center, Browse and Photos the bottom status panel is one line (status, Encryption, Last run, Total today, a slim graph and ↓/↑ side by side); its chevron opens the full card, which that tab then keeps — `tests/gui/flows.py: F22`
 - F-015 Collapsing or expanding Quick settings doesn't move *Sync now*, *Pause* or the account button — `tests/gui/flows.py: F13`
 - F-018 Quick settings opens and closes with a small icon button at the far right of the header; its column starts level with the page content — `tests/gui/flows.py: F13`
 - F-019 Activity: *Show*, *Open log folder* and *Clear* sit side by side in one row — `tests/gui/flows.py: F22`

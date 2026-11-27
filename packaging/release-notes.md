@@ -1,14 +1,19 @@
-## Kluis 1.1.2: enter your password in the morning, and Kluis syncs
+## Kluis 1.2.0: Sync Center
 
 **Install**
-- Linux Mint / Ubuntu: download `kluis_1.1.2_all.deb` and double-click it.
+- Linux Mint / Ubuntu: download `kluis_1.2.0_all.deb` and double-click it.
 - EndeavourOS / Arch: `curl -LO https://github.com/Sundowna/kluis/releases/latest/download/kluis-latest-any.pkg.tar.zst && sudo pacman -U kluis-latest-any.pkg.tar.zst`
 
 ### New
-- **Kluis unlocks your keyring at login.** If your keyring is still locked when Kluis starts (for example with automatic login), Kluis shows your desktop's own keyring password prompt by itself. Type your login password and syncing starts with your saved Proton session: no click, no new sign-in. Kluis never sees the password.
-- **New setting: Settings → General → Unlock the keyring at login** (on by default). It needs Kluis to start at login, so turning it on also turns on *Start at login*. With it off, Kluis waits and shows **Unlock keyring** on Home instead.
-- If you cancel the prompt, Kluis doesn't ask again by itself: Home shows **Unlock keyring**, and syncing carries on as soon as the keyring is unlocked, from Kluis or any other app.
+- **Sync Center replaces Folders** (same place in the sidebar, still `Ctrl+2`). It shows everything in your Proton Drive, one line per folder: tick it, see where it lands on this computer, pick how it syncs (⇄ Two-way, ↑ Back up, ↓ Mirror down), and read its status and warnings.
+- **Nothing happens until you apply.** Ticking or unticking only marks the line. A bar at the bottom says what will change and roughly how much will download, with *Discard changes* and *Apply changes*.
+- **Your folders land in `~/Proton Drive`** with the same structure as in the cloud, unless you choose another place with *Change…*.
+- **No double downloads.** If you already downloaded a folder to `~/Downloads`, Sync Center says so and can move that copy into place instead of fetching it again.
+- **Synced only** shows just the folders you sync, with everything the old Folders cards had (progress, ↻ Sync now, Pause, Edit, Stop syncing with Undo).
+- **Browse → ⇄ Sync to this computer…** opens Sync Center at that folder, ticked. *↓ Download* now says it is a one-off copy.
+- **Folder sizes appear at once.** Files/Size counts of your Proton Drive folders are kept on this computer (per account, readable only by you) instead of being counted again at every start; they're refreshed in the background once a day, or now with ↻ in Sync Center.
+- **More room for the list.** On Sync Center (as on Browse and Photos) the bottom status panel is one line: the facts on the left, the transfer graph filling the rest. The ▴ at its end opens the full card.
+- Folders that start on this computer are still added with **+ Add from this computer…** and then appear in Sync Center like any other.
 
 ### Notes
-- Turning off automatic login also works: your keyring then unlocks with the password you type at login, and Kluis doesn't need to ask.
 - Not affiliated with Proton AG.

@@ -292,9 +292,16 @@ def f4(d, env, app):
     d.expect(any(t.startswith("Syncing “Startup”") for t in app.window.toast_history), "toast")
     d.shot("new card")
     yield idle(app)
-    yield until(lambda: d.get("Size of Startup").get_text() not in ("Measuring…", ""), 10, "size chip")
     yield until(lambda: d.get("Status of Startup").get_text().startswith("Backed up "), 10, "Backed up HH:MM")
     d.shot("backed up")
+
+
+def menu_item(d, folder, item):
+    """Open a Sync Center line's ⋯ menu and pick an item (its callback runs from an idle)."""
+    d.get(f"More for {folder}").set_active(True)
+    yield 0.3
+    d.click(item)
+    yield 0.4
 
 
 # ------------------------------------------------------------------ F5
@@ -338,13 +345,12 @@ def f6(d, env, app):
     d.press("<Primary>2")
     yield 0.3
     w0 = app.manager.watching()
-    d.get("Sync Agriland").set_active(False)
-    yield 0.3
+    yield from menu_item(d, "Agriland", "Pause this folder")
     d.expect(d.get("Status of Agriland").get_text() == "Off · not syncing", "Off · not syncing")
     d.expect(not d.get("Sync Agriland now").is_sensitive() and app.manager.watching() == w0 - 1,
              "↻ Sync disabled; watching count drops")
     d.shot("off")
-    d.get("Sync Agriland").set_active(True)
+    yield from menu_item(d, "Agriland", "Resume this folder")
     yield idle(app)
     yield until(lambda: d.get("Status of Agriland").get_text().startswith("Synced just now"), 10, "Synced just now")
     d.shot("on again")
@@ -368,17 +374,19 @@ def f6(d, env, app):
     yield idle(app)
     d.expect(os.path.exists(os.path.join(env.cloud, "my-files", "Agriland", "new.txt")), "only this folder synced")
     d.shot("synced one folder")
-    d.click("Open Agriland")
+    yield from menu_item(d, "Agriland", "Open Agriland")
     d.expect(OPENED and OPENED[-1].endswith("/Agriland"), "Open → file manager at the local folder")
-    d.click("Remove Agriland")
-    yield 0.3
-    d.expect(d.find("Agriland") is None or not d.find("Sync Agriland"), "card disappears")
+    yield from menu_item(d, "Agriland", "Stop syncing this folder…")
+    yield until(lambda: d.find("Include Agriland") is not None, 10, "Agriland's line, read again")
+    d.expect(not d.find("Sync Agriland now") and not d.get("Include Agriland").get_active(),
+             "line shows Agriland as not synced")
     d.expect(app.window.toast_text == "Stopped syncing Agriland · files kept on both sides", "remove toast + Undo")
     d.expect(len(os.listdir(os.path.join(env.home, "Agriland"))) == 31, "files kept locally")
     d.shot("removed")
     app.window.toast_action.clicked()
     yield 0.5
-    d.expect(d.find("Sync Agriland") is not None and app.settings.folder("agriland").enabled, "card returns, syncing")
+    d.expect(d.find("Sync Agriland now") is not None and app.settings.folder("agriland").enabled,
+             "line returns, syncing")
     d.shot("undo")
 
 
@@ -1226,11 +1234,12 @@ def f20(d, env, app):
     yield main_ready(app)
     yield idle(app)
     need = {
-        "home": ["Home", "Folders", "Browse", "Photos", "Shared with me", "Activity", "Sync now", "Pause",
+        "home": ["Home", "Sync Center", "Browse", "Photos", "Shared with me", "Activity", "Sync now", "Pause",
                  "Search Proton Drive", "Settings (Ctrl+,)", "All settings…", "Pause sync", "Notifications",
                  "Dark mode", "Start at login", "VPN view", "Collapse quick settings"],
-        "folders": ["+ Add folder", "Sync Agriland", "Mode of Agriland", "Sync Agriland now", "Open Agriland",
-                    "Remove Agriland", "More for Agriland"],
+        "folders": ["+ Add from this computer…", "Show: Everything in Drive", "Show: Synced only",
+                    "Include Agriland", "Change folder for Agriland", "↑ Back up", "Sync Agriland now",
+                    "More for Agriland"],
         "browse": ["↑ Upload…", "+ New folder", "Files in this folder"],
         "photos": ["Expand Download", "Download my photos to this computer", "Expand Upload", "Album",
                    "Show my photos"],
@@ -1480,7 +1489,7 @@ def f22(d, env, app):
     def row_y(w):
         return w.translate_coordinates(app.window, 0, 0)[1] + w.get_allocated_height() // 2
 
-    parts = [sp.line, sp.mini, sp.line_rates]
+    parts = [sp.line, sp.line_title, sp.mini, sp.line_rates]
     d.expect(sp.compact and sp.get_allocated_height() < full_h * 0.6,
              f"F-016 Browse: one line ({sp.get_allocated_height()} px instead of {full_h} px)")
     text = sp.line.get_text()
@@ -1491,6 +1500,8 @@ def f22(d, env, app):
     d.expect(max(ys) - min(ys) <= 4, f"F-016 side by side, vertically centred on one line ({ys})")
     if env.size[0] >= 1440:
         d.expect(not sp.line.get_layout().is_ellipsized(), "F-016 with room to spare nothing is shortened with …")
+        d.expect(sp.line.translate_coordinates(sp, 0, 0)[0] < 40 and sp.mini.get_allocated_width() >= 60,
+                 f"F-016 the facts start at the left; the graph fills the rest ({sp.mini.get_allocated_width()} px)")
     d.shot("compact status line")
     d.click(sp.toggle)
     yield 0.6
@@ -1670,6 +1681,87 @@ def f24b(d, env, app):
     yield 0.5
     d.expect(not home.banner.get_visible(), "banner gone")
 
+# ------------------------------------------------------------------ F25
+def setup_f25(env):
+    set_cfg(env, folders=folders_cfg(env, "Agriland"), sync_view="all")
+    env.write("Agriland/a.txt", "a")
+    env.cloud_write("my-files/Agriland/a.txt", "a")
+    for i in range(3):
+        env.cloud_write(f"my-files/0Proton/Brain/note{i}.md", f"n{i}" * 50)
+        env.write(f"Downloads/Brain/note{i}.md", f"n{i}" * 50)      # an earlier one-off Download
+    env.cloud_write("my-files/0Proton/Recipes/soup.md", "s")
+    env.cloud_write("my-files/Pictures/p.jpg", "p")
+
+
+def f25(d, env, app):
+    """F-023…F-027 (FEATURES.md): Sync Center lists Proton Drive one line per folder; ticks wait for Apply;
+    an earlier download in ~/Downloads can be moved into place; Browse → Sync to this computer…"""
+    page = app.window.folders
+    yield main_ready(app)
+    yield idle(app)
+    d.press("<Primary>2")
+    yield until(lambda: "/my-files/0Proton" in page.rows, 15, "My files read")
+    d.expect(app.window.tab_title.get_text() == "Sync Center", "the tab is called Sync Center")
+    d.expect(d.get("Include Agriland").get_active() and d.find("Sync Agriland now"), "Agriland ticked, with ↻")
+    sp = app.window.status_panel
+    d.expect(sp.compact and sp.toggle.get_visible(), "F-016 the status panel is one line on Sync Center")
+    d.expect(not d.get("Include Pictures").get_active(), "Pictures not ticked")
+    d.shot("everything in Drive")
+    d.click("Show folders in 0Proton")
+    yield until(lambda: "/my-files/0Proton/Brain" in page.rows, 15, "0Proton opened")
+    d.get("Include Brain").set_active(True)
+    yield until(lambda: page.pending.get_visible(), 5, "pending bar")
+    d.expect(d.has_text("Starts when you apply") and "1 change not applied yet: start 1 folder"
+             in page.pending_lbl.get_text(), "line and bar say it starts on Apply")
+    d.expect(d.has_text("~/Proton Drive/0Proton/Brain"), "default place ~/Proton Drive/0Proton/Brain")
+    d.expect(app.settings.folder("agriland") and len(app.settings.folders) == 1, "nothing changed yet")
+    d.expect(d.has_text("Already here: ~/Downloads/Brain"), "warns about the copy in ~/Downloads")
+    d.shot("Brain ticked, not applied")
+    d.click("Use the copy in ~/Downloads/Brain")
+    yield 0.3
+    d.expect(d.has_text("✓ Moves ~/Downloads/Brain here"), "will move the copy")
+    d.get("Include Agriland").set_active(False)
+    yield 0.3
+    d.expect(d.has_text("Stops when you apply") and "start 1 folder, stop 1 folder" in page.pending_lbl.get_text(),
+             "unticking Agriland waits too")
+    d.shot("two changes")
+    d.click("Discard changes")
+    yield 0.3
+    d.expect(not page.pending.get_visible() and d.get("Include Agriland").get_active()
+             and not d.get("Include Brain").get_active(), "Discard puts everything back")
+    d.get("Include Brain").set_active(True)
+    yield 0.3
+    d.click("Use the copy in ~/Downloads/Brain")
+    yield 0.3
+    d.click("Apply changes")
+    yield 0.5
+    brain = os.path.join(env.home, "Proton Drive", "0Proton", "Brain")
+    d.expect(len(app.settings.folders) == 2 and not page.pending.get_visible(), "Brain added on Apply")
+    d.expect(sorted(os.listdir(brain)) == ["note0.md", "note1.md", "note2.md"]
+             and not os.path.exists(os.path.join(env.home, "Downloads", "Brain")), "the copy moved into place")
+    yield idle(app)
+    yield until(lambda: d.get("Status of Brain").get_text().startswith("Synced"), 20, "Brain synced")
+    d.shot("Brain syncing")
+    d.click("Show: Synced only")
+    yield 0.5
+    d.expect(app.settings.sync_view == "synced" and "/my-files/Pictures" not in page.rows
+             and {"/my-files/Agriland", "/my-files/0Proton/Brain"} <= set(page.rows), "Synced only: the two folders")
+    d.expect(d.get("Show: Synced only").get_active() and not d.get("Show: Everything in Drive").get_active(),
+             "only “Synced only” looks pressed")
+    d.shot("synced only")
+    d.click("Show: Everything in Drive")
+    d.press("<Primary>3")
+    app.window.browser.go("/my-files/0Proton")
+    yield until(lambda: "Recipes" in browse_names(app), 15, "Browse 0Proton")
+    app.window.browser.select({"Recipes"})
+    d.click("⇄ Sync to this computer…")
+    yield until(lambda: app.window.stack.get_visible_child_name() == "folders"
+                and "/my-files/0Proton/Recipes" in page.rows, 15, "Sync Center at Recipes")
+    d.expect("/my-files/0Proton/Recipes" in page.staged and d.get("Include Recipes").get_active(),
+             "Recipes ticked, waiting for Apply")
+    d.shot("from Browse")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1680,6 +1772,7 @@ FLOWS = {
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
     "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}), "F24b": (f24b, setup_f24b, {}),
+    "F25": (f25, setup_f25, {}),
 }
 
 

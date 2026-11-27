@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import collections
+import hashlib
+import json
 import os
 import threading
+import time
 from urllib.parse import unquote, urlparse
 
 from gi.repository import Gdk, GLib, GObject, Gtk, Pango
@@ -37,46 +40,126 @@ def file_icon(n) -> str:
 
 class FolderStats:
     """Files/Size of Proton Drive folders, from a recursive listing of active items (decisions D4).
-    Computed lazily for visible folders, one at a time in the background, cached."""
 
-    def __init__(self, cli, on_ready):
+    Counted lazily for visible folders, one at a time in the background. The counts are kept on disk per Proton
+    account (~/.cache/kluis/folder-counts-<id>.json, only this user can read it), so Browse and Sync Center show
+    them at once on the next start; a count older than a day is shown and quietly counted again. ↻ counts again
+    now. The names found while counting (for search in subfolders) stay in memory only; a search asks for them.
+    One instance per app (shared_stats), so Browse and Sync Center never write the file over each other."""
+
+    MAX_AGE = 24 * 3600
+    VERSION = 1
+
+    def __init__(self, cli, on_ready=None, store=None):
         self.cli = cli
-        self.on_ready = on_ready
+        self.listeners = [on_ready] if on_ready else []
+        self.store = store                  # () -> path of this account's cache file, or None (memory only)
         self.cache: dict[str, tuple[int, int]] = {}
+        self.when: dict[str, float] = {}
         # every name found while counting, for search in subfolders: folder -> [(remote path, name)]
         self.names: dict[str, list[tuple[str, str]]] = {}
         self._q: collections.deque[str] = collections.deque()
         self._busy = False
         self._lock = threading.Lock()
+        self._loaded_from = None
+        self._save_src = 0
 
+    # ---------- disk ----------
+    def _file(self):
+        return self.store() if self.store else None
+
+    def _load(self):
+        path = self._file()
+        if path == self._loaded_from:
+            return
+        self._loaded_from = path
+        self.cache, self.when, self.names = {}, {}, {}
+        if not path:
+            return
+        try:
+            with open(path) as fh:
+                raw = json.load(fh)
+            if raw.get("v") != self.VERSION:
+                return
+            for k, (files, size, ts) in raw.get("counts", {}).items():
+                self.cache[k] = (int(files), int(size))
+                self.when[k] = float(ts)
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass                            # no cache yet, or an unreadable one: count again
+
+    def _save_soon(self):
+        if not self._save_src:
+            self._save_src = GLib.timeout_add(1500, self._save)
+
+    def _save(self):
+        self._save_src = 0
+        path = self._loaded_from
+        if not path:
+            return False
+        data = {"v": self.VERSION, "counts": {k: [v[0], v[1], self.when.get(k, 0)] for k, v in self.cache.items()}}
+        try:
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            tmp = path + ".tmp"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                json.dump(data, fh)
+            os.replace(tmp, path)
+        except OSError:
+            pass                            # a cache: never worth an error
+        return False
+
+    # ---------- counts ----------
     def get(self, path):
+        self._load()
         return self.cache.get(path)
 
-    def want(self, paths):
+    def fresh(self, path) -> bool:
+        return path in self.cache and time.time() - self.when.get(path, 0) < self.MAX_AGE
+
+    def want(self, paths, names=False):
+        """Count these folders in the background: missing or older than a day, or (names=True, for search)
+        every one whose names aren't read yet this session."""
+        self._load()
         with self._lock:
             for p in paths:
-                if p not in self.cache and p not in self._q:
+                need = p not in self.names if names else not self.fresh(p)
+                if need and p not in self._q:
                     self._q.append(p)
-            if self._busy:
+            if self._busy or not self._q:
                 return
             self._busy = True
         threading.Thread(target=self._work, daemon=True).start()
 
     def forget(self, path):
-        for k in list(self.cache):
+        self._load()
+        for k in list(self.cache) + list(self.names):
             if k == path or k.startswith(path + "/") or path.startswith(k + "/"):
                 self.cache.pop(k, None)
+                self.when.pop(k, None)
                 self.names.pop(k, None)
+        self._save_soon()
 
     def clear(self):
+        """↻: count everything again (this account's file too)."""
+        self._load()
         self.cache.clear()
+        self.when.clear()
         self.names.clear()
+        self._save_soon()
+
+    def unload(self):
+        """Another Proton account is active: the next get() reads that account's file."""
+        with self._lock:
+            self._q.clear()
+        self._loaded_from = None
+        self.cache, self.when, self.names = {}, {}, {}
 
     @property
     def busy(self) -> bool:
         return self._busy or bool(self._q)
 
     def _work(self):
+        source = self._loaded_from
         while True:
             with self._lock:
                 if not self._q:
@@ -94,11 +177,33 @@ class FolderStats:
                         elif n.type == "file":
                             files += 1
                             size += n.size or 0
-                self.cache[path] = (files, size)
-                self.names[path] = found
-                GLib.idle_add(lambda p=path: (self.on_ready(p), False)[1])
+                GLib.idle_add(self._done, path, files, size, found, source)
             except CliError:
                 continue
+
+    def _done(self, path, files, size, found, source):
+        if source != self._loaded_from:         # counted for the previous account
+            return False
+        self.cache[path] = (files, size)
+        self.when[path] = time.time()
+        self.names[path] = found
+        self._save_soon()
+        for cb in list(self.listeners):
+            cb(path)
+        return False
+
+
+def shared_stats(app) -> FolderStats:
+    """The one FolderStats of this app, its counts kept per Proton account."""
+    st = getattr(app, "folder_stats", None)
+    if st is None:
+        def store():
+            acct = (app.settings.account or "").strip().lower()
+            key = hashlib.sha1(acct.encode()).hexdigest()[:12] if acct else "default"
+            return os.path.join(GLib.get_user_cache_dir(), "kluis", f"folder-counts-{key}.json")
+        st = FolderStats(app.cli, store=store)
+        app.folder_stats = st
+    return st
 
 
 class BrowserPage(Gtk.Box):
@@ -108,7 +213,8 @@ class BrowserPage(Gtk.Box):
         self.path = "/my-files"
         self.loaded_once = False
         self.nodes = []
-        self.stats = FolderStats(app.cli, self._stats_ready)
+        self.stats = shared_stats(app)
+        self.stats.listeners.append(self._stats_ready)
         # Proton Drive's sections, always visible (Walter, 2026-11-26: "Computers" was easy to miss in a ▾ menu)
         self.sections = {}
         row = Gtk.Box(spacing=6)
@@ -125,12 +231,15 @@ class BrowserPage(Gtk.Box):
 
         self.up_btn = button(_("↑ Upload…"), self._upload_dialog, "suggested-action")
         self.new_btn = button(_("+ New folder"), self._new_folder)
-        self.dl_btn = button(_("↓ Download"), self._download_selected)
+        self.dl_btn = button(_("↓ Download"), self._download_selected,
+                             tooltip=_("A one-off copy in ~/Downloads. To keep it in step, use Sync to this computer"))
+        self.sync_btn = button(_("⇄ Sync to this computer…"), self._sync_here,
+                               tooltip=_("Open this folder in Sync Center, ticked, to choose where it goes"))
         self.rn_btn = button(_("Rename"), self._rename_selected)
         self.tr_btn = button(_("Move to trash"), self._trash_selected, "k-danger")
         self.refresh_btn = button("↻", self.load, tooltip=_("Reload this folder"), name=_("Reload"))
         from .common import wrapbar
-        self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.rn_btn, self.tr_btn, self.refresh_btn),
+        self.pack_start(wrapbar(self.up_btn, self.new_btn, self.dl_btn, self.sync_btn, self.rn_btn, self.tr_btn, self.refresh_btn),
                         False, False, 0)
 
         # list
@@ -335,8 +444,7 @@ class BrowserPage(Gtk.Box):
             if n.is_folder:
                 st = self.stats.get(p)
                 files, size = (str(st[0]), human_size(st[1])) if st else ("…", "…")
-                if not st:
-                    want.append(p)
+                want.append(p)                   # counted only when missing or older than a day
             else:
                 files, size = "—", human_size(n.size)
             self.store.append([n, n.name in sel, file_icon(n), n.name, files, size, iso_date(n.modified)])
@@ -366,8 +474,28 @@ class BrowserPage(Gtk.Box):
     def _sel_changed(self):
         n = len(self.selected())
         self.dl_btn.set_sensitive(n > 0)
+        self.sync_btn.set_sensitive(bool(self.sync_target()))
         self.rn_btn.set_sensitive(n == 1)
         self.tr_btn.set_sensitive(n > 0)
+
+    def sync_target(self) -> str:
+        """The folder "Sync to this computer…" means: the one ticked folder, else the folder open here."""
+        sel = self.selected()
+        if len(sel) == 1 and sel[0].is_folder:
+            path = rjoin(self.path, sel[0].name)
+        elif not sel:
+            path = self.path
+        else:
+            return ""
+        top = next((r for r in ("/my-files", "/devices") if path.startswith(r + "/")), "")
+        if not top or (top == "/devices" and path.count("/") < 3):
+            return ""                       # a whole section or a whole computer: pick a folder in it
+        return path
+
+    def _sync_here(self):
+        path = self.sync_target()
+        if path:
+            self.app.window.folders.jump_to(path)
 
     def _button(self, view, ev):
         if ev.type == Gdk.EventType.BUTTON_PRESS and ev.button == 1:

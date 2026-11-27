@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlparse
 
 from gi.repository import Atk, Gdk, Gio, GLib, Gtk, Pango
 
+from ..cli import rjoin
 from ..i18n import _
 from .accounts import AccountButton
 from .activity import ActivityPage
@@ -20,7 +21,7 @@ from .photos import PhotosPage
 from .shared import SharedPage
 from .statuspanel import StatusPanel
 
-TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")), ("photos", _("Photos")),
+TABS = [("home", _("Home")), ("folders", _("Sync Center")), ("browse", _("Browse")), ("photos", _("Photos")),
         ("shared", _("Shared with me")), ("activity", _("Activity"))]
 MIN_W = 960            # the window's narrowest width: a half-screen tile on 1920 px
 TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
@@ -222,6 +223,9 @@ class MainWindow(Gtk.ApplicationWindow):
         if len(q) < 2:
             self.search_pop.popdown()
             return
+        b = self.browser
+        if b.loaded_once:                # counts may come from the disk cache: read the names for this search
+            b.stats.want([rjoin(b.path, n.name) for n in b.nodes if n.is_folder], names=True)
         hits = self.app.search(q)[:12]
         if not hits:
             reading = self.browser.loaded_once and self.browser.stats.busy
@@ -388,7 +392,7 @@ class MainWindow(Gtk.ApplicationWindow):
         b = self.browser
         b.path = "/my-files"
         b.nodes = []
-        b.stats.clear()
+        b.stats.unload()                 # the next count comes from the new account's own cache file
         b.loaded_once = False
         self.shared.loaded = False
         self.shared.items = []
@@ -396,7 +400,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.photos.loaded = False
         self.photos.album = ""
         self.photos._local = None
-        self.folders.rebuild()
+        self.folders.account_changed()
         page = self.stack.get_visible_child()
         if self.root.get_visible_child_name() == "main" and hasattr(page, "on_shown"):
             page.on_shown()

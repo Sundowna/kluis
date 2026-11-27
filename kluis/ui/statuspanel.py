@@ -1,7 +1,7 @@
 """Status panel (HANDOVER §4.3): Proton-VPN-style, bottom of Main on every tab.
 
-On Browse and Photos it is one compact line (same contents side by side, slim graph) so the file lists get the
-room; the chevron at its right end switches between the line and the full card (Walter, 2026-11-26)."""
+On Sync Center, Browse and Photos it is one compact line (same contents side by side, slim graph) so the lists
+get the room; the chevron at its right end switches between the line and the full card (Walter, 2026-11-26)."""
 from __future__ import annotations
 
 import time
@@ -12,7 +12,7 @@ from ..i18n import _
 from ..status import axis_max, duration_text, eta_text, human_bytes
 from .common import a11y, label, set_class, styled, vbox
 
-COMPACT_TABS = ("browse", "photos")
+COMPACT_TABS = ("folders", "browse", "photos")   # Sync Center, Browse, Photos: lists that need the room
 
 
 class Graph(Gtk.DrawingArea):
@@ -119,17 +119,20 @@ class StatusPanel(Gtk.Box):
         self.toggle.set_no_show_all(True)
         self.pack_end(self.toggle, False, False, 0)
         self.line_box = Gtk.Box(spacing=12, valign=Gtk.Align.CENTER)
-        self.line = label("", "k-s13", xalign=0.5, ellipsize="end")
+        # the facts on the left, then the graph's title, the graph filling the rest, its rates (Walter, 2026-11-27)
+        self.line = label("", "k-s13", ellipsize="end")
         a11y(self.line, _("Sync state"))
-        self.line_box.pack_start(self.line, True, True, 0)
+        self.line_box.pack_start(self.line, False, False, 0)
+        self.line_title = label(_("Current transfer (KB/s)"), "k-muted", "k-s12")
+        self.line_box.pack_start(self.line_title, False, False, 0)
         self.mini = Graph(app)
-        self.mini.set_size_request(90, 22)
-        self.mini.set_hexpand(False)
+        self.mini.set_size_request(60, 22)
+        self.mini.set_hexpand(True)
         self.mini.set_valign(Gtk.Align.CENTER)
-        self.line_box.pack_start(self.mini, False, False, 0)
+        self.line_box.pack_start(self.mini, True, True, 0)
         self.line_rates = label("", "k-num", "k-s12")
         self.line_box.pack_start(self.line_rates, False, False, 0)
-        for wdg in (self.line, self.mini, self.line_rates):
+        for wdg in (self.line, self.line_title, self.mini, self.line_rates):
             wdg.show()                # the box's no_show_all also stops show_all() inside it
         self.line_box.set_no_show_all(True)
         self.pack_start(self.line_box, True, True, 0)
@@ -152,8 +155,8 @@ class StatusPanel(Gtk.Box):
         self.set_compact(not self.compact)
 
     def set_compact(self, on):
-        """One line: the same facts as one centred text (it shortens with … only on a narrow window), a slim
-        graph and the rates. The full card is left exactly as it is."""
+        """One line: the same facts as one text on the left (it shortens with … only on a narrow window), then
+        the graph's title, a slim graph filling the rest of the line, and the rates. The full card is unchanged."""
         self.compact = on
         self.left.set_visible(not on)
         self.right.set_visible(not on)
