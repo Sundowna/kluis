@@ -19,7 +19,6 @@ import hashlib
 import json
 import logging
 import os
-import time
 from dataclasses import asdict
 
 from .config import FolderPair, PhotoSettings, Settings
@@ -262,8 +261,11 @@ class SecretVault(Vault):
                                               {"kluis-account": Secret.SchemaAttributeType.STRING})
 
     def _service(self):
+        """Without LOAD_COLLECTIONS: Kluis only searches. Loading every collection fails as a whole when the
+        keyring lists an item that no longer exists ("No such secret item at path …/login/19", seen on
+        Walter's machine), and with it reading the session and the lock check at login."""
         S = self.S
-        return S.Service.get_sync(S.ServiceFlags.OPEN_SESSION | S.ServiceFlags.LOAD_COLLECTIONS, None)
+        return S.Service.get_sync(S.ServiceFlags.OPEN_SESSION, None)
 
     def _live_items(self):
         S = self.S
@@ -271,18 +273,6 @@ class SecretVault(Vault):
         return self._service().search_sync(None, {"service": CLI_SERVICE}, flags, None) or []
 
     def read_live(self):
-        """At start the CLI rewrites its keyring item while Kluis reads it ("No such secret item"): read again."""
-        from gi.repository import GLib
-        for attempt in range(3):
-            try:
-                return self._read_live_once()
-            except GLib.Error as e:
-                if "No such secret item" not in str(e) or attempt == 2:
-                    raise
-                time.sleep(2)
-        return None
-
-    def _read_live_once(self):
         for item in self._live_items():
             secret = item.get_secret()
             if secret is None:

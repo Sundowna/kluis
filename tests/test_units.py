@@ -340,23 +340,23 @@ s2.clear()
 _settle(s2)
 check(s2.get("/my-files/Pics") is None and json.load(open(cache_file))["counts"] == {}, "↻ counts everything again")
 
-print("keyring: the CLI rewrites its session while Kluis copies it")
+print("keyring: an item the keyring lists but no longer has doesn't break Kluis")
 from kluis.accounts import SecretVault  # noqa: E402
 
 _sv = SecretVault.__new__(SecretVault)
-_tries = []
+_flags = []
 
 
-def _flaky():
-    _tries.append(1)
-    if len(_tries) < 2:
-        raise GLib.Error("g-dbus-error-quark: No such secret item at path: /org/freedesktop/secrets/collection/login/19")
-    return {"secret": "s"}
+class _FakeService:
+    @staticmethod
+    def get_sync(flags, _cancel):
+        _flags.append(flags)
+        return "svc"
 
 
-_sv._read_live_once = _flaky
-
-check(_sv.read_live() == {"secret": "s"} and len(_tries) == 2, "a vanished keyring item is read again, not given up")
+_sv.S = SimpleNamespace(Service=_FakeService, ServiceFlags=SimpleNamespace(OPEN_SESSION=1, LOAD_COLLECTIONS=2))
+check(_sv._service() == "svc" and _flags == [1],
+      "the keyring is opened without loading every collection (a vanished item made that fail at each start)")
 
 print("lists kept on disk per account (stale while revalidate)")
 from kluis.listcache import fetch, shared_lists  # noqa: E402
