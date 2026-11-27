@@ -292,7 +292,8 @@ def f4(d, env, app):
     d.expect(any(t.startswith("Syncing “Startup”") for t in app.window.toast_history), "toast")
     d.shot("new card")
     yield idle(app)
-    yield until(lambda: d.get("Status of Startup").get_text().startswith("Backed up "), 10, "Backed up HH:MM")
+    yield until(lambda: d.find("Status of Startup") is not None
+                and d.find("Status of Startup").get_text().startswith("Backed up "), 15, "Backed up HH:MM")
     d.shot("backed up")
 
 

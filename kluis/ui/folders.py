@@ -654,6 +654,10 @@ class FoldersPage(Gtk.Box):
                                                  depth, retry=path), False, False, 0)
             else:
                 self.table.pack_start(self._note(_("Reading Proton Drive…"), depth), False, False, 0)
+            # the folders you sync don't wait for the listing: their lines (and status) show at once
+            for r, f in sorted(synced.items(), key=lambda kv: kv[0].lower()):
+                if r.startswith(path.rstrip("/") + "/") and not inherited:
+                    self._add(self._row(Node(r, os.path.basename(r)), f, None, depth, flat=True))
             return
         # a synced folder always has its line, even before its first upload or a fresh listing shows it
         have = {n.remote for n in nodes}
