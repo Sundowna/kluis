@@ -143,6 +143,9 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 
 ## Known limits (honest list)
 
+- **Lists are kept on disk.** Browse, Sync Center, Shared with me and Photos show the last list at once from
+  `~/.cache/kluis` (per account, mode 600) while Kluis checks Proton Drive in the background; Browse also reads
+  subfolders ahead. Syncing never uses these kept lists.
 - **Folder counts come from listing.** Files/Size of a Proton Drive folder are counted by listing it to the bottom
   the first time, then kept in `~/.cache/kluis` (per account, mode 600) and refreshed once a day or with ↻.
 - **A long first download survives a restart.** A ↓ Mirror down folder that was still being read or downloaded

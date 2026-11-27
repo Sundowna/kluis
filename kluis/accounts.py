@@ -261,8 +261,11 @@ class SecretVault(Vault):
                                               {"kluis-account": Secret.SchemaAttributeType.STRING})
 
     def _service(self):
+        """Without LOAD_COLLECTIONS: Kluis only searches. Loading every collection fails as a whole when the
+        keyring lists an item that no longer exists ("No such secret item at path …/login/19", seen on
+        Walter's machine), and with it reading the session and the lock check at login."""
         S = self.S
-        return S.Service.get_sync(S.ServiceFlags.OPEN_SESSION | S.ServiceFlags.LOAD_COLLECTIONS, None)
+        return S.Service.get_sync(S.ServiceFlags.OPEN_SESSION, None)
 
     def _live_items(self):
         S = self.S

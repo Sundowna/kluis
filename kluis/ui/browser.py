@@ -11,9 +11,10 @@ from urllib.parse import unquote, urlparse
 
 from gi.repository import Gdk, GLib, GObject, Gtk, Pango
 
-from ..cli import CliError, rjoin
+from ..cli import CliError, RemoteNode, rjoin
 from ..errors import OFFLINE, classify
 from ..i18n import _, ngettext
+from ..listcache import fetch, shared_lists
 from .common import a11y, button, clear, human_size, iso_date, label, open_path, run_bg, set_class, styled, vbox
 from .dialogs import ask_text, choose_files, confirm
 
@@ -23,6 +24,7 @@ ROOT_NAMES = {"/my-files": _("My files"), "/devices": _("Computers"), "/shared-w
               "/trash": _("Trash")}
 COLS = [("files", _("Files"), 80), ("size", _("Size"), 90), ("date", _("Modified"), 110)]
 COL_MIN, COL_MAX, COL_STEP = 56, 600, 16
+READ_AHEAD = 12                  # subfolders listed ahead of a click
 
 
 def file_icon(n) -> str:
@@ -224,6 +226,10 @@ class BrowserPage(Gtk.Box):
                        name=_("Section: {s}").format(s=ROOT_NAMES[root]))
             row.pack_start(b, False, False, 0)
             self.sections[root] = b
+        # the list on screen may be the kept one: say quietly that Kluis is checking, or since when it's offline
+        self.fresh_lbl = label("", "k-muted", "k-s12", ellipsize="end")
+        a11y(self.fresh_lbl, _("List freshness"))
+        row.pack_end(self.fresh_lbl, False, False, 0)
         self.pack_start(row, False, False, 0)
         self.crumbs = Gtk.Box(spacing=2)
         a11y(self.crumbs, _("Breadcrumbs"))
@@ -391,16 +397,23 @@ class BrowserPage(Gtk.Box):
         self._crumbs()
         path = self.path
         self._loading = path
-        self.stack.set_visible_child_name("blank")
-        GLib.timeout_add(300, lambda: (self.stack.set_visible_child_name("skeleton")
-                                       if getattr(self, "_loading", None) == path else None, False)[1])
+        gen = self._gen
 
-        def done(nodes):
-            if path != self.path:
+        def show(nodes, kept):
+            if path != self.path or gen != self._gen:
                 return
+            self.fresh_lbl.set_text(_("Checking Proton Drive…") if kept else "")
+            if nodes is not None:           # None: Proton's answer is the list already on screen
+                done(nodes, keep=self._loading is None)
+            if not kept:
+                self._read_ahead(path)
+
+        def done(nodes, keep=False):
             self._loading = None
             self.nodes = sorted(nodes, key=lambda n: (not n.is_folder, n.name.lower()))
-            self._fill()
+            self._fill(keep_sel=keep)
+            if self.nodes:
+                self.to_devices.hide()      # a kept empty list may have offered it a moment ago
             if not self.nodes:
                 self.msg.set_text(_("This folder is empty. Drag files here to upload them."))
                 self.retry.hide()
@@ -411,16 +424,51 @@ class BrowserPage(Gtk.Box):
                 return
             self.stack.set_visible_child_name("list")
 
-        def fail(e):
-            if path != self.path:
+        def fail(e, kept_shown):
+            if path != self.path or gen != self._gen:
+                return
+            reason = _("offline") if classify(e) == OFFLINE else str(e)
+            if kept_shown:                  # keep showing the kept list, and say how old it is
+                self.fresh_lbl.set_text(_("Couldn't check Proton Drive ({r}) · list from {t}").format(
+                    r=reason, t=time.strftime("%d.%m. %H:%M", time.localtime(when))))
                 return
             self._loading = None
-            reason = _("offline") if classify(e) == OFFLINE else str(e)
+            self.fresh_lbl.set_text("")
             self.msg.set_text(_("Couldn't load this folder: {r}").format(r=reason))
             self.retry.show()
             self.to_devices.hide()
             self.stack.set_visible_child_name("msg")
-        run_bg(lambda: self.app.cli.list(path), done, fail)
+        if shared_lists(self.app).get("list:" + path, RemoteNode) is None:
+            self.stack.set_visible_child_name("blank")
+            GLib.timeout_add(300, lambda: (self.stack.set_visible_child_name("skeleton")
+                                           if getattr(self, "_loading", None) == path else None, False)[1])
+        when = fetch(self.app, "list:" + path, RemoteNode, lambda: self.app.cli.list(path), show, fail)
+
+    def _read_ahead(self, path):
+        """List the subfolders of the open folder in the background, one at a time, so opening one is
+        instant. Stops when another folder is opened; skips lists checked in the last 10 minutes."""
+        lc = shared_lists(self.app)
+        todo = [rjoin(path, n.name) for n in self.nodes if n.is_folder]
+        todo = [p for p in todo if (lc.age("list:" + p) or 1e9) > 600][:READ_AHEAD]
+        gen = self._gen
+
+        def step():
+            if not todo or gen != self._gen:
+                return
+            p = todo.pop(0)
+
+            def got(nodes):
+                lc.put("list:" + p, nodes)
+                step()
+            run_bg(lambda: self.app.cli.list(p), got, lambda _e: step())
+        step()
+
+    def changed(self, path):
+        """Kluis changed this folder in Proton Drive: forget its kept list and counts, then show it fresh."""
+        self.stats.forget(path)
+        shared_lists(self.app).forget("list:" + path)
+        if path == self.path:
+            self.load()
 
     def _check_devices(self):
         """My files is empty: folders synced from a computer by Proton's desktop app are under Computers
@@ -566,15 +614,13 @@ class BrowserPage(Gtk.Box):
             n=len(local_paths)))
 
         def done(summary):
-            self.stats.forget(target)
             msg = ngettext("Uploaded {n} file ✓", "Uploaded {n} files ✓", summary.transferred).format(
                 n=summary.transferred)
             if summary.failed:
                 msg = _("Uploaded {n}, {f} failed").format(n=summary.transferred, f=summary.failed)
             self.app.manager.log("error" if summary.failed else "ok", "", msg, _("into {t}").format(t=target))
             self.app.toast(msg)
-            if target == self.path:
-                self.load()
+            self.changed(target)
         run_bg(lambda: self.app.cli.upload(local_paths, target, file_strategy="rename"), done,
                lambda e: self.app.toast(_("Upload failed: {e}").format(e=e)))
 
@@ -590,7 +636,7 @@ class BrowserPage(Gtk.Box):
         if name:
             path = self.path
             run_bg(lambda: self.app.cli.create_folder(path, name, exist_ok=False),
-                   lambda _r: (self.app.toast(_("Created “{n}”").format(n=name)), self.load()),
+                   lambda _r: (self.app.toast(_("Created “{n}”").format(n=name)), self.changed(path)),
                    lambda e: self.app.toast(_("Couldn't create the folder: {e}").format(e=e)))
 
     def _rename_selected(self):
@@ -600,8 +646,10 @@ class BrowserPage(Gtk.Box):
         n = sel[0]
         name = ask_text(self.get_toplevel(), _("Rename “{n}”").format(n=n.name), initial=n.name, ok=_("Rename"))
         if name and name != n.name:
-            run_bg(lambda: self.app.cli.rename(rjoin(self.path, n.name), name),
-                   lambda _r: (self.app.toast(_("Renamed to “{n}”").format(n=name)), self.load()),
+            here, old = self.path, rjoin(self.path, n.name)
+            run_bg(lambda: self.app.cli.rename(old, name),
+                   lambda _r: (self.app.toast(_("Renamed to “{n}”").format(n=name)),
+                               shared_lists(self.app).forget("list:" + old), self.changed(here)),
                    lambda e: self.app.toast(_("Rename failed: {e}").format(e=e)))
 
     def _trash_selected(self):
@@ -619,7 +667,8 @@ class BrowserPage(Gtk.Box):
         here = self.path
 
         def done(found):
-            self.stats.forget(here)
+            for p in paths:
+                shared_lists(self.app).forget("list:" + p)
             msg = ngettext("Moved {n} item to the Proton Drive trash", "Moved {n} items to the Proton Drive trash",
                            n).format(n=n)
             self.app.manager.log("info", "", msg)
@@ -628,7 +677,7 @@ class BrowserPage(Gtk.Box):
             else:
                 # another item in the trash has the same name: restoring by name could hit it, so no Undo
                 self.app.toast(msg + " · " + _("restore it on drive.proton.me"))
-            self.load()
+            self.changed(here)
 
         def work():
             self.app.cli.trash(paths)
@@ -637,10 +686,8 @@ class BrowserPage(Gtk.Box):
 
     def _restore(self, nodes, here):
         def done(_r):
-            self.stats.forget(here)
             self.app.toast(_("Restored from the Proton Drive trash"))
-            if self.path == here:
-                self.load()
+            self.changed(here)
         run_bg(lambda: self.app.cli.restore(nodes), done,
                lambda e: self.app.toast(_("Couldn't restore: {e}").format(e=e)))
 
