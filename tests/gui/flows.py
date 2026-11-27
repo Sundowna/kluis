@@ -1,4 +1,4 @@
-"""End-to-end flows F1–F23 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
+"""End-to-end flows F1–F24 (HANDOVER §12; F21 = Proton accounts, F22 = Computers; see FEATURES.md), against the mock CLI.
 
 Run one: xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- python3 tests/gui/flows.py F4 dark 1440x900 OUT
 All:     tests/gui/run_all.sh OUT
@@ -962,6 +962,7 @@ def f14(d, env, app):
     yield until(lambda: app.manager.logged_in is False, 20, "session expired")
     yield 0.5
     d.expect(app.window.home.banner.get_visible(), "Home banner “Sign in again”")
+    d.expect(app.window.home.banner_lbl.get_mapped(), "the banner says why")
     yield until(lambda: any("Sign in" in t for t, _b in app.sent_notifications), 40,
                 "notification (at most one per 30 s, so it may wait)")
     d.shot("sign in again banner")
@@ -1582,6 +1583,40 @@ def f23(d, env, app):
     d.shot("960 px wide")
 
 
+# ------------------------------------------------------------------ F24
+def setup_f24(env):
+    set_cfg(env, folders=folders_cfg(env, "Documents"))
+    slot = os.path.join(env.cloud, ".logged_in")
+    open(slot + ".locked", "w").close()     # the keyring is locked after an automatic login
+    os.rename(slot, slot + ".hidden")       # so the CLI can't read the session and says "not signed in"
+
+
+def f24(d, env, app):
+    """A locked keyring at start-up: Kluis asks to unlock it, never for a new sign-in, and carries on
+    with the saved session once it's unlocked."""
+    slot = os.path.join(env.cloud, ".logged_in")
+    yield main_ready(app)
+    yield until(lambda: app.keyring_locked(), 20, "keyring-locked hold")
+    yield 0.5
+    home = app.window.home
+    d.expect(home.banner.get_visible() and home.unlock_btn.get_visible() and not home.banner_btn.get_visible(),
+             "Home banner offers “Unlock keyring”, not “Sign in again”")
+    lb = home.banner_lbl
+    d.expect(lb.get_mapped() and "keyring is locked" in lb.get_text() and lb.get_allocated_width() > 100,
+             "the banner says why")
+    d.expect(d.has_text("Unlock your keyring to keep syncing"), "status title asks to unlock")
+    d.expect(app.manager.logged_in is not False, "not treated as signed out")
+    d.expect(not any("Sign in" in t for t, _b in app.sent_notifications), "no “Sign in” notification")
+    d.expect(app.settings.onboarded, "no trip back to the sign-in page")
+    d.shot("keyring locked")
+    os.rename(slot + ".hidden", slot)       # what unlocking gives the CLI back
+    d.click("Unlock keyring")
+    yield until(lambda: app.manager.logged_in is True and app.manager.hold is None, 30, "carries on after unlock")
+    yield 0.5
+    d.expect(not home.banner.get_visible(), "banner gone")
+    d.shot("keyring unlocked")
+
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1591,7 +1626,7 @@ FLOWS = {
     "F14b": (f14b, setup_f14b, {}), "F15": (f15, setup_f15, {}), "F16": (f16, setup_f16, {}),
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
-    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}),
+    "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}),
 }
 
 

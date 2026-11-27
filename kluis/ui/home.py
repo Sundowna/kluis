@@ -141,9 +141,13 @@ class HomePage(Gtk.Box):
         self.banner = Gtk.Box(spacing=12, no_show_all=True)
         styled(self.banner, "k-banner")
         self.banner_lbl = label("", wrap=True)
+        self.banner_lbl.show()               # the banner box is no_show_all, so show_all() never reaches it
         self.banner.pack_start(self.banner_lbl, True, True, 0)
         self.banner_btn = button(_("Sign in again"), lambda: app.sign_in_again(), "suggested-action")
         self.banner.pack_end(self.banner_btn, False, False, 0)
+        self.unlock_btn = button(_("Unlock keyring"), lambda: app.unlock_keyring(), "suggested-action")
+        self.unlock_btn.set_no_show_all(True)
+        self.banner.pack_end(self.unlock_btn, False, False, 0)
         self.pack_start(self.banner, False, False, 0)
         self.title = label("", "k-h0", wrap=True)
         self.sub = label("", "k-muted", wrap=True)
@@ -184,9 +188,14 @@ class HomePage(Gtk.Box):
         if status.tone in ("warn", "error"):
             self.sub.get_style_context().add_class("k-warn" if status.tone == "warn" else "k-error")
         signed_out = self.app.manager.logged_in is False and self.app.settings.onboarded
-        self.banner.set_visible(signed_out)
+        locked = self.app.keyring_locked() and self.app.settings.onboarded and not signed_out
+        self.banner.set_visible(signed_out or locked)
+        self.banner_btn.set_visible(signed_out)
+        self.unlock_btn.set_visible(locked)
         if signed_out:
             self.banner_lbl.set_text(_("Your Proton Drive session ended. Sign in again to keep syncing."))
-            self.banner.show_all()
+        elif locked:
+            self.banner_lbl.set_text(_("Your keyring is locked, so the Proton Drive CLI can't read your saved "
+                                       "session. Unlock it to keep syncing."))
         self.map.set_state(place, vpn_on and known, status.kind == "syncing", show_you=show)
 

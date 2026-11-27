@@ -26,6 +26,7 @@ class Snapshot:
     conflicts: int = 0
     remote_checked: float = 0.0
     signed_out: bool = False
+    keyring_locked: bool = False
     hold_text: str = ""
 
 
@@ -76,6 +77,9 @@ def compute(snap: Snapshot) -> Status:
     if snap.signed_out:
         return Status("problems", _("Sign in to keep syncing"),
                       _("Your Proton Drive session ended. Your files are safe."), "error")
+    if snap.keyring_locked:
+        return Status("problems", _("Unlock your keyring to keep syncing"),
+                      _("Your Proton session is still saved. Kluis continues as soon as it's unlocked."), "error")
     if snap.hold_text:
         return Status("problems", snap.hold_text, _("Kluis continues by itself when it can"), "error")
     if snap.problems:

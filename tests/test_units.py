@@ -34,6 +34,11 @@ check("next" not in ok.subtitle.lower(), "no “next sync” countdown")
 check(compute(Snapshot(folders=2, conflicts=1)).title == "Up to date · 1 with conflict copies", "conflict copies")
 check(compute(Snapshot(hold_text="Offline — will continue when you're back online", folders=1)).title.startswith("Offline"),
       "offline hold title")
+k = compute(Snapshot(keyring_locked=True, hold_text="x", folders=1))
+check(k.kind == "problems" and k.title == "Unlock your keyring to keep syncing" and "still saved" in k.subtitle,
+      "locked keyring: unlock, not sign in")
+check(compute(Snapshot(signed_out=True, keyring_locked=True)).title == "Sign in to keep syncing",
+      "a real sign-out wins over a locked keyring")
 
 print("ETA and rates")
 check(status.estimate_eta([], 1, 10, 0, 100) is None, "no ETA before two files")
@@ -216,6 +221,10 @@ check(v.read_live() is None and v.load("lindi.kirsten@pm.me") == {"secret": "lin
       "F-003 a kept session comes back for its account (any letter case)")
 v.forget("lindi.kirsten@pm.me")
 check(v.load("lindi.kirsten@pm.me") is None, "F-008 a signed-out account's kept session is deleted")
+lockv = accounts.FileVault(os.path.join(TMP, "lv"), os.path.join(TMP, "lv-slot"))
+open(os.path.join(TMP, "lv-slot.locked"), "w").close()
+check(lockv.is_locked() and lockv.unlock() and not lockv.is_locked(), "a vault reports and clears a locked keyring")
+check(accounts.Vault().is_locked() is False, "no keyring: never reported as locked")
 check(accounts.Vault().available is False and accounts.Vault().load("x") is None,
       "F-005 without a keyring switching falls back to the browser sign-in")
 

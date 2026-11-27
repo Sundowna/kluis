@@ -22,7 +22,7 @@ from gi.repository import Gio, GLib
 from .cli import CliError, CliMissing, ProtonDriveCli
 from .config import PART_DIR, PHOTOS_ID, FolderPair, Settings
 from .engine import SyncEngine, SyncResult
-from .errors import DISK_FULL, SIGNED_OUT, STATUS_TEXT, backoff_delay, classify
+from .errors import DISK_FULL, KEYRING_LOCKED, KEYRING_RETRY, SIGNED_OUT, STATUS_TEXT, backoff_delay, classify
 from .paths import ACTIVITY_FILE, STATE_DIR
 from .photos import PhotoSync
 from .state import StateStore
@@ -65,6 +65,8 @@ class SyncManager:
         self.logged_in: bool | None = None
         self.email = ""
         self.switching = False              # a Proton account switch is under way: start nothing
+        self.keyring_locked = lambda: False  # app sets accounts.Vault.is_locked
+        self._account_then = None           # check_account's callback, re-used once the keyring opens
         self.current: str | None = None
         self.last_run = 0.0
         self.last_remote_check = 0.0
@@ -293,15 +295,26 @@ class SyncManager:
 
     # ---------- account ----------
     def check_account(self, then=None):
-        """Find the CLI, then check sign-in. Runs in a thread; reports via 'account'."""
+        """Find the CLI, then check sign-in. Runs in a thread; reports via 'account'.
+        A locked keyring is checked first: the CLI would only say "not signed in", and Kluis would
+        ask for a new sign-in although the session is still stored."""
+        self._account_then = then
+
         def work():
             state = "ok"
             try:
+                if self.keyring_locked():
+                    state, self.logged_in = "keyring-locked", None
+                    self._notify("account", None, state)
+                    if then:
+                        GLib.idle_add(then, state)
+                    return
                 self.logged_in = self.cli.is_logged_in()
                 if not self.logged_in:
                     state = "signed-out"
                 else:
                     self.clear_hold(SIGNED_OUT)
+                    self.clear_hold(KEYRING_LOCKED)
                     self._read_email()
             except CliMissing:
                 state, self.logged_in = "no-cli", None
@@ -323,8 +336,10 @@ class SyncManager:
 
     # ---------- holds (invariant 10) ----------
     def set_hold(self, kind: str, detail: str = ""):
+        if kind == SIGNED_OUT and self.keyring_locked():
+            kind, detail = KEYRING_LOCKED, ""
         attempt = (self.hold or {}).get("attempt", -1) + 1 if self.hold and self.hold["kind"] == kind else 0
-        delay = backoff_delay(attempt)
+        delay = KEYRING_RETRY if kind == KEYRING_LOCKED else backoff_delay(attempt)
         first = not self.hold or self.hold["kind"] != kind
         self.hold = {"kind": kind, "until": time.time() + delay, "attempt": attempt,
                      "text": STATUS_TEXT.get(kind, kind), "detail": detail}
@@ -332,7 +347,15 @@ class SyncManager:
         if kind == SIGNED_OUT:
             self.logged_in = False
             self._notify("account", None, "signed-out")
-        if first:
+        elif kind == KEYRING_LOCKED:
+            self.logged_in = None           # not known until the CLI can read its session
+            if first:
+                self._notify("account", None, "keyring-locked")
+        if first and kind == KEYRING_LOCKED:
+            self.log("warning", "", self.hold["text"],
+                     "Your Proton session is still saved. Kluis continues as soon as the keyring is unlocked.")
+            self._notify("problem", None, kind)
+        elif first:
             nxt = time.strftime("%H:%M", time.localtime(self.hold["until"]))
             self.log("error" if kind != "offline" else "warning", "", self.hold["text"],
                      f"Kluis will try again at {nxt}." + (f" ({detail})" if detail else ""))
@@ -347,6 +370,11 @@ class SyncManager:
             self._notify("global")
             GLib.idle_add(lambda: (self.request(reason="resume"), False)[1])
 
+    def retry_hold_now(self):
+        """E.g. right after the user unlocked the keyring: don't wait for the next tick."""
+        if self.hold:
+            threading.Thread(target=self._probe_hold, daemon=True).start()
+
     def _probe_hold(self):
         """Runs in a thread when the backoff time is up: is the problem gone?"""
         h = self.hold
@@ -359,6 +387,13 @@ class SyncManager:
                     self.clear_hold(DISK_FULL)
                     return
                 raise OSError("still full")
+            if h["kind"] == KEYRING_LOCKED:
+                if self.keyring_locked():   # don't run the CLI against a locked keyring every tick
+                    self.set_hold(KEYRING_LOCKED)
+                    return
+                h["until"] = time.time() + KEYRING_RETRY  # check_account clears the hold once signed in
+                self.check_account(self._account_then)   # the full start-up path: watch, sync, self-test
+                return
             ok = self.cli.is_logged_in()
             if not ok:
                 self.set_hold(SIGNED_OUT)

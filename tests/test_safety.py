@@ -261,6 +261,44 @@ m10.set_hold("offline")
 d2 = m10.hold["until"] - time.time()
 check(d2 > d1 * 1.5 and m10.hold["attempt"] == 1, "repeated failures double the wait")
 
+# A locked keyring (automatic login: nobody typed the password that unlocks it) makes the CLI say
+# "not signed in" although the session is still stored. Kluis must not ask for a new sign-in.
+locked = [True]
+cli_calls = []
+real_is_logged_in = cli.is_logged_in
+cli.is_logged_in = lambda: (cli_calls.append(1), real_is_logged_in())[1]
+mk = SyncManager(s10, cli, store=store, start_thread=False)
+mk.keyring_locked = lambda: locked[0]
+
+
+def wait_for(cond, secs=20):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        time.sleep(0.05)
+    return cond()
+
+
+os.remove(os.path.join(TMP, "cloud", ".logged_in"))        # what the real CLI reports while locked
+mk.check_account()
+check(wait_for(lambda: mk.hold is None and mk.logged_in is None) and not cli_calls,
+      "locked keyring at start-up: no CLI run, not reported as signed out")
+mk.set_hold("signed-out")                                    # e.g. a sync run hit the locked keyring
+check(mk.hold["kind"] == "keyring-locked" and mk.logged_in is None,
+      "“signed out” while the keyring is locked becomes “keyring locked”: no sign-in banner")
+check(mk.hold["until"] - time.time() <= 10, "a locked keyring is looked at again within seconds, not minutes")
+mk._probe_hold()
+check(mk.hold["kind"] == "keyring-locked" and not cli_calls, "still locked: Kluis waits and doesn't run the CLI")
+locked[0] = False
+open(os.path.join(TMP, "cloud", ".logged_in"), "w").close()
+mk._probe_hold()
+check(wait_for(lambda: mk.logged_in is True) and mk.hold is None,
+      "once unlocked, Kluis carries on with the saved session (no new sign-in)")
+os.remove(os.path.join(TMP, "cloud", ".logged_in"))
+mk.set_hold("signed-out")
+check(mk.hold["kind"] == "signed-out" and mk.logged_in is False, "a real sign-out is still reported as one")
+open(os.path.join(TMP, "cloud", ".logged_in"), "w").close()
+cli.is_logged_in = real_is_logged_in
+
 # ---------------------------------------------------------------- 11
 print("11 · config writes are atomic with a backup")
 cfg = os.path.join(TMP, "cfg.json")
