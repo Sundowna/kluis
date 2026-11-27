@@ -114,7 +114,9 @@ class Settings:
     app_notified_version: str = ""
     language: str = ""
     qs_collapsed: bool = False
+    side_collapsed: bool = False       # the sidebar shown as a 56 px icon rail (Ctrl+B)
     last_tab: str = "home"
+    sync_view: str = "all"             # Sync Center: "all" (everything in Drive) | "synced" (synced only)
     window: dict = field(default_factory=lambda: {"w": 1440, "h": 900, "x": -1, "y": -1, "max": False})
     columns: dict = field(default_factory=dict)     # table id -> {column id: width}
     told_background: bool = False

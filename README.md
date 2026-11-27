@@ -7,9 +7,9 @@ Not affiliated with Proton AG.
 
 ![Home](docs/screens/home-dark.png)
 
-| Folders (light) | Browse Proton Drive | Photos |
+| Sync Center (light) | Browse Proton Drive | Photos |
 |---|---|---|
-| ![](docs/screens/folders-light.png) | ![](docs/screens/browse-dark.png) | ![](docs/screens/photos-dark.png) |
+| ![](docs/screens/sync-center-light.png) | ![](docs/screens/browse-dark.png) | ![](docs/screens/photos-dark.png) |
 | **Shared with me** | **Add a folder** | **Purple accent** |
 | ![](docs/screens/shared-dark.png) | ![](docs/screens/add-folder-light.png) | ![](docs/screens/purple-light.png) |
 
@@ -55,7 +55,14 @@ this off in Settings → General → **Unlock the keyring at login**; Kluis then
 
 ## Features
 
-- **A list of synced folders**, each with its own mode:
+- **Sync Center** (`Ctrl+2`) shows everything in your Proton Drive, one line per folder: tick a folder, see
+  where it lands on this computer (`~/Proton Drive/…` unless you *Change…* it), pick how it syncs, and read its
+  status and any warnings. Ticks and unticks wait for **Apply changes** (or *Discard changes*), so one wrong click
+  never starts a big download. *Show: Synced only* lists just the folders you sync. A folder that starts on this
+  computer is added with **+ Add from this computer…** and then has its line like any other. If an earlier
+  one-off download sits in `~/Downloads`, Sync Center offers to move it into place instead of downloading it
+  again. In Browse, **⇄ Sync to this computer…** opens Sync Center at that folder, ticked.
+- Each synced folder has its own mode:
 
   | Mode | What it does |
   |---|---|
@@ -94,7 +101,7 @@ this off in Settings → General → **Unlock the keyring at login**; Kluis then
 - **Panel icon** with sync now, pause and quit: XApp's native icon on Cinnamon, MATE and Xfce;
   the standard system-tray icon on KDE Plasma (EndeavourOS) and other desktops.
   Closing the window keeps Kluis syncing in the background.
-- **Drive browser:** open folders, download, upload (drag files in), create, rename, and trash with Undo.
+- **Drive browser:** open folders, download (a one-off copy in `~/Downloads`), upload (drag files in), create, rename, and trash with Undo.
   Folder sizes and file counts, resizable columns.
 - **More than one Proton account**, switched like on proton.me: the account button at the top right opens a menu
   with your account, *Sign out*, and *Other accounts*. Add another account once (Proton's browser sign-in), then
@@ -136,6 +143,14 @@ trash moves. It runs one CLI process at a time, as the CLI's local cache require
 
 ## Known limits (honest list)
 
+- **Lists are kept on disk.** Browse, Sync Center, Shared with me and Photos show the last list at once from
+  `~/.cache/kluis` (per account, mode 600) while Kluis checks Proton Drive in the background; Browse also reads
+  subfolders ahead. Syncing never uses these kept lists.
+- **Folder counts come from listing.** Files/Size of a Proton Drive folder are counted by listing it to the bottom
+  the first time, then kept in `~/.cache/kluis` (per account, mode 600) and refreshed once a day or with ↻.
+- **A long first download survives a restart.** A ↓ Mirror down folder that was still being read or downloaded
+  continues with the folder listings it already has (under 2 hours old) instead of listing every folder again.
+  Two-way folders always list fresh, so an edit made in Proton Drive meanwhile is never missed.
 - **Remote checks list every folder.** The CLI has no change feed, so each check runs one `list`
   per Proton Drive folder. Large trees (thousands of folders) make periodic checks slow. Local
   changes are still picked up instantly.

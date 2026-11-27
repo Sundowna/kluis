@@ -144,3 +144,20 @@ dialog.kluis list, dialog.kluis list row { background-color: @k_panel; color: @k
 .kluis .k-modecard:checked, .kluis .k-modecard:checked:hover, .kluis .k-modecard:checked:active,
 .kluis .k-modecard:checked:backdrop, .kluis .k-modecard:checked:focus {
     background-color: @k_accent_soft; border: 2px solid @k_accent; }
+/* Sync Center (kluis/ui/folders.py): one line per folder; changed-but-not-applied lines get an amber edge */
+.kluis .k-sc-table { padding: 4px 0; }
+.kluis .k-sc-row { padding: 8px 16px; border-top: 1px solid alpha(@k_line, 0.55); min-height: 44px; }
+.kluis .k-sc-row.k-sc-head { border-top: none; padding-top: 6px; padding-bottom: 6px; min-height: 0; }
+.kluis .k-sc-row.k-sc-on { background-color: alpha(@k_accent_soft, 0.45); }
+.kluis .k-sc-row.k-sc-pending { box-shadow: inset 3px 0 0 @k_warn; }
+.kluis .k-sc-row.k-off { opacity: 0.6; }
+.kluis .k-sc-section { padding: 10px 16px 4px 16px; border-top: 1px solid alpha(@k_line, 0.55); background-color: @k_bg; }
+.kluis .k-sc-note { padding: 8px 16px; }
+.kluis button.k-sc-chev { min-width: 26px; min-height: 26px; padding: 0; }
+.kluis .k-sc-pending.k-card { border-color: @k_warn; box-shadow: 0 4px 6px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08); }
+/* the sidebar collapsed to an icon rail (Ctrl+B) */
+.kluis .k-side.k-side-rail { padding: 12px 6px; }
+.kluis .k-side.k-side-rail .k-nav button { padding: 0 6px; }
+/* Sync Center: the drop spot left of "+ Add from this computer…", as big as the button */
+.kluis .k-dropspot { border: 1px dashed @k_muted; border-radius: 8px; padding: 0 14px; min-height: 34px; }
+.kluis .k-dropspot.k-drag-over { border: 1px solid @k_accent; background-color: alpha(@k_accent, 0.12); }

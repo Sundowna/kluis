@@ -32,6 +32,12 @@ log = logging.getLogger("kluis.engine")
 BATCH = 40  # paths per CLI call
 GUARD_FILES = 50        # §7.8: more than 50 files …
 GUARD_SHARE = 0.10      # … or more than 10 % of the folder in one run asks first
+# An unfinished ↓ Mirror down run (Kluis quit, crashed, Stop, offline) continues with the Proton Drive listings
+# it already has when they are younger than this: no older than what one long scan works from anyway. A run
+# that completes throws them away, so ordinary syncs list fresh. Mirror only: Kluis never writes to Drive there,
+# so an older listing can only delay a change by one run. In two-way, an edit made in Drive meanwhile must be
+# seen to keep both copies (F14), so two-way and back-up runs always list fresh.
+RESUME_MAX = 2 * 3600
 
 
 class Cancelled(Exception):
@@ -135,6 +141,7 @@ class SyncEngine:
     def sync(self, f: FolderPair, dry_run: bool = False, allow_trash: int = 0) -> SyncResult:
         """One run. `allow_trash`: the user confirmed the mass-deletion guard for up to this many files."""
         self._cancel = False
+        self._wrote = False
         res = SyncResult()
         f = self.effective(f)
         try:
@@ -156,7 +163,7 @@ class SyncEngine:
             remote = None
             if f.mode != "backup":
                 self._emit(f, "phase", text="Looking for changes in Proton Drive…")
-                remote = self.scan_remote(f)
+                remote = self.scan_remote(f, keep=not dry_run)
             plan = self.make_plan(f, local, remote, state)
             log.info("[%s] plan: %s", f.name, plan.describe())
             if dry_run:
@@ -172,6 +179,7 @@ class SyncEngine:
                                "This usually means a folder was moved or a drive is missing.")
                 return res
             self.execute(f, plan, local, remote, res)
+            self.store.scan_clear(f.id)          # the run completed: the next one lists fresh
             res.files = sum(1 for e in self.store.load(f.id).values() if not e.is_dir)
         except Cancelled:
             res.status, res.message = "cancelled", "Stopped"
@@ -311,12 +319,32 @@ class SyncEngine:
                 log.warning("No permission to read %s", rel_dir)
         return out
 
-    def scan_remote(self, f: FolderPair) -> dict[str, RemoteNode] | None:
+    def scan_remote(self, f: FolderPair, keep: bool = True) -> dict[str, RemoteNode] | None:
+        """Every file and folder under f.remote. Folders listed by an unfinished run less than RESUME_MAX ago
+        aren't listed again; each new listing is kept (keep=True) until the run completes."""
         out: dict[str, RemoteNode] = {}
+        keep = keep and f.mode == "mirror"
+        cached = self.store.scan_get(f.id, f.remote, RESUME_MAX) if keep else {}
+        reused = 0
+
+        def listing(rel):
+            nonlocal reused
+            if rel in cached:
+                try:
+                    kids = [RemoteNode(**d) for d in cached[rel]]
+                    reused += 1
+                    return kids
+                except TypeError:
+                    pass                        # a row from another Kluis version: list it again
+            kids = self.cli.list(rjoin(f.remote, rel) if rel else f.remote)
+            if keep:
+                self.store.scan_put(f.id, f.remote, rel, kids)
+            return kids
         try:
-            children = self.cli.list(f.remote)
+            children = listing("")
         except CliError as e:
             if e.not_found and f.mode == "two-way":
+                self._remote_write(f)
                 self.cli.ensure_folder(f.remote)
                 return {}
             raise
@@ -336,9 +364,18 @@ class SyncEngine:
                 out[rel] = n
                 if n.is_folder:
                     done += 1
-                    self._emit(f, "phase", text=f"Looking in Proton Drive… {done} folders")
-                    queue.append((rel, self.cli.list(rjoin(f.remote, rel))))
+                    more = f" ({reused} remembered)" if reused else ""
+                    self._emit(f, "phase", text=f"Looking in Proton Drive… {done} folders{more}")
+                    queue.append((rel, listing(rel)))
+        if reused:
+            log.info("[%s] scan: %d folders, %d from the unfinished run before", f.name, done + 1, reused)
         return out
+
+    def _remote_write(self, f: FolderPair):
+        """Kluis is about to change Proton Drive: listings kept for resuming no longer match it."""
+        if not self._wrote:
+            self._wrote = True
+            self.store.scan_clear(f.id)
 
     # ---------------- planning ----------------
     def _local_sha1(self, f: FolderPair, rel: str, li: LocalItem) -> str:
@@ -545,6 +582,7 @@ class SyncEngine:
             for chunk in _chunks(p.trash_remote, BATCH):
                 self._check()
                 try:
+                    self._remote_write(f)
                     self.cli.trash([rjoin(f.remote, r) for r in chunk])
                     for r in chunk:
                         self.store.delete(fid, r)
@@ -570,6 +608,7 @@ class SyncEngine:
             self._check()
             parent, name = posixpath.split(rel)
             try:
+                self._remote_write(f)
                 self.cli.create_folder(rjoin(f.remote, parent), name)
                 self.store.put(fid, Entry(rel, True))
             except CliError as e:
@@ -596,6 +635,7 @@ class SyncEngine:
                 target = rjoin(f.remote, d)
                 t0 = time.monotonic()
                 try:
+                    self._remote_write(f)
                     summary = self._upload_retry(target, [os.path.join(f.local, r) for r in chunk])
                     self._failures(summary, res, "upload")
                     res.bytes_up += summary.bytes

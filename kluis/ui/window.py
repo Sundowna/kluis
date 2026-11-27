@@ -7,6 +7,8 @@ from urllib.parse import unquote, urlparse
 
 from gi.repository import Atk, Gdk, Gio, GLib, Gtk, Pango
 
+from ..cli import rjoin
+from ..listcache import shared_lists
 from ..i18n import _
 from .accounts import AccountButton
 from .activity import ActivityPage
@@ -20,9 +22,13 @@ from .photos import PhotosPage
 from .shared import SharedPage
 from .statuspanel import StatusPanel
 
-TABS = [("home", _("Home")), ("folders", _("Folders")), ("browse", _("Browse")), ("photos", _("Photos")),
+TABS = [("home", _("Home")), ("folders", _("Sync Center")), ("browse", _("Browse")), ("photos", _("Photos")),
         ("shared", _("Shared with me")), ("activity", _("Activity"))]
 MIN_W = 960            # the window's narrowest width: a half-screen tile on 1920 px
+TAB_ICONS = {"home": "kluis-home-symbolic", "folders": "kluis-sync-symbolic", "browse": "kluis-folder-symbolic",
+             "photos": "kluis-photos-symbolic", "shared": "kluis-shared-symbolic",
+             "activity": "kluis-activity-symbolic"}
+SIDE_W, RAIL_W = 250, 56   # the sidebar, and the icon rail it collapses to (Walter, 2026-11-27)
 TL_COLORS = {"ok": "", "info": "k-info", "warning": "k-warn", "error": "k-error"}
 
 
@@ -134,28 +140,53 @@ class MainWindow(Gtk.ApplicationWindow):
             self.add_action(a)
             app.set_accels_for_action(f"win.tab-{i}", [f"<Ctrl>{i}"])
         a = Gio.SimpleAction.new("search", None)
-        a.connect("activate", lambda *_: self.search.grab_focus())
+        a.connect("activate", lambda *_: self.focus_search())
         self.add_action(a)
         app.set_accels_for_action("win.search", ["<Ctrl>f"])
+        a = Gio.SimpleAction.new("sidebar", None)
+        a.connect("activate", lambda *_: self.set_side_collapsed(not self.app.settings.side_collapsed))
+        self.add_action(a)
+        app.set_accels_for_action("win.sidebar", ["<Ctrl>b"])
         self.stack.connect("notify::visible-child-name", self._page_changed)
         self.show_all()
         self.set_qs_collapsed(s.qs_collapsed, save=False)
+        self.set_side_collapsed(s.side_collapsed, save=False)
 
     # ---------- sidebar ----------
     def _sidebar(self):
         side = vbox(spacing=4)
         styled(side, "k-panel", "k-side")
-        side.set_size_request(250, -1)          # with Quick settings, every tab fits 960 px (half of 1920)
+        side.set_size_request(SIDE_W, -1)       # with Quick settings, every tab fits 960 px (half of 1920)
+        self.side = side
+        self._side_full, self._side_rail = [], []   # shown only expanded / only collapsed
         head = Gtk.Box(spacing=10, margin_bottom=10)
-        head.pack_start(logo_image(24), False, False, 0)
-        head.pack_start(label("Kluis", "k-h2"), True, True, 0)
-        gear = Gtk.Button.new_from_icon_name("kluis-gear-symbolic", Gtk.IconSize.BUTTON)
-        styled(gear, "k-flat")
-        gear.set_tooltip_text(_("Settings (Ctrl+,)"))
-        gear.connect("clicked", lambda *_: self.app.open_settings())
-        a11y(gear, _("Settings (Ctrl+,)"))
+        logo = logo_image(24)
+        title = label("Kluis", "k-h2")
+        head.pack_start(logo, False, False, 0)
+        head.pack_start(title, True, True, 0)
+
+        def gear_button():
+            g = Gtk.Button.new_from_icon_name("kluis-gear-symbolic", Gtk.IconSize.BUTTON)
+            styled(g, "k-flat")
+            g.set_tooltip_text(_("Settings (Ctrl+,)"))
+            g.connect("clicked", lambda *_: self.app.open_settings())
+            return a11y(g, _("Settings (Ctrl+,)"))
+        gear = gear_button()
+        self.side_toggle = Gtk.Button.new_from_icon_name("kluis-sidebar-symbolic", Gtk.IconSize.BUTTON)
+        styled(self.side_toggle, "k-flat")
+        self.side_toggle.connect("clicked", lambda *_: self.set_side_collapsed(not self.app.settings.side_collapsed))
+        head.pack_end(self.side_toggle, False, False, 0)
         head.pack_end(gear, False, False, 0)
+        self.side_head = head
         side.pack_start(head, False, False, 0)
+        self._side_full += [logo, title, gear]
+        self.search_icon = Gtk.Button.new_from_icon_name("kluis-search-symbolic", Gtk.IconSize.BUTTON)
+        styled(self.search_icon, "k-flat")
+        self.search_icon.set_tooltip_text(_("Search files (Ctrl+F)"))
+        self.search_icon.connect("clicked", lambda *_: self.focus_search())
+        a11y(self.search_icon, _("Search files"))
+        side.pack_start(self.search_icon, False, False, 0)
+        self._side_rail.append(self.search_icon)
         self.search = Gtk.SearchEntry(placeholder_text=_("Search files…  Ctrl+F"))
         a11y(self.search, _("Search Proton Drive"))
         self.search.connect("search-changed", self._search_changed)
@@ -165,17 +196,24 @@ class MainWindow(Gtk.ApplicationWindow):
         self.search_list = vbox(spacing=2, margin=6)
         self.search_pop.add(self.search_list)
         side.pack_start(self.search, False, False, 6)
+        self._side_full.append(self.search)
         nav = vbox(spacing=2)
         styled(nav, "k-nav")
         self.nav = {}
         for i, (key, title) in enumerate(TABS, 1):
             b = Gtk.Button()
-            row = Gtk.Box(spacing=8)
-            row.pack_start(label(title), True, True, 0)
+            row = Gtk.Box(spacing=10)
+            row.pack_start(Gtk.Image.new_from_icon_name(TAB_ICONS[key], Gtk.IconSize.BUTTON), False, False, 0)
+            name = label(title)
+            row.pack_start(name, True, True, 0)
             badge = label("", "k-badge")
             badge.set_no_show_all(True)
             row.pack_start(badge, False, False, 0)
-            row.pack_start(label(f"Ctrl+{i}", "k-key"), False, False, 0)
+            keyl = label(f"Ctrl+{i}", "k-key")
+            row.pack_start(keyl, False, False, 0)
+            self._side_full += [name, keyl]
+            b.kluis_row = row
+            b.set_tooltip_text(f"{title} (Ctrl+{i})")
             b.add(row)
             b.connect("clicked", lambda _b, k=key: self.show_tab(k))
             a11y(b, title)
@@ -183,7 +221,12 @@ class MainWindow(Gtk.ApplicationWindow):
             nav.pack_start(b, False, False, 0)
             self.nav[key] = b
         side.pack_start(nav, False, False, 0)
-        side.pack_start(label(_("Today’s timeline"), "k-section-head"), False, False, 14)
+        rail_gear = gear_button()
+        rail_gear.set_halign(Gtk.Align.CENTER)
+        side.pack_start(rail_gear, False, False, 6)
+        self._side_rail.append(rail_gear)
+        tl_head = label(_("Today’s timeline"), "k-section-head")
+        side.pack_start(tl_head, False, False, 14)
         self.timeline = vbox(spacing=8)
         a11y(self.timeline, _("Today’s timeline"))
         tl_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
@@ -194,7 +237,31 @@ class MainWindow(Gtk.ApplicationWindow):
         allact = button(_("All activity"), lambda: self.show_tab("activity"), "k-link")
         allact.set_halign(Gtk.Align.START)
         side.pack_start(allact, False, False, 4)
+        self._side_full += [tl_head, tl_scroll, allact]
         return side
+
+    def set_side_collapsed(self, collapsed, save=True):
+        """The sidebar or a 56 px icon rail (Ctrl+B), so Kluis fits half a screen even with Quick settings."""
+        self.app.settings.side_collapsed = collapsed
+        for w in self._side_full:
+            w.set_visible(not collapsed)
+        for w in self._side_rail:
+            w.set_visible(collapsed)
+        self.side.set_size_request(RAIL_W if collapsed else SIDE_W, -1)
+        set_class(self.side, "k-side-rail", collapsed)
+        self.side_head.set_halign(Gtk.Align.CENTER if collapsed else Gtk.Align.FILL)
+        for b in self.nav.values():
+            b.kluis_row.set_halign(Gtk.Align.CENTER if collapsed else Gtk.Align.FILL)
+        name = _("Expand the sidebar") if collapsed else _("Collapse the sidebar")
+        self.side_toggle.set_tooltip_text(name + " (Ctrl+B)")
+        a11y(self.side_toggle, name)
+        if save:
+            self.app.settings.save()
+
+    def focus_search(self):
+        if self.app.settings.side_collapsed:
+            self.set_side_collapsed(False)
+        self.search.grab_focus()
 
     def refresh_timeline(self):
         clear(self.timeline)
@@ -222,6 +289,9 @@ class MainWindow(Gtk.ApplicationWindow):
         if len(q) < 2:
             self.search_pop.popdown()
             return
+        b = self.browser
+        if b.loaded_once:                # counts may come from the disk cache: read the names for this search
+            b.stats.want([rjoin(b.path, n.name) for n in b.nodes if n.is_folder], names=True)
         hits = self.app.search(q)[:12]
         if not hits:
             reading = self.browser.loaded_once and self.browser.stats.busy
@@ -388,7 +458,8 @@ class MainWindow(Gtk.ApplicationWindow):
         b = self.browser
         b.path = "/my-files"
         b.nodes = []
-        b.stats.clear()
+        b.stats.unload()                 # the next count comes from the new account's own cache file
+        shared_lists(self.app).unload()  # and the next kept list from the new account's own file
         b.loaded_once = False
         self.shared.loaded = False
         self.shared.items = []
@@ -396,7 +467,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.photos.loaded = False
         self.photos.album = ""
         self.photos._local = None
-        self.folders.rebuild()
+        self.folders.account_changed()
         page = self.stack.get_visible_child()
         if self.root.get_visible_child_name() == "main" and hasattr(page, "on_shown"):
             page.on_shown()

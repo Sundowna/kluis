@@ -1,7 +1,7 @@
 """Status panel (HANDOVER §4.3): Proton-VPN-style, bottom of Main on every tab.
 
-On Browse and Photos it is one compact line (same contents side by side, slim graph) so the file lists get the
-room; the chevron at its right end switches between the line and the full card (Walter, 2026-11-26)."""
+On Sync Center, Browse and Photos it is one compact line (same contents side by side, slim graph) so the lists
+get the room; the chevron at its right end switches between the line and the full card (Walter, 2026-11-26)."""
 from __future__ import annotations
 
 import time
@@ -12,7 +12,7 @@ from ..i18n import _
 from ..status import axis_max, duration_text, eta_text, human_bytes
 from .common import a11y, label, set_class, styled, vbox
 
-COMPACT_TABS = ("browse", "photos")
+COMPACT_TABS = ("folders", "browse", "photos")   # Sync Center, Browse, Photos: lists that need the room
 
 
 class Graph(Gtk.DrawingArea):
@@ -119,23 +119,38 @@ class StatusPanel(Gtk.Box):
         self.toggle.set_no_show_all(True)
         self.pack_end(self.toggle, False, False, 0)
         self.line_box = Gtk.Box(spacing=12, valign=Gtk.Align.CENTER)
-        self.line = label("", "k-s13", xalign=0.5, ellipsize="end")
+        # the facts on the left, then the graph's title, the graph filling the rest, its rates (Walter, 2026-11-27)
+        self.line = label("", "k-s13", ellipsize="end")
         a11y(self.line, _("Sync state"))
-        self.line_box.pack_start(self.line, True, True, 0)
+        self.line_box.pack_start(self.line, False, False, 0)
+        self.line_title = label(_("Current transfer (KB/s)"), "k-muted", "k-s12")
+        self.line_box.pack_start(self.line_title, False, False, 0)
         self.mini = Graph(app)
-        self.mini.set_size_request(90, 22)
-        self.mini.set_hexpand(False)
+        self.mini.set_size_request(60, 22)
+        self.mini.set_hexpand(True)
         self.mini.set_valign(Gtk.Align.CENTER)
-        self.line_box.pack_start(self.mini, False, False, 0)
+        self.line_box.pack_start(self.mini, True, True, 0)
         self.line_rates = label("", "k-num", "k-s12")
         self.line_box.pack_start(self.line_rates, False, False, 0)
-        for wdg in (self.line, self.mini, self.line_rates):
+        self.line_box.connect("size-allocate", self._line_room)
+        for wdg in (self.line, self.line_title, self.mini, self.line_rates):
             wdg.show()                # the box's no_show_all also stops show_all() inside it
         self.line_box.set_no_show_all(True)
         self.pack_start(self.line_box, True, True, 0)
         # §6: the CLI has no quota command, so "Space used" is hidden (never faked)
         self.cells["space"][0].set_no_show_all(True)
         self.cells["space"][0].hide()
+
+    def _line_room(self, box, alloc):
+        """The facts come first: the graph's title steps aside when they would otherwise be shortened with …"""
+        def text_w(lb):                 # an ellipsizing label reports less than its full text as its width
+            lay = lb.create_pango_layout(None)
+            lay.set_markup(lb.get_label(), -1) if lb.get_use_markup() else lay.set_text(lb.get_text(), -1)
+            return lay.get_pixel_size()[0]
+        need = text_w(self.line) + text_w(self.line_rates) + 60 + 3 * 12
+        want_title = alloc.width >= need + text_w(self.line_title) + 12
+        if self.line_title.get_visible() != want_title:
+            GLib.idle_add(lambda: (self.line_title.set_visible(want_title), False)[1])
 
     # ---------- compact line ----------
     def set_tab(self, key):
@@ -152,8 +167,8 @@ class StatusPanel(Gtk.Box):
         self.set_compact(not self.compact)
 
     def set_compact(self, on):
-        """One line: the same facts as one centred text (it shortens with … only on a narrow window), a slim
-        graph and the rates. The full card is left exactly as it is."""
+        """One line: the same facts as one text on the left (it shortens with … only on a narrow window), then
+        the graph's title, a slim graph filling the rest of the line, and the rates. The full card is unchanged."""
         self.compact = on
         self.left.set_visible(not on)
         self.right.set_visible(not on)
@@ -175,6 +190,7 @@ class StatusPanel(Gtk.Box):
             _box, t, v, _pb = self.cells[key]
             parts.append(f"<span alpha='75%' size='small'>{e(t.get_text())}</span> <b>{e(v.get_text())}</b>")
         self.line.set_markup("   ".join(parts))
+        self.line_box.queue_resize()            # _line_room decides again whether the graph's title fits
         self.line_rates.set_text(self.rates.get_text())
 
     def refresh(self, st):
