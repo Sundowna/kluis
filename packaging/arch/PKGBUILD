@@ -2,7 +2,7 @@
 # Arch Linux / EndeavourOS / Manjaro package for Kluis.
 # Build from this folder with:  makepkg -si
 pkgname=kluis
-pkgver=1.2.0
+pkgver=1.2.1
 pkgrel=1
 pkgdesc="Unofficial Proton Drive desktop client (folder and photo sync), built on the official Proton Drive CLI"
 arch=('any')

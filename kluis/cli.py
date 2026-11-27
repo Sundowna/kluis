@@ -21,6 +21,7 @@ import posixpath
 import shutil
 import subprocess
 import threading
+import time
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,8 +49,16 @@ def _die_with_kluis():
         pass
 
 
-# The CLI keeps a local sqlite cache and an events lock: run one process at a time.
+# The CLI keeps a local sqlite cache and an events lock: one process at a time per cache folder. Folder counting
+# has a lane of its own (ProtonDriveCli.lane): its own cache folder and lock, so it never waits behind a download.
 _CLI_LOCK = threading.RLock()
+
+# Which CLI processes run right now, in any lane: a call that failed on its sign-in while another lane's process
+# ran is tried once more (the other process may have just refreshed the shared session in the keyring).
+_RUNNING = threading.Lock()
+_running = 0
+_started = 0
+_SESSION_RACE = ("refresh session", "invalid refresh token", "invalid access token")
 
 
 class CliError(Exception):
@@ -76,6 +85,40 @@ class CliError(Exception):
 
 class CliMissing(CliError):
     pass
+
+
+def _session_trouble(stderr: str) -> bool:
+    text = (stderr or "").lower()
+    return any(m in text for m in NOT_LOGGED_IN_MARKERS + _SESSION_RACE)
+
+
+class CliLane:
+    """One lane of the CLI (ProtonDriveCli.lane). Read-only uses only (listing): the CLI's cache, events cursor
+    and log live in a folder of this lane's own next to the account's CLI cache (<cache>.lane-<name>), so a
+    lane runs while a download holds the main lane. The sign-in is the account's one session in the keyring."""
+
+    def __init__(self, main: "ProtonDriveCli", name: str):
+        self.main = main
+        self.name = name
+        self._lock = threading.RLock()
+        self._current = None
+        self._cancelled = False
+
+    @property
+    def path(self):
+        return self.main.path
+
+    @property
+    def folder(self) -> str:
+        base = self.main.cache_dir or _USER_CACHE_DIR or os.path.join(
+            os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "proton-drive-cli")
+        return base.rstrip("/") + ".lane-" + self.name
+
+    def env(self) -> dict:
+        env = self.main.env()
+        os.makedirs(self.folder, mode=0o700, exist_ok=True)
+        env["PROTON_DRIVE_CACHE_DIR"] = self.folder
+        return env
 
 
 @dataclass
@@ -335,6 +378,16 @@ class ProtonDriveCli:
         self._current: subprocess.Popen | None = None
         self._cancelled = False
         self._cache_dir = ""
+        self._lanes: dict[str, "CliLane"] = {}
+
+    _lock = _CLI_LOCK
+
+    def lane(self, name: str) -> "CliLane":
+        """A CLI lane of its own (e.g. "count"): the same program and sign-in, its own cache folder and lock."""
+        ln = self._lanes.get(name)
+        if ln is None:
+            ln = self._lanes[name] = CliLane(self, name)
+        return ln
 
     @property
     def cache_dir(self) -> str:
@@ -364,24 +417,40 @@ class ProtonDriveCli:
             raise CliMissing("The Proton Drive CLI was not found.")
 
     def run(self, args: list[str], json_out: bool = True, timeout: float | None = None,
-            ok_codes: Iterable[int] = (0,)):
+            ok_codes: Iterable[int] = (0,), _again: bool = True):
+        global _running, _started
         self._require()
         cmd = [self.path, *args] + (["--json"] if json_out else [])
         log.debug("run %s", cmd)
         env = self.env()
-        with _CLI_LOCK:
+        with self._lock:
             self._cancelled = False
-            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=env, preexec_fn=_die_with_kluis)
-            self._current = proc
+            with _RUNNING:
+                others = _running > 0
+                _running += 1
+                _started += 1
+                mine = _started
             try:
-                out, err = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                out, err = proc.communicate()
-                raise CliError("The Proton Drive CLI timed out.", 124, err)
+                proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True, env=env, preexec_fn=_die_with_kluis)
+                self._current = proc
+                try:
+                    out, err = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    out, err = proc.communicate()
+                    raise CliError("The Proton Drive CLI timed out.", 124, err)
+                finally:
+                    self._current = None
             finally:
-                self._current = None
+                with _RUNNING:
+                    _running -= 1
+                    others = others or _started != mine
+        if (_again and others and not self._cancelled and proc.returncode not in ok_codes
+                and _session_trouble(err)):
+            log.info("CLI sign-in failed while another lane ran; trying %s once more", args[:2])
+            time.sleep(0.5)
+            return self.run(args, json_out, timeout, ok_codes, _again=False)
         if self._cancelled:
             raise CliError("Cancelled", 130, err)
         data = _last_json(out) if json_out else out
@@ -555,3 +624,8 @@ class ProtonDriveCli:
 
     def rename(self, path: str, new_name: str):
         return self.run(["filesystem", "rename", path, new_name], timeout=120)
+
+
+# A lane runs the same plumbing; only listing is used in a lane (FolderStats).
+for _m in ("_require", "run", "cancel", "list"):
+    setattr(CliLane, _m, getattr(ProtonDriveCli, _m))
