@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlparse
 from gi.repository import Atk, Gdk, Gio, GLib, Gtk, Pango
 
 from ..cli import rjoin
+from ..listcache import shared_lists
 from ..i18n import _
 from .accounts import AccountButton
 from .activity import ActivityPage
@@ -458,6 +459,7 @@ class MainWindow(Gtk.ApplicationWindow):
         b.path = "/my-files"
         b.nodes = []
         b.stats.unload()                 # the next count comes from the new account's own cache file
+        shared_lists(self.app).unload()  # and the next kept list from the new account's own file
         b.loaded_once = False
         self.shared.loaded = False
         self.shared.items = []

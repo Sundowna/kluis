@@ -13,7 +13,8 @@ from dataclasses import dataclass
 
 from gi.repository import GLib, Gtk
 
-from ..cli import rjoin
+from ..cli import RemoteNode, rjoin
+from ..listcache import fetch
 from ..config import MODES, FolderPair, validate_local
 from ..i18n import _, ngettext
 from .browser import ROOT_NAMES, shared_stats
@@ -385,28 +386,32 @@ class FoldersPage(Gtk.Box):
             return
         self.loading.add(path)
 
-        def work():
-            if path == "/shared-with-me":
-                raw = self.app.cli.shared_with_me()
-                return raw, [Node(f"/shared-with-me/{n.uid}", n.name, n.role or "viewer", leaf=True)
-                             for n in raw if n.is_folder]
-            return None, [Node(rjoin(path, n.name), n.name) for n in self.app.cli.list(path) if n.is_folder]
+        shares = path == "/shared-with-me"
 
-        def done(res):
-            raw, nodes = res
-            self.loading.discard(path)
-            self.errors.pop(path, None)
-            self.kids[path] = sorted(nodes, key=lambda n: n.name.lower())
+        def nodes_of(raw):
+            if shares:
+                return [Node(f"/shared-with-me/{n.uid}", n.name, n.role or "viewer", leaf=True)
+                        for n in raw if n.is_folder]
+            return [Node(rjoin(path, n.name), n.name) for n in raw if n.is_folder]
+
+        def show(raw, kept):
+            if not kept:
+                self.loading.discard(path)
+                self.errors.pop(path, None)
             if raw is not None:
-                self.app.shared_cache = raw       # the share roles change_mode checks
+                self.kids[path] = sorted(nodes_of(raw), key=lambda n: n.name.lower())
+                if shares:
+                    self.app.shared_cache = raw   # the share roles change_mode checks
             self.render()
 
-        def fail(e):
+        def fail(e, _kept_shown):
             self.loading.discard(path)
             if path not in self.kids:
                 self.errors[path] = str(e)
             self.render()
-        run_bg(work, done, fail)
+        # shared with Browse and Shared with me: a folder read there shows here at once (kluis/listcache.py)
+        fetch(self.app, "shared" if shares else "list:" + path, RemoteNode,
+              self.app.cli.shared_with_me if shares else (lambda: self.app.cli.list(path)), show, fail)
 
     def synced_by_remote(self) -> dict[str, FolderPair]:
         return {f.remote.rstrip("/"): f for f in self.app.settings.folders}

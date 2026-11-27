@@ -1796,6 +1796,49 @@ def f25(d, env, app):
     d.shot("from Browse")
 
 
+# ------------------------------------------------------------------ F26
+def setup_f26(env):
+    set_cfg(env, sync_view="all")
+    for d in ("Alpha", "Beta", "Gamma"):
+        env.cloud_write(f"my-files/Projects/{d}/readme.md", d)
+    env.cloud_write("my-files/Projects/plan.md", "p")
+
+
+def f26(d, env, app):
+    """F-032: lists show at once from what Kluis kept, then quietly update; Browse reads subfolders ahead."""
+    b = app.window.browser
+    yield main_ready(app)
+    d.press("<Primary>3")
+    b.go("/my-files/Projects")
+    yield until(lambda: browse_names(app) == ["Alpha", "Beta", "Gamma", "plan.md"], 20, "Projects listed")
+    yield until(lambda: all(app.list_cache.age(f"list:/my-files/Projects/{x}") is not None
+                            for x in ("Alpha", "Beta", "Gamma")), 20, "F-032 subfolders read ahead")
+    os.environ["MOCK_DELAY"] = "4"          # Proton is slow from here on
+    t0 = time.monotonic()
+    b.go("/my-files/Projects/Beta")
+    yield until(lambda: browse_names(app) == ["readme.md"], 3, "Beta opens at once")
+    d.expect(time.monotonic() - t0 < 1.5 and b.fresh_lbl.get_text() == "Checking Proton Drive…",
+             f"F-032 a read-ahead folder opens instantly ({time.monotonic() - t0:.1f} s), “Checking Proton Drive…”")
+    d.shot("instant, checking")
+    env.cloud_write("my-files/Projects/Beta/new.md", "n")
+    b.go("/my-files/Projects")
+    yield until(lambda: browse_names(app) == ["Alpha", "Beta", "Gamma", "plan.md"], 2, "Projects again at once")
+    b.go("/my-files/Projects/Beta")
+    yield until(lambda: browse_names(app) == ["new.md", "readme.md"] and b.fresh_lbl.get_text() == "", 20,
+                "F-032 Proton's answer replaces the kept list quietly")
+    d.shot("updated")
+    os.environ["MOCK_DELAY"] = "0"
+    flag = os.path.join(env.cloud, ".offline")
+    open(flag, "w").close()
+    b.go("/my-files/Projects")
+    yield until(lambda: "Couldn't check Proton Drive" in b.fresh_lbl.get_text(), 20, "offline note")
+    d.expect(browse_names(app) == ["Alpha", "Beta", "Gamma", "plan.md"],
+             "F-032 offline: the kept list stays, with how old it is")
+    d.shot("offline, kept list")
+    os.remove(flag)
+    d.press("<Primary>2")
+    yield until(lambda: "/my-files/Projects" in app.window.folders.rows, 5, "Sync Center has Projects at once")
+
 FLOWS = {
     "F1": (f1, setup_f1, {"onboarded": False}), "F2": (f2, setup_f2, {"onboarded": False}),
     "F3": (f3, setup_f3, {"onboarded": False}), "F3b": (f3b, setup_f3b, {"onboarded": False}),
@@ -1806,7 +1849,7 @@ FLOWS = {
     "F17": (f17, None, {}), "F17b": (f17b, setup_f17b, {"hidden": True}), "F18": (f18, setup_f18, {}), "F19": (f19, setup_f19, {}),
     "F20": (f20, setup_f20, {}), "F21": (f21, setup_f21, {}),
     "F22": (f22, setup_f22, {}), "F23": (f23, setup_f23, {}), "F24": (f24, setup_f24, {}), "F24b": (f24b, setup_f24b, {}),
-    "F25": (f25, setup_f25, {}),
+    "F25": (f25, setup_f25, {}), "F26": (f26, setup_f26, {}),
 }
 
 

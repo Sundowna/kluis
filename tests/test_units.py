@@ -340,5 +340,42 @@ s2.clear()
 _settle(s2)
 check(s2.get("/my-files/Pics") is None and json.load(open(cache_file))["counts"] == {}, "↻ counts everything again")
 
+print("lists kept on disk per account (stale while revalidate)")
+from kluis.listcache import fetch, shared_lists  # noqa: E402
+
+appL = SimpleNamespace(settings=SimpleNamespace(account="me@proton.me"))
+lc = shared_lists(appL)
+check(shared_lists(appL) is lc, "one list cache per app")
+lc.put("list:/my-files/A", [RemoteNode("x.md", "file", size=3), RemoteNode("Sub", "folder")])
+lc.put("list:/my-files/A/Sub", [RemoteNode("y.md", "file")])
+lc.put("list:/my-files/AB", [RemoteNode("z.md", "file")])
+lc._save()
+f = lc._loaded_from
+check(oct(os.stat(f).st_mode & 0o777) == "0o600" and "me@proton.me" not in f + open(f).read(),
+      "kept on disk, readable only by this user, no account email")
+lc2 = shared_lists(SimpleNamespace(settings=SimpleNamespace(account="me@proton.me")))
+items, _when = lc2.get("list:/my-files/A", RemoteNode)
+check([n.name for n in items] == ["x.md", "Sub"] and items[1].is_folder, "next start: the kept list comes back")
+lc2.forget("list:/my-files/A")
+check(lc2.get("list:/my-files/A", RemoteNode) is None and lc2.get("list:/my-files/A/Sub", RemoteNode) is None
+      and lc2.get("list:/my-files/AB", RemoteNode) is not None, "forgetting a folder takes its subfolders, not AB")
+appL.settings.account = "lindi@pm.me"
+lc.unload()
+check(lc.get("list:/my-files/A", RemoteNode) is None, "another account has its own lists")
+appL.settings.account = "me@proton.me"
+lc.unload()
+seen = []
+lc.put("shared", [RemoteNode("Team", "folder", uid="u1")])
+fetch(appL, "shared", RemoteNode, lambda: [RemoteNode("Team", "folder", uid="u1")],
+      lambda items, kept: seen.append((kept, None if items is None else len(items))), lambda e, k: seen.append("fail"))
+import time as _time  # noqa: E402
+
+_ctx = GLib.MainContext.default()
+_end = _time.time() + 5
+while len(seen) < 2 and _time.time() < _end:
+    _ctx.iteration(False)
+    _time.sleep(0.01)
+check(seen == [(True, 1), (False, None)], f"kept list first, then “unchanged” without a redraw ({seen})")
+
 print(f"\n{check.passed} checks passed")
 harness.cleanup(TMP)

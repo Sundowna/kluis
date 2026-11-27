@@ -2,7 +2,7 @@
 # Run every flow in light + dark at 1440x900 and 1024x640, JOBS at a time (default 4).
 # Usage: tests/gui/run_all.sh OUTDIR [DESKTOP] [FLOWS...]
 OUT=${1:-/tmp/kluis-flows}; DESKTOP=${2:-X-Cinnamon}; shift 2 2>/dev/null
-FLOWS=${*:-"F1 F2 F3 F3b F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F14b F15 F16 F17 F17b F18 F19 F20 F21 F22 F23 F24 F24b F25"}
+FLOWS=${*:-"F1 F2 F3 F3b F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F14b F15 F16 F17 F17b F18 F19 F20 F21 F22 F23 F24 F24b F25 F26"}
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$OUT"; : > "$OUT/results.txt"
 one() {  # flow theme size display
